@@ -65,6 +65,7 @@
     "newShopNamePlaceholder": "e.g., City Center",
     "newShopDescriptionPlaceholder": "A brief description of the new shop.",
     "addShop": "Add Shop",
+    "adding": "Adding...",
     "deleteConfirmationTitle": "Are you absolutely sure?",
     "deleteConfirmationDescription": "This action cannot be undone. This will permanently delete the shop and all of its associated data.",
     "continue": "Continue"

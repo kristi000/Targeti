@@ -6,15 +6,16 @@ import { ShopProvider } from "@/components/shop-provider";
 
 type Props = {
   children: React.ReactNode;
-  params: {
+  params: Promise<{
     locale: string;
-  };
+  }>;
 };
 
 export default async function LocaleLayout({
   children,
-  params: {locale},
+  params,
 }: Props) {
+   const { locale } = await params;
    let messages;
    try {
      messages = await getMessages({locale});

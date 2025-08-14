@@ -54,63 +54,88 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
     }
   }, [toast, t]);
 
-  useEffect(() => {
-    async function loadInitialData() {
-      setLoading(true);
-      try {
-        const fetchedShops = await fetchShops();
-        const performanceDataPromises = fetchedShops.map(shop => fetchPerformanceData(shop.id));
-        const allPerformanceDataResults = await Promise.all(performanceDataPromises);
-
-        const performanceDataMap: Record<string, PerformanceData[]> = {};
-        const monthlyTargetsMap: Record<string, Target> = {};
-
-        fetchedShops.forEach((shop, index) => {
-          performanceDataMap[shop.id] = allPerformanceDataResults[index];
-          if (shop.monthlyTargets) {
-            monthlyTargetsMap[shop.id] = shop.monthlyTargets;
-          } else {
-            // If for some reason a shop in the DB has no targets, initialize them.
-            monthlyTargetsMap[shop.id] = getInitialTargets();
-          }
-        });
-        
-        setShops(fetchedShops);
-        setAllPerformanceData(performanceDataMap);
-        setAllMonthlyTargets(monthlyTargetsMap);
-        
-        if (fetchedShops.length > 0 && !selectedShop) {
-          setSelectedShop(fetchedShops[0]);
+  const loadInitialData = useCallback(async () => {
+    setLoading(true);
+    try {
+      console.log("Loading initial data...");
+      
+      const shops = await fetchShops();
+      const performanceData: Record<string, PerformanceData[]> = {};
+      const monthlyTargets: Record<string, Target> = {};
+      
+      for (const shop of shops) {
+        try {
+          const perfData = await fetchPerformanceData(shop.id);
+          performanceData[shop.id] = perfData;
+        } catch (error) {
+          console.warn(`Failed to fetch performance data for shop ${shop.id}:`, error);
+          performanceData[shop.id] = [];
         }
-
-      } catch (error) {
-        console.error("Failed to load initial data:", error);
-        toast({
-            variant: "destructive",
-            title: t('error'),
-            description: "Failed to load data from the database."
-        });
-      } finally {
-        setLoading(false);
+        
+        if (shop.monthlyTargets) {
+          monthlyTargets[shop.id] = shop.monthlyTargets;
+        }
       }
+      
+      setShops(shops);
+      setAllPerformanceData(performanceData);
+      setAllMonthlyTargets(monthlyTargets);
+      
+      if (shops.length > 0 && !selectedShop) {
+        setSelectedShop(shops[0]);
+      }
+      
+      console.log("Data loaded successfully");
+      
+    } catch (error) {
+      console.error("Failed to load initial data:", error);
+      toast({
+        variant: "destructive",
+        title: t('error'),
+        description: "Failed to load data from the database."
+      });
+    } finally {
+      setLoading(false);
     }
+  }, [selectedShop, toast, t]);
+
+  useEffect(() => {
     loadInitialData();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 
   const addShop = useCallback(async (shopName: string, description?: string) => {
-    const result = await handleAddShop(shopName, description);
-    if (result.success && result.data) {
-        const newShop = result.data;
-        setShops(prev => [...prev, newShop]);
-        if (newShop.monthlyTargets) {
-            setAllMonthlyTargets(prev => ({...prev, [newShop.id]: newShop.monthlyTargets!}));
+    setLoading(true);
+    try {
+        console.log("Adding shop in provider:", shopName);
+        const result = await handleAddShop(shopName, description);
+        if (result.success && result.data) {
+            const newShop = result.data;
+            setShops(prev => [...prev, newShop]);
+            if (newShop.monthlyTargets) {
+                const targets = newShop.monthlyTargets as Target;
+                setAllMonthlyTargets(prev => ({...prev, [newShop.id]: targets}));
+            }
+            setAllPerformanceData(prev => ({...prev, [newShop.id]: []}));
+            
+            if (result.fallback) {
+                toast({ 
+                    title: t('shopAdded'), 
+                    description: `${t('shopAddedSuccess', {shopName})} (Saved locally)` 
+                });
+            } else {
+                toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
+            }
+        } else {
+            console.error("Failed to add shop:", result.error);
+            toast({ variant: "destructive", title: t('error'), description: result.error || t('addShopFailed') });
         }
-        setAllPerformanceData(prev => ({...prev, [newShop.id]: []}));
-        toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
-    } else {
+    } catch (error) {
+        console.error("Unexpected error adding shop:", error);
         toast({ variant: "destructive", title: t('error'), description: t('addShopFailed') });
+    } finally {
+        setLoading(false);
     }
   }, [toast, t]);
 
@@ -121,7 +146,12 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       if (selectedShop?.id === updatedShop.id) {
         setSelectedShop(prev => prev ? {...prev, ...result.data!} : null);
       }
-      toast({ title: t('shopUpdated'), description: t('shopUpdatedSuccess', {shopName: updatedShop.name}) });
+      
+      if (result.fallback) {
+        toast({ title: t('shopUpdated'), description: `${t('shopUpdatedSuccess', {shopName: updatedShop.name})} (Saved locally)` });
+      } else {
+        toast({ title: t('shopUpdated'), description: t('shopUpdatedSuccess', {shopName: updatedShop.name}) });
+      }
     } else {
       toast({ variant: "destructive", title: t('error'), description: t('updateShopFailed') });
     }

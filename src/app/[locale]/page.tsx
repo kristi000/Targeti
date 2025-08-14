@@ -2,7 +2,8 @@
 import { DashboardClient } from "@/components/dashboard-client";
 import { getTranslations } from "next-intl/server";
 
-export async function generateMetadata({params: {locale}}: {params: {locale: string}}) {
+export async function generateMetadata({params}: {params: Promise<{locale: string}>}) {
+  const { locale } = await params;
   const t = await getTranslations({locale, namespace: 'Metadata'});
  
   return {
@@ -10,7 +11,6 @@ export async function generateMetadata({params: {locale}}: {params: {locale: str
     description: t('description')
   };
 }
-
 
 export default function DashboardPage() {
   return (

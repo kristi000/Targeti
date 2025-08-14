@@ -51,7 +51,7 @@ export function ManageShopsDialog({
     onSave,
     onDelete
 }: ManageShopsDialogProps) {
-    const { shops, addShop } = useShop();
+    const { shops, addShop, loading } = useShop();
     const t = useTranslations("Dialogs");
     const [newShopName, setNewShopName] = useState("");
     const [newShopDescription, setNewShopDescription] = useState("");
@@ -78,10 +78,14 @@ export function ManageShopsDialog({
 
     const handleAddShop = async () => {
         if (newShopName.trim()) {
-            await addShop(newShopName.trim(), newShopDescription.trim());
-            setNewShopName("");
-            setNewShopDescription("");
-            onManagementDialogChange(false);
+            try {
+                await addShop(newShopName.trim(), newShopDescription.trim());
+                setNewShopName("");
+                setNewShopDescription("");
+                onManagementDialogChange(false);
+            } catch (error) {
+                console.error("Error in handleAddShop:", error);
+            }
         }
     };
 
@@ -242,8 +246,13 @@ export function ManageShopsDialog({
                                         placeholder={t('newShopDescriptionPlaceholder')}
                                     />
                                  </div>
-                                 <Button onClick={handleAddShop} className="w-full">
-                                    <PlusCircle className="mr-2 h-4 w-4" /> {t('addShop')}
+                                 <Button 
+                                    onClick={handleAddShop} 
+                                    className="w-full" 
+                                    disabled={!newShopName.trim() || loading}
+                                >
+                                    <PlusCircle className="mr-2 h-4 w-4" /> 
+                                    {loading ? t('adding') : t('addShop')}
                                 </Button>
                             </div>
                         </div>

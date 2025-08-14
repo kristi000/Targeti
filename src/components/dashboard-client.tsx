@@ -15,13 +15,14 @@ import { BarChart, TrendingUp, Award } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Progress } from "./ui/progress";
 import { SalesRepresentativeRanking } from "./sales-representative-ranking";
-import { useTranslations } from "next-intl";
+import { useTranslations, useLocale } from "next-intl";
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getDaysInMonth } from "date-fns";
 
 export function DashboardClient() {
   const { shops, allPerformanceData, allMonthlyTargets } = useShop();
   const t = useTranslations("Dashboard");
+  const locale = useLocale();
 
   const shopPerformances = useMemo(() => {
     const today = new Date();
@@ -113,7 +114,7 @@ export function DashboardClient() {
             <h2 className="text-2xl font-semibold">{t('shopPerformanceRankings')}</h2>
             <div className="space-y-4">
               {shopPerformances.map(({ shop, totalAchievement, forecastAchievement }) => (
-                <Link key={shop.id} href={`/shop/${shop.id}`} passHref>
+                <Link key={shop.id} href={`/${locale}/shop/${shop.id}`} passHref>
                   <ShopPerformanceCard
                     shopName={shop.name}
                     totalPerformance={totalAchievement}

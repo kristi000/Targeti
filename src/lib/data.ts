@@ -53,7 +53,6 @@ export const METRIC_WEIGHTS: Record<PerformanceMetric, number> = {
   device: 0.05,
 };
 
-
 const initialTargets: Target = {
     newSim: 100,
     newLine: 120,
@@ -68,7 +67,6 @@ const initialTargets: Target = {
 export const MONTHLY_TARGETS: Record<string, Target> = {
     "shop1": initialTargets
 };
-
 
 export const PERFORMANCE_DATA: Record<string, PerformanceData[]> = {
     "shop1": []
