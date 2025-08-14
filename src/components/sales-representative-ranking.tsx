@@ -28,6 +28,8 @@ export function SalesRepresentativeRanking() {
   const { shops, allPerformanceData, allMonthlyTargets } = useShop();
 
   const rankedSalesReps = useMemo(() => {
+    if (shops.length === 0) return [];
+    
     const allReps: { name: string; shopName: string; achievement: number, forecastAchievement: number }[] = [];
     const today = new Date();
     const daysInMonth = getDaysInMonth(today);
@@ -40,49 +42,47 @@ export function SalesRepresentativeRanking() {
       const performanceData = allPerformanceData[shop.id] || [];
       const monthlyTargets = allMonthlyTargets[shop.id];
 
-      if (!monthlyTargets) return;
+      if (!monthlyTargets || performanceData.length === 0) return;
 
+      // Simplified calculation - only process if we have data
       const repTotals: Record<string, Record<PerformanceMetric, number>> = {};
       salesRepresentatives.forEach(rep => {
-          repTotals[rep.id] = performanceMetrics.reduce((acc, metric) => {
-              acc[metric] = 0;
-              return acc;
-          }, {} as Record<PerformanceMetric, number>);
+        repTotals[rep.id] = performanceMetrics.reduce((acc, metric) => {
+          acc[metric] = 0;
+          return acc;
+        }, {} as Record<PerformanceMetric, number>);
       });
 
+      // Process performance data more efficiently
       performanceData.forEach(day => {
-          day.reps.forEach(repData => {
-              if (repTotals[repData.repId]) {
-                  performanceMetrics.forEach(metric => {
-                      repTotals[repData.repId][metric] += repData[metric];
-                  });
-              }
-          });
+        day.reps.forEach(repData => {
+          if (repTotals[repData.repId]) {
+            performanceMetrics.forEach(metric => {
+              repTotals[repData.repId][metric] += repData[metric] || 0;
+            });
+          }
+        });
       });
 
       const repTargets: Target = performanceMetrics.reduce((acc, metric) => {
-          acc[metric] = monthlyTargets[metric] / salesRepresentatives.length;
-          return acc;
+        acc[metric] = monthlyTargets[metric] / salesRepresentatives.length;
+        return acc;
       }, {} as Record<PerformanceMetric, number>);
 
       salesRepresentatives.forEach((rep) => {
         const currentTotals = repTotals[rep.id];
+        const achievement = calculateTotalAchievement(currentTotals, repTargets);
         
-        const forecastTotals: Record<PerformanceMetric, number> = {} as any;
-        for (const metric of performanceMetrics) {
-          const currentMonthValue = currentTotals[metric] || 0;
-          if (dayOfMonth > 0) {
-            forecastTotals[metric] = (currentMonthValue / dayOfMonth) * daysInMonth;
-          } else {
-            forecastTotals[metric] = 0;
-          }
-        }
+        // Simplified forecast calculation
+        const forecastAchievement = dayOfMonth > 0 
+          ? (achievement / dayOfMonth) * daysInMonth 
+          : achievement;
 
         allReps.push({
           name: rep.name,
           shopName: shop.name,
-          achievement: calculateTotalAchievement(currentTotals, repTargets),
-          forecastAchievement: calculateTotalAchievement(forecastTotals, repTargets),
+          achievement,
+          forecastAchievement,
         });
       });
     });
@@ -91,48 +91,29 @@ export function SalesRepresentativeRanking() {
   }, [shops, allPerformanceData, allMonthlyTargets]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Award className="text-primary" />
-          {t('topSalesReps')}
-        </CardTitle>
-        <CardDescription>
-          {t('repRankingsDescription')}
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <ScrollArea className="h-96">
-            <div className="space-y-4 pr-4">
-                {rankedSalesReps.map((rep, index) => (
-                <div key={index} className="space-y-2">
-                    <div className="flex items-center justify-between text-sm">
-                        <div className="flex items-center gap-2 font-medium">
-                            <span className="font-bold w-6 text-center">{index + 1}</span>
-                            <div>
-                            <p>{rep.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                                {rep.shopName}
-                            </p>
-                             <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
-                                <TrendingUp className="h-3 w-3" />
-                                <span>EOM: {rep.forecastAchievement.toFixed(1)}%</span>
-                            </div>
-                            </div>
-                        </div>
-                        <span className="font-bold text-primary">
-                            {rep.achievement.toFixed(1)}%
-                        </span>
-                    </div>
-                    <Progress
-                    value={Math.min(rep.achievement, 100)}
-                    className="h-2"
-                    />
-                </div>
-                ))}
+    <div className="space-y-4">
+      <h2 className="text-xl font-medium text-center">{t('topSalesReps')}</h2>
+      <div className="space-y-3">
+        {rankedSalesReps.slice(0, 5).map((rep, index) => (
+          <div key={index} className="flex items-center justify-between p-3 rounded-lg border border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
+                {index + 1}
+              </div>
+              <div>
+                <p className="font-medium">{rep.name}</p>
+                <p className="text-xs text-muted-foreground">{rep.shopName}</p>
+              </div>
             </div>
-        </ScrollArea>
-      </CardContent>
-    </Card>
+            <div className="text-right">
+              <div className="text-lg font-semibold">{rep.achievement.toFixed(1)}%</div>
+              <div className="text-xs text-muted-foreground">
+                EOM: {rep.forecastAchievement.toFixed(1)}%
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
