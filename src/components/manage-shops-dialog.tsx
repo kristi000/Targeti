@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { PlusCircle, Trash2, Edit } from "lucide-react";
+import { PlusCircle, Trash2, Edit, X } from "lucide-react";
 import { useShop } from "./shop-provider";
 import { type Shop, type SalesRepresentative } from "@/lib/types";
 import { Card, CardContent } from "./ui/card";
@@ -118,7 +118,7 @@ export function ManageShopsDialog({
     
     return (
         <Dialog open={isManagementDialogOpen} onOpenChange={onManagementDialogChange}>
-            <DialogContent className="sm:max-w-2xl">
+            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
                 {currentEditingShop ? (
                     <>
                          <DialogHeader>
@@ -182,12 +182,21 @@ export function ManageShopsDialog({
                             <DialogDescription>
                                 {t('manageShopsDescription')}
                             </DialogDescription>
+                            <DialogClose asChild>
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="absolute right-4 top-4 h-6 w-6 rounded-md"
+                                >
+                                    <X className="h-4 w-4" />
+                                </Button>
+                            </DialogClose>
                         </DialogHeader>
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
                             <div className="space-y-4">
                                  <h3 className="font-semibold">{t('allShops')}</h3>
-                                 <ScrollArea className="h-72">
+                                 <ScrollArea className="h-48 md:h-72">
                                     <div className="space-y-2 pr-4">
                                     {shops.map((shop) => (
                                         <Card key={shop.id}>
@@ -256,9 +265,9 @@ export function ManageShopsDialog({
                                 </Button>
                             </div>
                         </div>
-                        <DialogFooter>
+                        <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-4 border-t">
                             <DialogClose asChild>
-                                <Button type="button" variant="secondary">{t('close')}</Button>
+                                <Button type="button" variant="secondary" className="w-full sm:w-auto">{t('close')}</Button>
                             </DialogClose>
                         </DialogFooter>
                     </>
