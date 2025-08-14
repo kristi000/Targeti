@@ -1,0 +1,105 @@
+{
+  "node": {
+    "00c64667d45e0413650541c902b73999a23d2bca9e": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "403093294aae98e294dfd0cb13d90f5130fe003498": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "403c7c0316a2c5a6aff428c74427a634cbe3b7f267": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "407322a60ea5cbca2b256238b3b2431024b58de81d": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "40b68ca4fa1c1dd3cd6373685b07e62e2297949813": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "40efe1c02b599bd75684e6038cba00026efc9f59fc": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "600f651e7f8d8d9c9fb578358123d103722efac8c7": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "60282225d6c204de6c9063704bc7d7a4467c29f302": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    },
+    "608b53bfe1108e3d702035cc90655653389629e4d6": {
+      "workers": {
+        "app/[locale]/page": {
+          "moduleId": "(action-browser)/./node_modules/next/dist/build/webpack/loaders/next-flight-action-entry-loader.js?actions=%5B%5B%22C%3A%5C%5CUsers%5C%5CAdmin%5C%5CDesktop%5C%5CTargeti%5C%5Csrc%5C%5Capp%5C%5Cactions.ts%22%2C%5B%7B%22id%22%3A%2200c64667d45e0413650541c902b73999a23d2bca9e%22%2C%22exportedName%22%3A%22fetchShops%22%7D%2C%7B%22id%22%3A%22403093294aae98e294dfd0cb13d90f5130fe003498%22%2C%22exportedName%22%3A%22fetchPerformanceData%22%7D%2C%7B%22id%22%3A%22403c7c0316a2c5a6aff428c74427a634cbe3b7f267%22%2C%22exportedName%22%3A%22handleGenerateWhatsappMessage%22%7D%2C%7B%22id%22%3A%22407322a60ea5cbca2b256238b3b2431024b58de81d%22%2C%22exportedName%22%3A%22handleDeleteShop%22%7D%2C%7B%22id%22%3A%2240b68ca4fa1c1dd3cd6373685b07e62e2297949813%22%2C%22exportedName%22%3A%22handleUpdateShop%22%7D%2C%7B%22id%22%3A%2240efe1c02b599bd75684e6038cba00026efc9f59fc%22%2C%22exportedName%22%3A%22handleAnalyzePerformanceData%22%7D%2C%7B%22id%22%3A%22600f651e7f8d8d9c9fb578358123d103722efac8c7%22%2C%22exportedName%22%3A%22handleSavePerformanceData%22%7D%2C%7B%22id%22%3A%2260282225d6c204de6c9063704bc7d7a4467c29f302%22%2C%22exportedName%22%3A%22handleSaveTargets%22%7D%2C%7B%22id%22%3A%22608b53bfe1108e3d702035cc90655653389629e4d6%22%2C%22exportedName%22%3A%22handleAddShop%22%7D%5D%5D%5D&__client_imported__=true!",
+          "async": false
+        }
+      },
+      "layer": {
+        "app/[locale]/page": "action-browser"
+      }
+    }
+  },
+  "edge": {},
+  "encryptionKey": "hAtJ2hU+nI7TdNXWHDXt2N6UAn5mOmct6T9sznZL5Xw="
+}

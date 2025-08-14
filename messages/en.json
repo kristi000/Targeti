@@ -1,0 +1,98 @@
+
+{
+  "Metadata": {
+    "title": "Target Master",
+    "description": "Track your performance and get AI-powered insights."
+  },
+  "Sidebar": {
+    "dashboard": "Dashboard",
+    "setMonthlyTargets": "Set Monthly Targets",
+    "editAchievements": "Edit Achievements",
+    "aiAssistant": "AI Assistant",
+    "editShop": "Edit Shop",
+    "manageShops": "Manage Shops",
+    "viewOnGithub": "View on GitHub"
+  },
+  "Dashboard": {
+    "title": "Main Dashboard",
+    "networkAverage": "Network Average",
+    "averagePerformance": "Average performance across all shops",
+    "shopPerformanceRankings": "Shop Performance Rankings",
+    "topSalesReps": "Top Sales Representatives",
+    "repRankingsDescription": "Rankings based on an equal share of shop targets."
+  },
+  "DetailedDashboard": {
+    "title": "Shop Dashboard",
+    "backToOverview": "← Back to Shop Overview",
+    "daily": "Daily",
+    "monthly": "Monthly",
+    "dailyContribution": "Daily Contribution",
+    "totalPerformance": "Total Performance",
+    "contributionToGoal": "Contribution to monthly goal",
+    "overallAchievement": "Overall monthly achievement",
+    "performanceTrends": "Performance Trends",
+    "dailyContributionSummary": "A summary of daily contributions to your monthly performance goals.",
+    "salesRepPerformance": "Sales Representative Performance",
+    "individualPerformance": "Individual monthly performance based on an equal share of targets.",
+    "shopNotFound": "Shop not found",
+    "noData": "No data available for this shop."
+  },
+  "Dialogs": {
+    "setTargetsTitle": "Set Monthly Targets for {shopName}",
+    "setTargetsDescription": "Define your goals for each performance metric.",
+    "editAchievementsTitle": "Edit Monthly Achievements for {shopName}",
+    "editAchievementsDescription": "Manually set the total achieved for each metric for the month.",
+    "saveChanges": "Save Changes",
+    "aiAssistantTitle": "AI Performance Assistant",
+    "aiAssistantDescription": "Here is an AI-powered analysis of your recent performance and suggestions for improvement.",
+    "summary": "Summary",
+    "suggestions": "Suggestions",
+    "close": "Close",
+    "analysisFailed": "Analysis Failed",
+    "manageShopsTitle": "Manage Shops",
+    "manageShopsDescription": "Add, edit, or remove your shop locations and their sales representatives.",
+    "editShopTitle": "Edit {shopName}",
+    "editShopDescription": "Manage the sales team for {shopName}.",
+    "shopName": "Shop Name",
+    "description": "Description",
+    "shopDescriptionPlaceholder": "A brief description of the shop.",
+    "salesReps": "Sales Representatives",
+    "add": "Add",
+    "noSalesReps": "No sales representatives added.",
+    "cancel": "Cancel",
+    "allShops": "All Shops",
+    "addNewShop": "Add New Shop",
+    "newShopNamePlaceholder": "e.g., City Center",
+    "newShopDescriptionPlaceholder": "A brief description of the new shop.",
+    "addShop": "Add Shop",
+    "deleteConfirmationTitle": "Are you absolutely sure?",
+    "deleteConfirmationDescription": "This action cannot be undone. This will permanently delete the shop and all of its associated data.",
+    "continue": "Continue"
+  },
+  "Toasts": {
+    "shopAdded": "Shop Added",
+    "shopAddedSuccess": "Successfully added {shopName}.",
+    "error": "Error",
+    "addShopFailed": "Failed to add shop.",
+    "shopUpdated": "Shop Updated",
+    "shopUpdatedSuccess": "Successfully updated {shopName}.",
+    "updateShopFailed": "Failed to update shop.",
+    "shopDeleted": "Shop Deleted",
+    "shopDeletedSuccess": "The shop has been deleted.",
+    "deleteShopFailed": "Failed to delete shop."
+  },
+  "Misc": {
+    "searchShop": "Search shop...",
+    "noShopFound": "No shop found."
+  },
+  "Metrics": {
+    "newSim": "New SIM",
+    "newLine": "New Line",
+    "migrations": "Migrations",
+    "fixContractRenewal": "Fix Contract Renewal",
+    "mobileContractRenewal": "Mobile Contract Renewal",
+    "newTv": "New TV",
+    "newPostpaid": "New Postpaid",
+    "device": "Device"
+  }
+}
