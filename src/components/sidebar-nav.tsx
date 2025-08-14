@@ -79,19 +79,6 @@ export function SidebarNav() {
               </Link>
             </SidebarMenuItem>
           ))}
-           {selectedShop && (
-             <SidebarMenuItem>
-                <Link href={`/${locale}/shop/${selectedShop.id}`}>
-                    <SidebarMenuButton
-                    isActive={pathname.includes(`/shop/${selectedShop.id}`)}
-                    tooltip={selectedShop.name}
-                    >
-                        <TrendingUp />
-                        <span>{selectedShop.name}</span>
-                    </SidebarMenuButton>
-                </Link>
-             </SidebarMenuItem>
-           )}
         </SidebarMenu>
         {(isDetailedDashboard || isDashboard) && (
           <SidebarActions />
