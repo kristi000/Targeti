@@ -43,13 +43,13 @@ export const METRIC_CONFIG: PerformanceMetricConfig = {
 };
 
 export const METRIC_WEIGHTS: Record<PerformanceMetric, number> = {
-  newSim: 0.3,
-  newLine: 0.25,
+  newSim: 0.1,
+  newLine: 0.2,
   migrations: 0.2,
   fixContractRenewal: 0.05,
   mobileContractRenewal: 0.05,
-  newTv: 0.05,
-  newPostpaid: 0.05,
+  newTv: 0.00,
+  newPostpaid: 0.1,
   device: 0.05,
 };
 
