@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { importTargetWorkbook, type ImportedWorkbookData } from "@/lib/excel-import";
 import { getShopMetrics, performanceMetrics, type PerformanceData, type Target } from "@/lib/types";
 import { EXCEL_METRIC_LABELS } from "@/lib/metric-definitions";
+import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { useShop } from "./shop-provider";
 
 export function ExcelImportDialog() {
@@ -67,7 +68,7 @@ export function ExcelImportDialog() {
       const targets = { ...currentTargets, ...preview.targets };
       const representativeTargets = Object.fromEntries(reps.map(rep => [
         rep.id,
-        Object.fromEntries(Object.entries(targets).map(([metric, target]) => [metric, target / Math.max(reps.length, 1)])) as Target,
+        getEqualRepresentativeTargets(targets, getShopMetrics(selectedShop, targets), reps.length),
       ])) as Record<string, Target>;
       await updateShop({
         ...selectedShop,
@@ -86,6 +87,7 @@ export function ExcelImportDialog() {
           [month]: {
             collection: preview.revenue,
             targets,
+            representatives: reps,
             representativeTargets,
             ...(selectedShop.metricSettings && { metricSettings: selectedShop.metricSettings }),
             ...(selectedShop.metricOrder && { metricOrder: selectedShop.metricOrder }),

@@ -17,7 +17,8 @@ import { useShop } from "@/components/shop-provider";
 import { useToast } from "@/hooks/use-toast";
 import { calculateManagerBonus, MANAGER_PAYOUT_TABLE_VERSION } from "@/lib/manager-bonus";
 import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } from "@/lib/sales-representative-bonus";
-import { getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
+import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
+import { getMonthlyRepresentatives, getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
 
 export function BonusDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
@@ -45,9 +46,11 @@ export function BonusDashboardClient() {
   const totals = useMemo(() => performanceData.reduce((result, day) => { day.reps.forEach(rep => metrics.forEach(metric => { result.shop[metric] = (result.shop[metric] ?? 0) + (rep[metric] ?? 0); result.reps[rep.repId] ??= {} as Record<PerformanceMetric, number>; result.reps[rep.repId][metric] = (result.reps[rep.repId][metric] ?? 0) + (rep[metric] ?? 0); })); return result; }, { shop: {} as Record<PerformanceMetric, number>, reps: {} as Record<string, Record<PerformanceMetric, number>> }), [performanceData, metrics]);
   if (!selectedShop || !targets) return null;
 
-  const representatives = selectedShop.salesRepresentatives ?? [];
+  const representatives = getMonthlyRepresentatives(selectedShop, selectedMonth);
   const collection = monthData?.collection ?? selectedShop.revenue;
-  const individualTargets = monthData?.representativeTargets ?? Object.fromEntries(representatives.map(rep => [rep.id, Object.fromEntries(metrics.map(metric => [metric, representatives.length ? targets[metric] / representatives.length : 0])) as Target]));
+  const individualTargets = monthData?.representativeTargets
+    ? Object.fromEntries(Object.entries(monthData.representativeTargets).map(([repId, repTargets]) => [repId, roundRepresentativeTargets(repTargets)]))
+    : Object.fromEntries(representatives.map(rep => [rep.id, getEqualRepresentativeTargets(targets, metrics, representatives.length)]));
   representatives.forEach(rep => { totals.reps[rep.id] ??= Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>; });
   const liveManager = collection === undefined ? null : calculateManagerBonus(collection, totals.shop, targets, metrics, metricSettings);
   const liveRepresentatives = collection === undefined ? [] : representatives.map(rep => ({ id: rep.id, name: rep.name, result: calculateRepresentativeBonus(collection, totals.reps[rep.id], individualTargets[rep.id], totals.shop, targets, metrics, metricSettings) }));

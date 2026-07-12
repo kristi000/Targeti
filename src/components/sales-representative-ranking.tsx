@@ -15,11 +15,13 @@ import {
   getShopMetrics,
   type Target,
   type SalesRepresentative,
+  getMonthlyRepresentatives,
 } from "@/lib/types";
 import { Award, TrendingUp } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
 import { useTranslations } from "next-intl";
 import { calculateTotalAchievement } from "@/lib/utils";
+import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { useShop } from "./shop-provider";
 import { getDaysInMonth } from "date-fns";
 
@@ -36,11 +38,14 @@ export function SalesRepresentativeRanking() {
     const dayOfMonth = today.getDate();
 
     shops.forEach((shop) => {
-      const { salesRepresentatives = [] } = shop;
+      const shopPerformanceData = allPerformanceData[shop.id] || [];
+      const latestMonth = shopPerformanceData.map(entry => entry.date.slice(0, 7)).sort().at(-1);
+      if (!latestMonth) return;
+      const salesRepresentatives = getMonthlyRepresentatives(shop, latestMonth);
       if (salesRepresentatives.length === 0) return;
 
-      const performanceData = allPerformanceData[shop.id] || [];
-      const monthlyTargets = allMonthlyTargets[shop.id];
+      const performanceData = shopPerformanceData.filter(entry => entry.date.startsWith(latestMonth));
+      const monthlyTargets = shop.monthlyData?.[latestMonth]?.targets ?? allMonthlyTargets[shop.id];
 
       if (!monthlyTargets || performanceData.length === 0) return;
       const metrics = getShopMetrics(shop, monthlyTargets);
@@ -65,10 +70,7 @@ export function SalesRepresentativeRanking() {
         });
       });
 
-      const repTargets: Target = metrics.reduce((acc, metric) => {
-        acc[metric] = monthlyTargets[metric] / salesRepresentatives.length;
-        return acc;
-      }, {} as Record<PerformanceMetric, number>);
+      const repTargets = getEqualRepresentativeTargets(monthlyTargets, metrics, salesRepresentatives.length);
 
       salesRepresentatives.forEach((rep) => {
         const currentTotals = repTotals[rep.id];

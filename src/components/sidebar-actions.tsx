@@ -39,6 +39,7 @@ import {
   getMetricOrder,
   getInitialTargets,
   getShopMetrics,
+  getMonthlyRepresentatives,
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
@@ -48,8 +49,9 @@ import { useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { ScrollArea } from "./ui/scroll-area";
 import { ExcelImportDialog } from "./excel-import-dialog";
+import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 
-export function SidebarActions() {
+export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
     const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop } = useShop();
     const pathname = usePathname();
     const t = useTranslations("Sidebar");
@@ -59,7 +61,15 @@ export function SidebarActions() {
     const isDashboard = !pathname.includes('/shop/');
     
     const performanceData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
-    const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] || getInitialTargets() : getInitialTargets();
+    const latestDataMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
+    const activeMonth = activeMonthOverride ?? latestDataMonth;
+    const monthlyRepresentatives = useMemo(
+        () => selectedShop ? getMonthlyRepresentatives(selectedShop, activeMonth) : [],
+        [selectedShop, activeMonth]
+    );
+    const monthlyTargets = selectedShop
+        ? selectedShop.monthlyData?.[activeMonth]?.targets ?? allMonthlyTargets[selectedShop.id] ?? getInitialTargets()
+        : getInitialTargets();
     const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
 
     const [editingTargets, setEditingTargets] = useState<Target>(getInitialTargets);
@@ -74,13 +84,12 @@ export function SidebarActions() {
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
-    const activeMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
 
     const initialRepTotals = useMemo(() => {
         const totals: Record<string, Record<PerformanceMetric, number>> = {};
-        (selectedShop?.salesRepresentatives || []).forEach(rep => {
+        monthlyRepresentatives.forEach(rep => {
             totals[rep.id] = metrics.reduce((acc, metric) => {
                 acc[metric] = 0;
                 return acc;
@@ -97,7 +106,7 @@ export function SidebarActions() {
             });
         });
         return totals;
-    }, [performanceData, selectedShop?.salesRepresentatives, metrics, activeMonth]);
+    }, [performanceData, monthlyRepresentatives, metrics, activeMonth]);
 
     const [editingRepTotals, setEditingRepTotals] = useState<Record<string, Record<PerformanceMetric, number>>>({});
 
@@ -184,7 +193,10 @@ export function SidebarActions() {
             }, {} as MetricSettings)
         );
         setEditingMetricOrder(getMetricOrder(selectedShop?.metricOrder, metrics));
-        setEditingRepTargets(selectedShop?.monthlyData?.[activeMonth]?.representativeTargets ?? Object.fromEntries((selectedShop?.salesRepresentatives ?? []).map(rep => [rep.id, Object.fromEntries(metrics.map(metric => [metric, monthlyTargets[metric] / Math.max(selectedShop?.salesRepresentatives?.length ?? 1, 1)])) as Target])));
+        const savedRepresentativeTargets = selectedShop?.monthlyData?.[activeMonth]?.representativeTargets;
+        setEditingRepTargets(savedRepresentativeTargets
+            ? Object.fromEntries(Object.entries(savedRepresentativeTargets).map(([repId, targets]) => [repId, roundRepresentativeTargets(targets)]))
+            : Object.fromEntries(monthlyRepresentatives.map(rep => [rep.id, getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length)])));
         setNewMetricName("");
         setWeightSortDirection(null);
         setIsTargetDialogOpen(true);
@@ -194,7 +206,8 @@ export function SidebarActions() {
         if (!selectedShop || !weightsValid) return;
         setIsSaving(true);
         await updateMonthlyTargets(selectedShop.id, editingTargets);
-        await updateShop({ ...selectedShop, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { collection: selectedShop.monthlyData?.[activeMonth]?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representativeTargets: editingRepTargets, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder } } });
+        const roundedRepresentativeTargets = Object.fromEntries(Object.entries(editingRepTargets).map(([repId, targets]) => [repId, roundRepresentativeTargets(targets)]));
+        await updateShop({ ...selectedShop, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { collection: selectedShop.monthlyData?.[activeMonth]?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representatives: monthlyRepresentatives, representativeTargets: roundedRepresentativeTargets, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder } } });
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
@@ -230,7 +243,29 @@ export function SidebarActions() {
         };
 
         const newPerformanceData = [newPerformanceDataEntry];
-        
+
+        if (!selectedShop.monthlyData?.[activeMonth]?.representatives) {
+            const existingMonth = selectedShop.monthlyData?.[activeMonth];
+            const representativeTargets = existingMonth?.representativeTargets ?? Object.fromEntries(monthlyRepresentatives.map(rep => [
+                rep.id,
+                getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length),
+            ]));
+            await updateShop({
+                ...selectedShop,
+                monthlyData: {
+                    ...selectedShop.monthlyData,
+                    [activeMonth]: {
+                        collection: existingMonth?.collection ?? selectedShop.revenue ?? 0,
+                        targets: existingMonth?.targets ?? monthlyTargets,
+                        representatives: monthlyRepresentatives,
+                        representativeTargets,
+                        metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
+                        metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
+                    },
+                },
+            });
+        }
+
         await updatePerformanceData(selectedShop.id, newPerformanceData);
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
@@ -238,7 +273,31 @@ export function SidebarActions() {
     };
 
     const handleSaveShop = (shop: Shop) => {
-        updateShop(shop);
+        if (activeMonthOverride && selectedShop?.id === shop.id) {
+            const existingMonth = selectedShop.monthlyData?.[activeMonth];
+            const representatives = shop.salesRepresentatives ?? [];
+            const representativeTargets = Object.fromEntries(representatives.map(rep => [
+                rep.id,
+                existingMonth?.representativeTargets[rep.id] ?? getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length),
+            ]));
+            void updateShop({
+                ...shop,
+                salesRepresentatives: selectedShop.salesRepresentatives,
+                monthlyData: {
+                    ...selectedShop.monthlyData,
+                    [activeMonth]: {
+                        collection: existingMonth?.collection ?? selectedShop.revenue ?? 0,
+                        targets: existingMonth?.targets ?? monthlyTargets,
+                        representatives,
+                        representativeTargets,
+                        metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
+                        metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
+                    },
+                },
+            });
+        } else {
+            void updateShop(shop);
+        }
         setIsManagementDialogOpen(false);
     };
 
@@ -254,7 +313,7 @@ export function SidebarActions() {
     
     const handleOpenEditShop = () => {
         if(selectedShop) {
-            setEditingShop(selectedShop);
+            setEditingShop({ ...selectedShop, salesRepresentatives: monthlyRepresentatives });
             setIsManagementDialogOpen(true);
         }
     }
@@ -402,7 +461,7 @@ export function SidebarActions() {
                             <Accordion type="single" collapsible className="rounded-md border px-3">
                                 <AccordionItem value="representative-targets" className="border-0">
                                     <AccordionTrigger>Individual representative targets</AccordionTrigger>
-                                    <AccordionContent><div className="space-y-4">{(selectedShop.salesRepresentatives ?? []).map(rep => <div key={rep.id}><p className="mb-2 font-medium">{rep.name}</p><div className="grid gap-2 sm:grid-cols-2">{editingMetricOrder.map(metric => <Label key={metric} className="grid grid-cols-[1fr_8rem] items-center gap-2 text-xs"><span className="truncate">{getMetricLabel(metric)}</span><Input type="number" className="text-right" value={editingRepTargets[rep.id]?.[metric] ?? ""} onChange={event => setEditingRepTargets(current => ({ ...current, [rep.id]: { ...current[rep.id], [metric]: Number(event.target.value) } }))} /></Label>)}</div></div>)}</div></AccordionContent>
+                                    <AccordionContent><div className="space-y-4">{monthlyRepresentatives.map(rep => <div key={rep.id}><p className="mb-2 font-medium">{rep.name}</p><div className="grid gap-2 sm:grid-cols-2">{editingMetricOrder.map(metric => <Label key={metric} className="grid grid-cols-[1fr_8rem] items-center gap-2 text-xs"><span className="truncate">{getMetricLabel(metric)}</span><Input type="number" step="1" className="text-right" value={editingRepTargets[rep.id]?.[metric] ?? ""} onChange={event => setEditingRepTargets(current => ({ ...current, [rep.id]: { ...current[rep.id], [metric]: Number(event.target.value) } }))} onBlur={() => setEditingRepTargets(current => ({ ...current, [rep.id]: { ...current[rep.id], [metric]: Math.round(current[rep.id]?.[metric] ?? 0) } }))} /></Label>)}</div></div>)}</div></AccordionContent>
                                 </AccordionItem>
                             </Accordion>
                             <DialogFooter>
@@ -434,7 +493,7 @@ export function SidebarActions() {
                             </DialogHeader>
                             <ScrollArea className="h-[48vh] pr-4">
                             <Accordion type="single" collapsible className="w-full">
-                                {(selectedShop.salesRepresentatives || []).map(rep => (
+                                {monthlyRepresentatives.map(rep => (
                                     <AccordionItem key={rep.id} value={rep.name}>
                                         <AccordionTrigger>{rep.name}</AccordionTrigger>
                                         <AccordionContent>
@@ -501,6 +560,7 @@ export function SidebarActions() {
                 setEditingShop={setEditingShop}
                 onSave={handleSaveShop}
                 onDelete={handleDeleteShop}
+                representativeMonth={activeMonthOverride}
             />
         </>
     );

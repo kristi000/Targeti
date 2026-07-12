@@ -8,6 +8,7 @@ import { PerformanceTable } from "@/components/performance-table";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getMetricOrder, type MetricSettings, type PerformanceData, type PerformanceMetric, type SalesRepresentative, type Target } from "@/lib/types";
 import { useTranslations } from "next-intl";
+import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 
 type Props = {
   salesRepresentatives: SalesRepresentative[];
@@ -31,7 +32,7 @@ export function WorkerPerformanceList({ salesRepresentatives, performanceData, m
     performanceData.forEach(day => day.reps.forEach(rep => metrics.forEach(metric => {
       if (totals[rep.repId]) totals[rep.repId][metric] += rep[metric] || 0;
     })));
-    const targets = metrics.reduce((values, metric) => ({ ...values, [metric]: monthlyTargets[metric] / salesRepresentatives.length }), {} as Target);
+    const targets = getEqualRepresentativeTargets(monthlyTargets, metrics, salesRepresentatives.length);
     return salesRepresentatives.map(representative => ({
       ...representative,
       totals: totals[representative.id],

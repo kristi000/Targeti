@@ -97,10 +97,15 @@ export type Shop = {
 export type MonthlyShopData = {
   collection: number;
   targets: Target;
+  representatives?: SalesRepresentative[];
   representativeTargets: Record<string, Target>;
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
 };
+
+export function getMonthlyRepresentatives(shop: Shop, month: string): SalesRepresentative[] {
+  return shop.monthlyData?.[month]?.representatives ?? shop.salesRepresentatives ?? [];
+}
 
 export type BonusSnapshot = {
   month: string;

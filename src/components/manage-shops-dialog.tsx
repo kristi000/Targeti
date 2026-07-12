@@ -40,6 +40,7 @@ type ManageShopsDialogProps = {
     setEditingShop: (shop: Shop | null) => void;
     onSave: (shop: Shop) => void;
     onDelete: (shopId: string) => void;
+    representativeMonth?: string;
 };
 
 export function ManageShopsDialog({ 
@@ -48,7 +49,8 @@ export function ManageShopsDialog({
     editingShop,
     setEditingShop,
     onSave,
-    onDelete
+    onDelete,
+    representativeMonth,
 }: ManageShopsDialogProps) {
     const { shops, addShop, loading } = useShop();
     const t = useTranslations("Dialogs");
@@ -122,7 +124,9 @@ export function ManageShopsDialog({
                     <>
                          <DialogHeader>
                             <DialogTitle>{t('editShopTitle', {shopName: currentEditingShop.name})}</DialogTitle>
-                            <DialogDescription>{t('editShopDescription', {shopName: currentEditingShop.name})}</DialogDescription>
+                            <DialogDescription>{representativeMonth
+                                ? t('editMonthlyRosterDescription', { shopName: currentEditingShop.name, month: representativeMonth })
+                                : t('editShopDescription', {shopName: currentEditingShop.name})}</DialogDescription>
                         </DialogHeader>
                         <div className="space-y-4 py-4">
                             <div className="space-y-2">

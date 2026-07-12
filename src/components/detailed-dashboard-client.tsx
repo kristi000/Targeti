@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Banknote, Trophy } from "lucide-react";
-import { endOfMonth, format, getDaysInMonth, isSameMonth, isWithinInterval, parseISO, startOfMonth, subMonths } from "date-fns";
+import { format, getDaysInMonth, isSameMonth, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
 import { PerformanceTable } from "@/components/performance-table";
@@ -11,51 +11,38 @@ import { WorkerPerformanceList } from "@/components/worker-performance-list";
 import { SidebarActions } from "@/components/sidebar-actions";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
-import { getShopMetrics, type PerformanceMetric } from "@/lib/types";
-
-type Period = "current" | "previous" | "custom";
+import { getMonthlyRepresentatives, getShopMetrics, type PerformanceMetric } from "@/lib/types";
 
 export function DetailedDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
   const revenue = selectedShop?.revenue;
-  const [period, setPeriod] = useState<Period>("current");
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
+  const [selectedMonthValue, setSelectedMonthValue] = useState("");
 
   const allData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
-  const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] : undefined;
-  const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
   const now = new Date();
-  const latestDataDate = useMemo(() => allData.reduce<Date | null>((latest, entry) => {
-    const entryDate = parseISO(entry.date);
-    return !latest || entryDate > latest ? entryDate : latest;
-  }, null), [allData]);
-  const reportingMonth = latestDataDate ?? now;
-  const selectedRange = useMemo(() => {
-    if (period === "current") return { start: startOfMonth(reportingMonth), end: endOfMonth(reportingMonth) };
-    if (period === "previous") {
-      const previous = subMonths(reportingMonth, 1);
-      return { start: startOfMonth(previous), end: endOfMonth(previous) };
-    }
-    if (!customStart || !customEnd) return null;
-    return { start: parseISO(customStart), end: parseISO(customEnd) };
-  }, [period, customStart, customEnd, reportingMonth]);
-
-  const performanceData = useMemo(() => {
-    if (!selectedRange) return [];
-    return allData.filter(day => {
-      const date = parseISO(day.date);
-      return isWithinInterval(date, selectedRange);
-    });
-  }, [allData, selectedRange]);
+  const currentMonth = format(now, "yyyy-MM");
+  const availableMonths = useMemo(() => {
+    const months = Array.from(new Set([
+      ...allData.map(entry => entry.date.slice(0, 7)),
+      ...Object.keys(selectedShop?.monthlyData ?? {}),
+    ])).sort().reverse();
+    return months.length ? months : [currentMonth];
+  }, [allData, selectedShop?.monthlyData, currentMonth]);
+  const selectedMonth = availableMonths.includes(selectedMonthValue) ? selectedMonthValue : availableMonths[0] ?? format(now, "yyyy-MM");
+  const monthData = selectedShop?.monthlyData?.[selectedMonth];
+  const monthlyRepresentatives = selectedShop ? getMonthlyRepresentatives(selectedShop, selectedMonth) : [];
+  const monthlyTargets = monthData?.targets ?? (selectedShop ? allMonthlyTargets[selectedShop.id] : undefined);
+  const metricSettings = monthData?.metricSettings ?? selectedShop?.metricSettings;
+  const metricOrder = monthData?.metricOrder ?? selectedShop?.metricOrder;
+  const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings, metricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, metricSettings, metricOrder]);
+  const performanceData = useMemo(() => allData.filter(day => day.date.startsWith(selectedMonth)), [allData, selectedMonth]);
 
   const monthlyTotals = useMemo(() => performanceData.reduce((totals, day) => {
     day.reps.forEach(rep => metrics.forEach(metric => {
@@ -65,9 +52,9 @@ export function DetailedDashboardClient() {
   }, {} as Record<PerformanceMetric, number>), [performanceData, metrics]);
 
   const monthlyAchievement = monthlyTargets
-    ? calculateTotalAchievement(monthlyTotals, monthlyTargets, selectedShop?.metricSettings)
+    ? calculateTotalAchievement(monthlyTotals, monthlyTargets, metricSettings)
     : 0;
-  const hasForecast = period === "current" && isSameMonth(reportingMonth, now) && performanceData.length >= 2;
+  const hasForecast = isSameMonth(parseISO(`${selectedMonth}-01`), now) && performanceData.length >= 2;
   const forecastData = useMemo(() => {
     if (!hasForecast) return undefined;
     const dayOfMonth = now.getDate();
@@ -90,16 +77,14 @@ export function DetailedDashboardClient() {
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline" })}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link>
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={period} onValueChange={value => setPeriod(value as Period)}>
+              <Select value={selectedMonth} onValueChange={setSelectedMonthValue}>
                 <SelectTrigger className="w-44" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
-                <SelectContent><SelectItem value="current">{t("currentMonth")}</SelectItem><SelectItem value="previous">{t("previousMonth")}</SelectItem><SelectItem value="custom">{t("customRange")}</SelectItem></SelectContent>
+                <SelectContent>{availableMonths.map(month => <SelectItem key={month} value={month}>{format(parseISO(`${month}-01`), "MMMM yyyy")}</SelectItem>)}</SelectContent>
               </Select>
-              {period === "custom" && <><Input type="date" className="w-auto" value={customStart} onChange={event => setCustomStart(event.target.value)} aria-label={t("startDate")} /><Input type="date" className="w-auto" value={customEnd} min={customStart} onChange={event => setCustomEnd(event.target.value)} aria-label={t("endDate")} /></>}
-              {(period !== "current" || customStart || customEnd) && <Button variant="ghost" onClick={() => { setPeriod("current"); setCustomStart(""); setCustomEnd(""); }}>{t("resetPeriod")}</Button>}
             </div>
           </div>
           <ShopPageNav shopId={selectedShop.id} active="performance" />
-          <SidebarActions />
+          <SidebarActions activeMonth={selectedMonth} />
 
           <div className="grid gap-3 xl:grid-cols-2">
           <Card className="overflow-hidden">
@@ -109,7 +94,7 @@ export function DetailedDashboardClient() {
               <PerformanceTable
                 actuals={monthlyTotals}
                 targets={monthlyTargets}
-                metricSettings={selectedShop.metricSettings}
+                metricSettings={metricSettings}
                 metricOrder={metrics}
                 forecasts={forecastData}
                 forecastAsOf={hasForecast ? format(now, "PP") : undefined}
@@ -120,7 +105,7 @@ export function DetailedDashboardClient() {
             </CardContent>
           </Card>
 
-          {selectedShop.salesRepresentatives?.length ? <WorkerPerformanceList salesRepresentatives={selectedShop.salesRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} metricSettings={selectedShop.metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
+          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
           </div>
         </div>
       </div>
