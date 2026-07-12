@@ -10,6 +10,11 @@ import {
   Pencil,
   Store,
   Edit,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  CirclePlus,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,7 +35,12 @@ import {
   performanceMetrics,
   type RepPerformanceData,
   Shop,
+  type MetricSettings,
+  getMetricOrder,
+  getInitialTargets,
+  getShopMetrics,
 } from "@/lib/types";
+import { METRIC_WEIGHTS } from "@/lib/data";
 import { AIAssistantDialog } from "./ai-assistant-dialog";
 import { useShop } from "./shop-provider";
 import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "./ui/sidebar";
@@ -39,6 +49,7 @@ import { ManageShopsDialog } from "./manage-shops-dialog";
 import { useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { ScrollArea } from "./ui/scroll-area";
+import { ExcelImportDialog } from "./excel-import-dialog";
 
 export function SidebarActions() {
     const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop } = useShop();
@@ -50,20 +61,25 @@ export function SidebarActions() {
     const isDashboard = !pathname.includes('/shop/');
     
     const performanceData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
-    const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] || {} : {};
+    const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] || getInitialTargets() : getInitialTargets();
+    const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
 
     const latestData = useMemo(() => {
         return performanceData.reduce((acc, day) => {
             day.reps.forEach(rep => {
-                performanceMetrics.forEach(metric => {
+                metrics.forEach(metric => {
                     acc[metric] = (acc[metric] || 0) + rep[metric];
                 });
             });
             return acc;
         }, {} as Record<PerformanceMetric, number>);
-    }, [performanceData]);
+    }, [performanceData, metrics]);
     
-    const [editingTargets, setEditingTargets] = useState<Target>({});
+    const [editingTargets, setEditingTargets] = useState<Target>(getInitialTargets);
+    const [editingMetricSettings, setEditingMetricSettings] = useState<MetricSettings>({});
+    const [editingMetricOrder, setEditingMetricOrder] = useState<PerformanceMetric[]>([...performanceMetrics]);
+    const [weightSortDirection, setWeightSortDirection] = useState<"ascending" | "descending" | null>(null);
+    const [newMetricName, setNewMetricName] = useState("");
     const [isSaving, setIsSaving] = useState(false);
     const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
     const [isAchievementDialogOpen, setIsAchievementDialogOpen] = useState(false);
@@ -74,7 +90,7 @@ export function SidebarActions() {
     const initialRepTotals = useMemo(() => {
         const totals: Record<string, Record<PerformanceMetric, number>> = {};
         (selectedShop?.salesRepresentatives || []).forEach(rep => {
-            totals[rep.id] = performanceMetrics.reduce((acc, metric) => {
+            totals[rep.id] = metrics.reduce((acc, metric) => {
                 acc[metric] = 0;
                 return acc;
             }, {} as Record<PerformanceMetric, number>);
@@ -83,14 +99,14 @@ export function SidebarActions() {
         performanceData.forEach(day => {
             day.reps.forEach(repData => {
                 if (totals[repData.repId]) {
-                    performanceMetrics.forEach(metric => {
+                    metrics.forEach(metric => {
                         totals[repData.repId][metric] += repData[metric];
                     });
                 }
             });
         });
         return totals;
-    }, [performanceData, selectedShop?.salesRepresentatives]);
+    }, [performanceData, selectedShop?.salesRepresentatives, metrics]);
 
     const [editingRepTotals, setEditingRepTotals] = useState<Record<string, Record<PerformanceMetric, number>>>({});
 
@@ -98,8 +114,87 @@ export function SidebarActions() {
         setEditingTargets((prev) => ({ ...prev, [metric]: Number(value) }));
     };
 
+    const getDefaultMetricLabel = (metric: PerformanceMetric) => {
+        if (!metric.startsWith("custom_")) return tMetric(metric);
+        const withoutPrefix = metric.slice("custom_".length).replace(/_\d+$/, "");
+        return withoutPrefix.replace(/_/g, " ");
+    };
+
+    const getSavedMetricLabel = (metric: PerformanceMetric) => selectedShop?.metricSettings?.[metric]?.label?.trim() || getDefaultMetricLabel(metric);
+    const getMetricLabel = (metric: PerformanceMetric) => editingMetricSettings[metric]?.label?.trim() || getSavedMetricLabel(metric);
+
+    const handleMetricSettingChange = (metric: PerformanceMetric, field: "label" | "weight", value: string) => {
+        setEditingMetricSettings(prev => ({
+            ...prev,
+            [metric]: {
+                ...prev[metric],
+                [field]: field === "weight" ? Math.max(0, Number(value)) : value,
+            },
+        }));
+        if (field === "weight") setWeightSortDirection(null);
+    };
+
+    const moveMetric = (metric: PerformanceMetric, direction: -1 | 1) => {
+        setWeightSortDirection(null);
+        setEditingMetricOrder(currentOrder => {
+            const currentIndex = currentOrder.indexOf(metric);
+            const nextIndex = currentIndex + direction;
+            if (currentIndex < 0 || nextIndex < 0 || nextIndex >= currentOrder.length) return currentOrder;
+
+            const nextOrder = [...currentOrder];
+            [nextOrder[currentIndex], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[currentIndex]];
+            return nextOrder;
+        });
+    };
+
+    const sortMetricsByWeight = () => {
+        const nextDirection = weightSortDirection === "descending" ? "ascending" : "descending";
+        setEditingMetricOrder(currentOrder =>
+            [...currentOrder].sort((firstMetric, secondMetric) => {
+                const firstWeight = editingMetricSettings[firstMetric]?.weight ?? METRIC_WEIGHTS[firstMetric];
+                const secondWeight = editingMetricSettings[secondMetric]?.weight ?? METRIC_WEIGHTS[secondMetric];
+                return nextDirection === "descending" ? secondWeight - firstWeight : firstWeight - secondWeight;
+            })
+        );
+        setWeightSortDirection(nextDirection);
+    };
+
+    const addCustomMetric = () => {
+        const label = newMetricName.trim();
+        if (!label) return;
+        const slug = label.toLocaleLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "metric";
+        const metric = `custom_${slug}_${Date.now()}` as PerformanceMetric;
+        setEditingTargets(current => ({ ...current, [metric]: 0 }));
+        setEditingMetricSettings(current => ({ ...current, [metric]: { label, weight: 0.1 } }));
+        setEditingMetricOrder(current => [...current, metric]);
+        setNewMetricName("");
+    };
+
+    const removeCustomMetric = (metric: PerformanceMetric) => {
+        if (!metric.startsWith("custom_")) return;
+        setEditingTargets(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== metric)) as Target);
+        setEditingMetricSettings(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== metric)));
+        setEditingMetricOrder(current => current.filter(key => key !== metric));
+        setEditingRepTotals(current => Object.fromEntries(Object.entries(current).map(([repId, values]) => [
+            repId,
+            Object.fromEntries(Object.entries(values).filter(([key]) => key !== metric)),
+        ])) as Record<string, Record<PerformanceMetric, number>>);
+    };
+
     const onOpenTargetDialog = () => {
         setEditingTargets(monthlyTargets);
+        setEditingMetricSettings(
+            metrics.reduce((settings, metric) => {
+                settings[metric] = {
+                    label: getSavedMetricLabel(metric),
+                    weight: selectedShop?.metricSettings?.[metric]?.weight ?? METRIC_WEIGHTS[metric],
+                };
+                return settings;
+            }, {} as MetricSettings)
+        );
+        setEditingMetricOrder(getMetricOrder(selectedShop?.metricOrder, metrics));
+        setNewMetricName("");
+        setWeightSortDirection(null);
         setIsTargetDialogOpen(true);
     };
 
@@ -107,6 +202,7 @@ export function SidebarActions() {
         if (!selectedShop) return;
         setIsSaving(true);
         await updateMonthlyTargets(selectedShop.id, editingTargets);
+        await updateShop({ ...selectedShop, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder });
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
@@ -184,6 +280,9 @@ export function SidebarActions() {
                 )}
                 {selectedShop && !isDashboard && (
                     <>
+                        <SidebarMenuItem className="px-2">
+                            <ExcelImportDialog />
+                        </SidebarMenuItem>
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogTrigger asChild>
                                 <SidebarMenuItem>
@@ -193,27 +292,120 @@ export function SidebarActions() {
                                     </SidebarMenuButton>
                                 </SidebarMenuItem>
                             </DialogTrigger>
-                            <DialogContent>
+                            <DialogContent className="sm:max-w-3xl">
                             <DialogHeader>
                                 <DialogTitle>{tDialog('setTargetsTitle', {shopName: selectedShop.name})}</DialogTitle>
                                 <DialogDescription>
                                     {tDialog('setTargetsDescription')}
                                 </DialogDescription>
                             </DialogHeader>
-                            <div className="grid grid-cols-2 gap-4 py-4">
-                                {performanceMetrics.map((metric) => (
-                                <div key={metric} className="space-y-2">
-                                    <Label htmlFor={`target-${metric}`}>
-                                        {tMetric(metric)}
-                                    </Label>
-                                    <Input
-                                    id={`target-${metric}`}
-                                    type="number"
-                                    value={editingTargets[metric] || ''}
-                                    onChange={(e) => handleTargetChange(metric, e.target.value)}
-                                    />
-                                </div>
-                                ))}
+                            <div className="flex gap-2">
+                                <Input
+                                    value={newMetricName}
+                                    onChange={event => setNewMetricName(event.target.value)}
+                                    onKeyDown={event => { if (event.key === "Enter") { event.preventDefault(); addCustomMetric(); } }}
+                                    placeholder="New metric name"
+                                    aria-label="New metric name"
+                                />
+                                <Button type="button" variant="outline" onClick={addCustomMetric} disabled={!newMetricName.trim()}>
+                                    <CirclePlus className="mr-2 h-4 w-4" />Add metric
+                                </Button>
+                            </div>
+                            <div className="overflow-x-auto rounded-md border">
+                                <table className="w-full min-w-[700px] text-sm">
+                                    <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+                                        <tr className="border-b">
+                                            <th scope="col" className="px-3 py-2 text-left font-medium">{tDialog('metric')}</th>
+                                            <th scope="col" className="px-3 py-2 text-right font-medium">{tDialog('monthlyTarget')}</th>
+                                            <th
+                                                scope="col"
+                                                aria-sort={weightSortDirection ?? "none"}
+                                                className="px-3 py-2 font-medium"
+                                            >
+                                                <Button
+                                                    type="button"
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    className="ml-auto h-8 gap-1.5 px-2 text-xs uppercase"
+                                                    onClick={sortMetricsByWeight}
+                                                    aria-label={weightSortDirection === "descending" ? tDialog('sortWeightAscending') : tDialog('sortWeightDescending')}
+                                                >
+                                                    {tDialog('weight')}
+                                                    <ArrowUpDown className="h-3.5 w-3.5" />
+                                                </Button>
+                                            </th>
+                                            <th scope="col" className="px-3 py-2 text-center font-medium">{tDialog('position')}</th>
+                                            <th scope="col" className="w-12 px-3 py-2"><span className="sr-only">Remove</span></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {editingMetricOrder.map((metric, index) => (
+                                            <tr key={metric} className="hover:bg-muted/40">
+                                                <td className="px-3 py-2">
+                                                    <Input
+                                                        id={`metric-name-${metric}`}
+                                                        aria-label={`${tDialog('metric')} ${getMetricLabel(metric)}`}
+                                                        value={getMetricLabel(metric)}
+                                                        onChange={(e) => handleMetricSettingChange(metric, "label", e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <Input
+                                                        id={`target-${metric}`}
+                                                        aria-label={`${tDialog('monthlyTarget')} ${getMetricLabel(metric)}`}
+                                                        className="ml-auto max-w-40 text-right tabular-nums"
+                                                        type="number"
+                                                        value={editingTargets[metric] || ''}
+                                                        onChange={(e) => handleTargetChange(metric, e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <Input
+                                                        id={`metric-weight-${metric}`}
+                                                        aria-label={`${tDialog('weight')} ${getMetricLabel(metric)}`}
+                                                        className="ml-auto max-w-28 text-right tabular-nums"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric]}
+                                                        onChange={(e) => handleMetricSettingChange(metric, "weight", e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <div className="flex justify-center gap-1">
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            disabled={index === 0}
+                                                            aria-label={tDialog('moveMetricUp', { metric: getMetricLabel(metric) })}
+                                                            onClick={() => moveMetric(metric, -1)}
+                                                        >
+                                                            <ArrowUp className="h-4 w-4" />
+                                                        </Button>
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="icon"
+                                                            disabled={index === editingMetricOrder.length - 1}
+                                                            aria-label={tDialog('moveMetricDown', { metric: getMetricLabel(metric) })}
+                                                            onClick={() => moveMetric(metric, 1)}
+                                                        >
+                                                            <ArrowDown className="h-4 w-4" />
+                                                        </Button>
+                                                    </div>
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    {metric.startsWith("custom_") && (
+                                                        <Button type="button" variant="ghost" size="icon" className="text-destructive hover:text-destructive" onClick={() => removeCustomMetric(metric)} aria-label={`Remove ${getMetricLabel(metric)}`}>
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </Button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                             <DialogFooter>
                                 <Button onClick={onSaveTargets} disabled={isSaving}>
@@ -250,20 +442,32 @@ export function SidebarActions() {
                                     <AccordionItem key={rep.id} value={rep.name}>
                                         <AccordionTrigger>{rep.name}</AccordionTrigger>
                                         <AccordionContent>
-                                            <div className="grid grid-cols-2 gap-x-4 gap-y-2 p-1">
-                                                {initialRepTotals[rep.id] && performanceMetrics.map((metric) => (
-                                                    <div key={metric} className="grid grid-cols-2 items-center gap-2">
-                                                        <Label htmlFor={`achievement-${rep.id}-${metric}`} className="text-right">
-                                                            {tMetric(metric)}
-                                                        </Label>
-                                                        <Input
-                                                            id={`achievement-${rep.id}-${metric}`}
-                                                            type="number"
-                                                            value={editingRepTotals[rep.id]?.[metric] || ''}
-                                                            onChange={(e) => handleAchievementChange(rep.id, metric, e.target.value)}
-                                                        />
-                                                    </div>
-                                                ))}
+                                            <div className="overflow-x-auto rounded-md border">
+                                                <table className="w-full min-w-[440px] text-sm">
+                                                    <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+                                                        <tr className="border-b">
+                                                            <th scope="col" className="px-3 py-2 text-left font-medium">{tDialog('metric')}</th>
+                                                            <th scope="col" className="px-3 py-2 text-right font-medium">{tDialog('achievement')}</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y">
+                                                        {initialRepTotals[rep.id] && getMetricOrder(selectedShop.metricOrder, metrics).map((metric) => (
+                                                            <tr key={metric} className="hover:bg-muted/40">
+                                                            <th scope="row" className="px-3 py-2 text-left font-medium">{getSavedMetricLabel(metric)}</th>
+                                                                <td className="px-3 py-2">
+                                                                    <Input
+                                                                        id={`achievement-${rep.id}-${metric}`}
+                                                                        aria-label={getSavedMetricLabel(metric)}
+                                                                        className="ml-auto max-w-40 text-right tabular-nums"
+                                                                        type="number"
+                                                                        value={editingRepTotals[rep.id]?.[metric] || ''}
+                                                                        onChange={(e) => handleAchievementChange(rep.id, metric, e.target.value)}
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
                                             </div>
                                         </AccordionContent>
                                     </AccordionItem>

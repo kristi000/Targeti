@@ -1,231 +1,115 @@
-
 "use client";
 
-import { useMemo } from "react";
-import { Trophy, CalendarCheck2, ArrowLeft } from "lucide-react";
-import {
-  type PerformanceMetric,
-  performanceMetrics,
-} from "@/lib/types";
-import { METRIC_CONFIG, METRIC_WEIGHTS } from "@/lib/data";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Header } from "@/components/header";
-import { PerformanceChart } from "@/components/performance-chart";
-import { useShop } from "@/components/shop-provider";
-import { buttonVariants } from "./ui/button";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { cn, calculateTotalAchievement } from "@/lib/utils";
-import { WorkerPerformanceList } from "./worker-performance-list";
-import { useTranslations } from "next-intl";
-import { getDaysInMonth } from "date-fns";
-import { useLocale } from "next-intl";
+import { ArrowLeft, Trophy } from "lucide-react";
+import { endOfMonth, format, getDaysInMonth, isWithinInterval, parseISO, startOfMonth, subMonths } from "date-fns";
+import { useLocale, useTranslations } from "next-intl";
+import { Header } from "@/components/header";
+import { PerformanceTable } from "@/components/performance-table";
+import { WorkerPerformanceList } from "@/components/worker-performance-list";
+import { useShop } from "@/components/shop-provider";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { calculateTotalAchievement, cn } from "@/lib/utils";
+import { getShopMetrics, type PerformanceMetric } from "@/lib/types";
+
+type Period = "current" | "previous" | "custom";
 
 export function DetailedDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
   const t = useTranslations("DetailedDashboard");
-  const tMetric = useTranslations("Metrics");
   const locale = useLocale();
+  const [period, setPeriod] = useState<Period>("current");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
 
-  const performanceData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
+  const allData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
   const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] : undefined;
-
-  const latestDayData = useMemo(() => {
-    return performanceData[performanceData.length - 1] || { reps: [] };
-  }, [performanceData]);
-
-  const latestDataTotals = useMemo(() => {
-    return latestDayData.reps.reduce((acc, rep) => {
-        performanceMetrics.forEach(metric => {
-            acc[metric] = (acc[metric] || 0) + rep[metric];
-        });
-        return acc;
-    }, {} as Record<PerformanceMetric, number>);
-  }, [latestDayData]);
-
-
-  const monthlyTotals = useMemo(
-    () =>
-      performanceData.reduce(
-        (acc, day) => {
-          day.reps.forEach(rep => {
-            performanceMetrics.forEach((metric) => {
-                acc[metric] = (acc[metric] || 0) + rep[metric];
-            });
-          });
-          return acc;
-        },
-        {} as Record<PerformanceMetric, number>
-      ),
-    [performanceData]
-  );
-
-  const monthlyAchievement = useMemo(() => {
-    if (!monthlyTotals || !monthlyTargets) return 0;
-    return calculateTotalAchievement(monthlyTotals, monthlyTargets);
-  }, [monthlyTotals, monthlyTargets]);
-
-  const dailyContribution = useMemo(() => {
-    if (!latestDataTotals || !monthlyTargets) return 0;
-    const weightedContribution = performanceMetrics.reduce((total, metric) => {
-      const value = latestDataTotals[metric] ?? 0;
-      const target = monthlyTargets[metric];
-      const achievementContribution =
-        target > 0 ? (value / target) * 100 : 0;
-      return total + achievementContribution * METRIC_WEIGHTS[metric];
-    }, 0);
-    return weightedContribution;
-  }, [latestDataTotals, monthlyTargets]);
-  
-  const aggregatedData = useMemo(() => {
-    const aggregatedByDay: Record<string, Record<PerformanceMetric, number>> = {};
-    performanceData.forEach(day => {
-        const dayTotals = day.reps.reduce((acc, rep) => {
-            performanceMetrics.forEach(metric => {
-                acc[metric] = (acc[metric] || 0) + rep[metric];
-            });
-            return acc;
-        }, {} as Record<PerformanceMetric, number>);
-        aggregatedByDay[day.date] = dayTotals;
-    });
-    return Object.entries(aggregatedByDay).map(([date, metrics]) => ({ date, ...metrics }));
-  }, [performanceData]);
-  
-  const sortedMetrics = useMemo(() => {
-    return [...performanceMetrics].sort(
-      (a, b) => METRIC_WEIGHTS[b] - METRIC_WEIGHTS[a]
-    );
-  }, []);
-
-  const forecastData = useMemo(() => {
-    const today = new Date();
-    const daysInMonth = getDaysInMonth(today);
-    const dayOfMonth = today.getDate();
-    const forecast: Record<PerformanceMetric, number> = {} as any;
-
-    for (const metric of performanceMetrics) {
-      const currentMonthValue = monthlyTotals[metric] || 0;
-      if (dayOfMonth > 0) {
-        forecast[metric] = (currentMonthValue / dayOfMonth) * daysInMonth;
-      } else {
-        forecast[metric] = 0;
-      }
+  const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
+  const now = new Date();
+  const selectedRange = useMemo(() => {
+    if (period === "current") return { start: startOfMonth(now), end: endOfMonth(now) };
+    if (period === "previous") {
+      const previous = subMonths(now, 1);
+      return { start: startOfMonth(previous), end: endOfMonth(previous) };
     }
-    return forecast;
-  }, [monthlyTotals]);
+    if (!customStart || !customEnd) return null;
+    return { start: parseISO(customStart), end: parseISO(customEnd) };
+  }, [period, customStart, customEnd]);
+
+  const performanceData = useMemo(() => {
+    if (!selectedRange) return [];
+    return allData.filter(day => {
+      const date = parseISO(day.date);
+      return isWithinInterval(date, selectedRange);
+    });
+  }, [allData, selectedRange]);
+
+  const monthlyTotals = useMemo(() => performanceData.reduce((totals, day) => {
+    day.reps.forEach(rep => metrics.forEach(metric => {
+      totals[metric] = (totals[metric] || 0) + (rep[metric] || 0);
+    }));
+    return totals;
+  }, {} as Record<PerformanceMetric, number>), [performanceData, metrics]);
+
+  const monthlyAchievement = monthlyTargets
+    ? calculateTotalAchievement(monthlyTotals, monthlyTargets, selectedShop?.metricSettings)
+    : 0;
+  const hasForecast = period === "current" && performanceData.length >= 2;
+  const forecastData = useMemo(() => {
+    if (!hasForecast) return undefined;
+    const dayOfMonth = now.getDate();
+    const daysInMonth = getDaysInMonth(now);
+    return metrics.reduce((forecast, metric) => {
+      forecast[metric] = dayOfMonth > 0 ? ((monthlyTotals[metric] || 0) / dayOfMonth) * daysInMonth : 0;
+      return forecast;
+    }, {} as Record<PerformanceMetric, number>);
+  }, [hasForecast, monthlyTotals, metrics]);
 
   if (!selectedShop || !monthlyTargets) {
-        return (
-            <div className="flex h-full flex-col">
-                <Header title={t('title')} />
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-                    <Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}>
-                        <ArrowLeft className="mr-2" /> {t('backToOverview')}
-                    </Link>
-                    <p>{t('shopNotFound')}</p>
-                </div>
-            </div>
-        )
+    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex-1 p-4 md:p-6 lg:p-8"><Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
   }
 
   return (
     <div className="flex h-full flex-col">
-       <Header title={`${t('title')}: ${selectedShop.name}`} />
+      <Header title={`${t("title")}: ${selectedShop.name}`} />
       <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
         <div className="space-y-6">
-        <Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }))}>
-          <ArrowLeft className="mr-2" /> {t('backToOverview')}
-        </Link>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>{t('totalPerformance')}</CardTitle>
-                  <CardDescription>{t('overallAchievement')}</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-baseline justify-center gap-2">
-                    <Trophy className="h-10 w-10 text-primary" />
-                    <p className="text-5xl font-bold tracking-tight">
-                      {monthlyAchievement.toFixed(1)}%
-                    </p>
-                  </div>
-                  <Progress value={monthlyAchievement} className="h-3" />
-                  <div className="space-y-4 pt-2">
-                    {sortedMetrics.map((metric) => {
-                      const value = monthlyTotals[metric as PerformanceMetric] ?? 0;
-                      const target = monthlyTargets[metric];
-                      const achievement = target > 0 ? (value / target) * 100 : 0;
-                      const prediction = forecastData[metric];
-                      const predictionPercentage = target > 0 ? (prediction / target) * 100 : 0;
-                      const cappedAchievement = Math.min(achievement, 120);
-                      const { icon: Icon } = METRIC_CONFIG[metric];
-
-                      return (
-                        <div key={metric} className="space-y-2">
-                          <div className="flex items-center justify-between text-sm">
-                            <div className="flex items-center gap-2">
-                              <Icon className="h-4 w-4 text-muted-foreground" />
-                              <span>{tMetric(metric)}</span>
-                            </div>
-                            <div className="flex items-center gap-2 font-medium">
-                              <span>{value}</span>
-                              <span className="text-muted-foreground">/</span>
-                              <span className="text-muted-foreground">
-                                {Math.round(target)}
-                              </span>
-                              <span className="w-16 text-right font-bold text-primary">
-                                {cappedAchievement.toFixed(1)}%
-                              </span>
-                            </div>
-                          </div>
-                          <Progress value={cappedAchievement} className="h-2" />
-                          <div className="text-xs text-muted-foreground text-right">
-                            EOM Prediction: {Math.round(prediction ?? 0)} ({Math.min(predictionPercentage, 120).toFixed(1)}%)
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {performanceData.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>{t('dailyContribution')}</CardTitle>
-                    <CardDescription>{t('contributionToGoal')}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    <div className="flex items-baseline justify-center gap-2">
-                      <CalendarCheck2 className="h-10 w-10 text-primary" />
-                      <p className="text-5xl font-bold tracking-tight">
-                        {dailyContribution.toFixed(1)}%
-                      </p>
-                    </div>
-                      <Progress value={dailyContribution} className="h-3" />
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            <div className="lg:col-span-2 space-y-6">
-              <PerformanceChart data={aggregatedData} targets={monthlyTargets} />
-              {selectedShop.salesRepresentatives && selectedShop.salesRepresentatives.length > 0 && (
-                <WorkerPerformanceList
-                  salesRepresentatives={selectedShop.salesRepresentatives}
-                  performanceData={performanceData}
-                  monthlyTargets={monthlyTargets}
-                />
-              )}
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
+            <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline" })}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={period} onValueChange={value => setPeriod(value as Period)}>
+                <SelectTrigger className="w-44" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="current">{t("currentMonth")}</SelectItem><SelectItem value="previous">{t("previousMonth")}</SelectItem><SelectItem value="custom">{t("customRange")}</SelectItem></SelectContent>
+              </Select>
+              {period === "custom" && <><Input type="date" className="w-auto" value={customStart} onChange={event => setCustomStart(event.target.value)} aria-label={t("startDate")} /><Input type="date" className="w-auto" value={customEnd} min={customStart} onChange={event => setCustomEnd(event.target.value)} aria-label={t("endDate")} /></>}
+              {(period !== "current" || customStart || customEnd) && <Button variant="ghost" onClick={() => { setPeriod("current"); setCustomStart(""); setCustomEnd(""); }}>{t("resetPeriod")}</Button>}
             </div>
           </div>
+
+          <Card>
+            <CardHeader><CardTitle>{t("totalPerformance")}</CardTitle><CardDescription>{t("overallAchievement")}</CardDescription></CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex items-baseline justify-center gap-2"><Trophy className="h-10 w-10 text-primary" /><p className="text-5xl font-bold tracking-tight">{monthlyAchievement.toFixed(1)}%</p></div>
+              <Progress value={monthlyAchievement} className="h-3" />
+              <PerformanceTable
+                actuals={monthlyTotals}
+                targets={monthlyTargets}
+                metricSettings={selectedShop.metricSettings}
+                metricOrder={metrics}
+                forecasts={forecastData}
+                forecastAsOf={hasForecast ? format(now, "PP") : undefined}
+                storageKey={`shop-${selectedShop.id}`}
+                caption={t("performanceTable")}
+              />
+            </CardContent>
+          </Card>
+
+          {selectedShop.salesRepresentatives?.length ? <WorkerPerformanceList salesRepresentatives={selectedShop.salesRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} metricSettings={selectedShop.metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
         </div>
       </div>
     </div>

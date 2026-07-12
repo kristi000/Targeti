@@ -46,7 +46,7 @@ export function AIAssistantDialog({
     const dailyDataInput = performanceMetrics.reduce((acc, metric) => {
       acc[metric] = dailyData[metric] || 0;
       return acc;
-    }, {} as Record<string, number>);
+    }, {} as Target);
 
     const analysisResult = await handleAnalyzePerformanceData({
       dailyData: dailyDataInput,
@@ -54,7 +54,7 @@ export function AIAssistantDialog({
     });
     setLoading(false);
 
-    if (analysisResult.success) {
+    if (analysisResult.success && analysisResult.data) {
       setResult(analysisResult.data);
     } else {
       toast({

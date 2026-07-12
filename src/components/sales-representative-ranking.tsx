@@ -12,7 +12,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import {
   type PerformanceMetric,
-  performanceMetrics,
+  getShopMetrics,
   type Target,
   type SalesRepresentative,
 } from "@/lib/types";
@@ -43,11 +43,12 @@ export function SalesRepresentativeRanking() {
       const monthlyTargets = allMonthlyTargets[shop.id];
 
       if (!monthlyTargets || performanceData.length === 0) return;
+      const metrics = getShopMetrics(shop, monthlyTargets);
 
       // Simplified calculation - only process if we have data
       const repTotals: Record<string, Record<PerformanceMetric, number>> = {};
       salesRepresentatives.forEach(rep => {
-        repTotals[rep.id] = performanceMetrics.reduce((acc, metric) => {
+        repTotals[rep.id] = metrics.reduce((acc, metric) => {
           acc[metric] = 0;
           return acc;
         }, {} as Record<PerformanceMetric, number>);
@@ -57,21 +58,21 @@ export function SalesRepresentativeRanking() {
       performanceData.forEach(day => {
         day.reps.forEach(repData => {
           if (repTotals[repData.repId]) {
-            performanceMetrics.forEach(metric => {
+            metrics.forEach(metric => {
               repTotals[repData.repId][metric] += repData[metric] || 0;
             });
           }
         });
       });
 
-      const repTargets: Target = performanceMetrics.reduce((acc, metric) => {
+      const repTargets: Target = metrics.reduce((acc, metric) => {
         acc[metric] = monthlyTargets[metric] / salesRepresentatives.length;
         return acc;
       }, {} as Record<PerformanceMetric, number>);
 
       salesRepresentatives.forEach((rep) => {
         const currentTotals = repTotals[rep.id];
-        const achievement = calculateTotalAchievement(currentTotals, repTargets);
+        const achievement = calculateTotalAchievement(currentTotals, repTargets, shop.metricSettings);
         
         // Simplified forecast calculation
         const forecastAchievement = dayOfMonth > 0 

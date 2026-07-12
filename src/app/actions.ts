@@ -42,7 +42,7 @@ export async function handleGenerateWhatsappMessage(
   }
 }
 
-export async function handleSaveTargets(shopId: string, targets: Record<string, number>) {
+export async function handleSaveTargets(shopId: string, targets: Target) {
   try {
     const shopRef = doc(db, "shops", shopId);
     await updateDoc(shopRef, { monthlyTargets: targets });
@@ -183,7 +183,9 @@ export async function handleUpdateShop(shop: Shop) {
         await updateDoc(shopRef, {
             name: shop.name,
             description: shop.description,
-            salesRepresentatives: shop.salesRepresentatives
+            salesRepresentatives: shop.salesRepresentatives,
+            metricSettings: shop.metricSettings,
+            metricOrder: shop.metricOrder,
         });
         return { success: true, data: shop };
     } catch (error) {
@@ -243,7 +245,9 @@ export async function fetchShops(): Promise<Shop[]> {
                 name: data.name,
                 description: data.description,
                 salesRepresentatives: data.salesRepresentatives,
-                monthlyTargets: data.monthlyTargets,
+            monthlyTargets: data.monthlyTargets,
+            metricSettings: data.metricSettings,
+            metricOrder: data.metricOrder,
             });
         });
         return shops;

@@ -18,7 +18,6 @@ import { Label } from "@/components/ui/label";
 import { PlusCircle, Trash2, Edit, X } from "lucide-react";
 import { useShop } from "./shop-provider";
 import { type Shop, type SalesRepresentative } from "@/lib/types";
-import { Card, CardContent } from "./ui/card";
 import { ScrollArea } from "./ui/scroll-area";
 import {
   AlertDialog,
@@ -148,25 +147,40 @@ export function ManageShopsDialog({
                                     <Label>{t('salesReps')}</Label>
                                     <Button size="sm" variant="outline" onClick={handleAddSalesRepresentative}><PlusCircle className="mr-2 h-4 w-4" />{t('add')}</Button>
                                 </div>
-                                <ScrollArea className="h-40 rounded-md border p-2">
-                                    <div className="space-y-2">
+                                <ScrollArea className="h-40 rounded-md border">
                                         {(currentEditingShop.salesRepresentatives || []).length > 0 ? (
-                                            currentEditingShop.salesRepresentatives?.map((salesRepresentative, index) => (
-                                                <div key={salesRepresentative.id} className="flex items-center gap-2">
-                                                    <Input
-                                                        value={salesRepresentative.name}
-                                                        onChange={(e) => handleSalesRepresentativeChange(index, e.target.value)}
-                                                        placeholder={`Sales Representative #${index + 1}`}
-                                                    />
-                                                    <Button variant="ghost" size="icon" onClick={() => handleRemoveSalesRepresentative(index)}>
-                                                        <Trash2 className="h-4 w-4 text-destructive" />
-                                                    </Button>
-                                                </div>
-                                            ))
+                                            <table className="w-full text-sm">
+                                                <thead className="sticky top-0 bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+                                                    <tr className="border-b">
+                                                        <th scope="col" className="w-12 px-3 py-2 text-left font-medium">#</th>
+                                                        <th scope="col" className="px-3 py-2 text-left font-medium">{t('salesReps')}</th>
+                                                        <th scope="col" className="w-12 px-3 py-2"><span className="sr-only">{t('actions')}</span></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y">
+                                                    {currentEditingShop.salesRepresentatives?.map((salesRepresentative, index) => (
+                                                        <tr key={salesRepresentative.id} className="hover:bg-muted/40">
+                                                            <td className="px-3 py-2 tabular-nums text-muted-foreground">{index + 1}</td>
+                                                            <td className="px-3 py-2">
+                                                                <Input
+                                                                    aria-label={`${t('salesReps')} ${index + 1}`}
+                                                                    value={salesRepresentative.name}
+                                                                    onChange={(e) => handleSalesRepresentativeChange(index, e.target.value)}
+                                                                    placeholder={`Sales Representative #${index + 1}`}
+                                                                />
+                                                            </td>
+                                                            <td className="px-3 py-2">
+                                                                <Button variant="ghost" size="icon" aria-label={t('delete')} onClick={() => handleRemoveSalesRepresentative(index)}>
+                                                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                                                </Button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
                                         ) : (
                                             <p className="text-sm text-muted-foreground text-center py-4">{t('noSalesReps')}</p>
                                         )}
-                                    </div>
                                  </ScrollArea>
                             </div>
                         </div>
@@ -197,21 +211,28 @@ export function ManageShopsDialog({
                             <div className="space-y-4">
                                  <h3 className="font-semibold">{t('allShops')}</h3>
                                  <ScrollArea className="h-48 md:h-72">
-                                    <div className="space-y-2 pr-4">
+                                    <div className="overflow-x-auto rounded-md border">
+                                    <table className="w-full min-w-[460px] text-sm">
+                                        <thead className="sticky top-0 bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
+                                            <tr className="border-b">
+                                                <th scope="col" className="px-3 py-2 text-left font-medium">{t('shopName')}</th>
+                                                <th scope="col" className="px-3 py-2 text-left font-medium">{t('description')}</th>
+                                                <th scope="col" className="w-24 px-3 py-2 text-right font-medium">{t('actions')}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y">
                                     {shops.map((shop) => (
-                                        <Card key={shop.id}>
-                                            <CardContent className="p-3 flex justify-between items-center">
-                                                <div>
-                                                    <p className="font-semibold">{shop.name}</p>
-                                                    <p className="text-sm text-muted-foreground">{shop.description}</p>
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    <Button variant="ghost" size="icon" onClick={() => setEditingShop(shop)}>
+                                        <tr key={shop.id} className="hover:bg-muted/40">
+                                            <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">{shop.name}</th>
+                                            <td className="px-3 py-2 text-muted-foreground">{shop.description}</td>
+                                            <td className="px-3 py-2">
+                                                <div className="flex justify-end gap-1">
+                                                    <Button variant="ghost" size="icon" aria-label={t('edit')} onClick={() => setEditingShop(shop)}>
                                                         <Edit className="h-4 w-4" />
                                                     </Button>
                                                     <AlertDialog>
                                                       <AlertDialogTrigger asChild>
-                                                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                                                        <Button variant="ghost" size="icon" aria-label={t('delete')} className="text-destructive hover:text-destructive">
                                                             <Trash2 className="h-4 w-4" />
                                                         </Button>
                                                       </AlertDialogTrigger>
@@ -229,9 +250,11 @@ export function ManageShopsDialog({
                                                       </AlertDialogContent>
                                                     </AlertDialog>
                                                 </div>
-                                            </CardContent>
-                                        </Card>
+                                            </td>
+                                        </tr>
                                     ))}
+                                        </tbody>
+                                    </table>
                                     </div>
                                  </ScrollArea>
                             </div>

@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { type PerformanceMetric } from "@/lib/types";
 import { METRIC_CONFIG } from "@/lib/data";
-import type { LucideIcon } from "lucide-react";
+import { Gauge, type LucideIcon } from "lucide-react";
 
 type StatsCardProps = {
   metric: PerformanceMetric | 'total';
@@ -27,7 +27,11 @@ export function StatsCard({
   caption,
   timeframe
 }: StatsCardProps) {
-  const config = metric === 'total' ? { label, icon } : METRIC_CONFIG[metric];
+  const config = metric === 'total'
+    ? { label, icon }
+    : metric in METRIC_CONFIG
+      ? METRIC_CONFIG[metric as keyof typeof METRIC_CONFIG]
+      : { label, icon: Gauge };
   if (!config || !config.icon) return null;
 
   const { icon: Icon, label: configLabel } = config;

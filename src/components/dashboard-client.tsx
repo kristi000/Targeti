@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import {
   type PerformanceData,
-  performanceMetrics,
+  getShopMetrics,
   type PerformanceMetric,
 } from "@/lib/types";
 import { Header } from "@/components/header";
@@ -78,14 +78,15 @@ export function DashboardClient() {
         }
 
         // Calculate monthly totals more efficiently
-        const monthlyTotals = performanceMetrics.reduce((acc, metric) => {
+        const metrics = getShopMetrics(shop, monthlyTargets);
+        const monthlyTotals = metrics.reduce((acc, metric) => {
           acc[metric] = performanceData.reduce((sum, day) => {
             return sum + day.reps.reduce((repSum, rep) => repSum + (rep[metric] || 0), 0);
           }, 0);
           return acc;
         }, {} as Record<PerformanceMetric, number>);
 
-        const totalAchievement = calculateTotalAchievement(monthlyTotals, monthlyTargets);
+        const totalAchievement = calculateTotalAchievement(monthlyTotals, monthlyTargets, shop.metricSettings);
         
         // Simplified forecast calculation
         const forecastAchievement = dayOfMonth > 0 

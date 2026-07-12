@@ -98,7 +98,7 @@ export class LocalDataManager {
       };
       
       this.saveShop(sampleShop);
-      this.saveTargets(sampleShop.id, sampleShop.monthlyTargets);
+      this.saveTargets(sampleShop.id, sampleShop.monthlyTargets!);
       this.savePerformanceData(sampleShop.id, []);
     }
   }
