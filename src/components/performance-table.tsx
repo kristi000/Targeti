@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Gauge, RotateCcw } from "lucide-react";
@@ -13,6 +13,7 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useLocale, useTranslations } from "next-intl";
+import { getCustomMetricLabel } from "@/lib/metric-definitions";
 
 type Column = "metric" | "target" | "actual" | "achievement" | "forecast";
 type SortState = { column: Column; direction: "ascending" | "descending" } | null;
@@ -24,6 +25,14 @@ const DEFAULT_WIDTHS: Record<Column, number> = {
   actual: 120,
   achievement: 260,
   forecast: 170,
+};
+
+const COMPACT_WIDTHS: Record<Column, number> = {
+  metric: 140,
+  target: 55,
+  actual: 55,
+  achievement: 150,
+  forecast: 0,
 };
 
 const statusStyles = (achievement: number) => achievement >= 100
@@ -42,6 +51,7 @@ type PerformanceTableProps = {
   storageKey: string;
   caption: string;
   simplified?: boolean;
+  compact?: boolean;
 };
 
 export function PerformanceTable({
@@ -54,6 +64,7 @@ export function PerformanceTable({
   storageKey,
   caption,
   simplified = false,
+  compact = false,
 }: PerformanceTableProps) {
   const t = useTranslations("DetailedDashboard");
   const tMetric = useTranslations("Metrics");
@@ -77,8 +88,10 @@ export function PerformanceTable({
     localStorage.setItem(storageId, JSON.stringify(next));
   };
 
-  const metricLabel = (metric: PerformanceMetric) => metricSettings?.[metric]?.label?.trim() || (metric.startsWith("custom_") ? metric.slice(7) : tMetric(metric));
-  const columns: Column[] = simplified
+  const metricLabel = (metric: PerformanceMetric) => metric.startsWith("custom_") ? getCustomMetricLabel(metric, metricSettings) : tMetric(metric);
+  const columns: Column[] = compact
+    ? ["metric", "target", "actual", "achievement"]
+    : simplified
     ? ["metric", "target", "actual", "achievement"]
     : ["metric", "target", "actual", "achievement", "forecast"];
   const labels: Record<Column, string> = {
@@ -171,29 +184,29 @@ export function PerformanceTable({
     );
     return (
       <tr key={metric} className="hover:bg-muted/40">
-        <th scope="row" className="px-3 py-3 text-left font-medium"><span className="flex items-center gap-2"><Icon className="h-4 w-4 text-muted-foreground" />{metricLabel(metric)}</span></th>
-        <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{Math.round(target)}</td>
-        <td className="px-3 py-3 text-right tabular-nums">{actual}</td>
-        <td className={cn("px-3 py-3 text-right font-semibold tabular-nums", statusStyles(achievement))}>
-          {simplified ? Math.min(achievement, 120).toFixed(1) + "%" : <div className="flex items-center gap-2"><Progress value={Math.min(achievement, 120)} className="h-2 flex-1" /><span className="w-14">{Math.min(achievement, 120).toFixed(1)}%</span></div>}
+        <th scope="row" className={cn("px-2 text-left font-medium", compact ? "py-1" : "py-3")}><span className="flex items-center gap-1.5"><Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /><span className="truncate">{metricLabel(metric)}</span></span></th>
+        <td className={cn("text-right tabular-nums text-muted-foreground", compact ? "px-2 py-1" : "px-3 py-3")}>{Math.round(target)}</td>
+        <td className={cn("px-2 text-right tabular-nums", compact ? "py-1" : "py-3")}>{actual}</td>
+        <td className={cn("px-2 text-right font-semibold tabular-nums", compact ? "py-1" : "py-3", statusStyles(achievement))}>
+          {simplified ? Math.min(achievement, 120).toFixed(1) + "%" : <div className="flex items-center gap-2"><Progress value={achievement} max={120} markerValue={100} className="h-2 flex-1" /><span className="w-14">{Math.min(achievement, 120).toFixed(1)}%</span></div>}
         </td>
-        {!simplified && <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{forecast === undefined ? t("notAvailable") : <>{Math.round(forecast)} <span className="text-xs">({Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)</span></>}</td>}
+        {!simplified && !compact && <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{forecast === undefined ? t("notAvailable") : <>{Math.round(forecast)} <span className="text-xs">({Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)</span></>}</td>}
       </tr>
     );
   };
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
+      {!compact && <div className="flex items-center justify-between gap-3">
         {!simplified && <p className="text-xs text-muted-foreground">{forecastAsOf ? t("forecastAsOf", { date: forecastAsOf }) : t("forecastUnavailable")}</p>}
         <Button type="button" variant="ghost" size="sm" className="ml-auto gap-2" onClick={reset}><RotateCcw className="h-4 w-4" />{t("resetTable")}</Button>
-      </div>
+      </div>}
       <div className="grid gap-3 md:hidden">{metrics.map(metric => renderValues(metric, true))}</div>
       <div className="hidden overflow-x-auto rounded-md border md:block">
-        <table className="w-full min-w-[700px] table-fixed text-sm">
+        <table className={cn("w-full table-fixed text-sm", compact ? "min-w-[385px] text-xs" : "min-w-[700px]")}>
           <caption className="sr-only">{caption}</caption>
           <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground"><tr className="border-b">
-            {columns.map(column => <th key={column} scope="col" aria-sort={preferences.sort?.column === column ? preferences.sort.direction : "none"} style={{ width: preferences.widths[column] }} className="group relative px-3 py-2 font-medium"><button type="button" className={cn("flex w-full items-center gap-1.5 hover:text-foreground", column === "metric" || column === "achievement" ? "justify-start" : "justify-end")} onClick={() => toggleSort(column)}>{labels[column]}{sortIcon(column)}</button><span role="separator" aria-orientation="vertical" aria-label={t("resizeColumn", { column: labels[column] })} className="absolute inset-y-1 right-0 w-1 cursor-col-resize touch-none rounded bg-border opacity-0 group-hover:opacity-100" onPointerDown={event => startResize(column, event)} /></th>)}
+            {columns.map(column => <th key={column} scope="col" aria-sort={preferences.sort?.column === column ? preferences.sort.direction : "none"} style={{ width: compact ? COMPACT_WIDTHS[column] : preferences.widths[column] }} className={cn("group relative px-2 font-medium", compact ? "py-1" : "py-2")}><button type="button" className={cn("flex w-full items-center gap-1 hover:text-foreground", column === "metric" || column === "achievement" ? "justify-start" : "justify-end")} onClick={() => toggleSort(column)}>{labels[column]}{sortIcon(column)}</button>{!compact && <span role="separator" aria-orientation="vertical" aria-label={t("resizeColumn", { column: labels[column] })} className="absolute inset-y-1 right-0 w-1 cursor-col-resize touch-none rounded bg-border opacity-0 group-hover:opacity-100" onPointerDown={event => startResize(column, event)} />}</th>)}
           </tr></thead>
           <tbody className="divide-y">{metrics.map(metric => renderValues(metric))}</tbody>
         </table>

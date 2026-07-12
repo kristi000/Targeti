@@ -15,6 +15,7 @@ const numericRecordSchema = z.object({
 }).catchall(z.number().finite().nonnegative());
 const importedWorkbookSchema = z.object({
   shopName: z.string().trim().min(1),
+  revenue: z.number().finite().nonnegative(),
   date: z.string().date(),
   targets: numericRecordSchema,
   representatives: z.array(z.object({
@@ -28,7 +29,12 @@ export type ImportedWorkbookData = z.infer<typeof importedWorkbookSchema>;
 type Cell = string | number | boolean | Date | null | undefined;
 
 function normalize(value: Cell) {
-  return String(value ?? "").trim().replace(/\s+/g, " ").toLocaleLowerCase();
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/[_\s]+/g, " ")
+    .toLocaleLowerCase();
 }
 
 function numberValue(value: Cell) {
@@ -69,6 +75,14 @@ function parseWorkbook(workbook: WorkBook, customMetricLabels: Partial<Record<Pe
   const shopValues = rows[shopHeaderRowIndex + 1] ?? [];
   const shopNameColumn = shopHeaders.findIndex(cell => normalize(cell) === normalize("SHOP_EPOS"));
   const shopName = String(shopValues[shopNameColumn] ?? "").trim();
+  const revenueColumn = shopHeaders.findIndex(cell => {
+    const header = normalize(cell);
+    return header === "vlera e te ardhurave"
+      || header === "vlera e ardhurave"
+      || header === "vlera e te ardhurave 1mujore a";
+  });
+  if (revenueColumn < 0) throw new Error("Missing shop revenue column: Vlera e te Ardhurave_ 1Mujore A");
+  const revenue = numberValue(shopValues[revenueColumn]);
 
   const customMetricEntries = Object.entries(customMetricLabels).filter(
     (entry): entry is [PerformanceMetric, string] => typeof entry[1] === "string" && entry[1].trim().length > 0,
@@ -122,6 +136,7 @@ function parseWorkbook(workbook: WorkBook, customMetricLabels: Partial<Record<Pe
 
   return importedWorkbookSchema.parse({
     shopName,
+    revenue,
     date: latestDate.toISOString().slice(0, 10),
     targets: Object.fromEntries(importedMetrics.map(metric => [metric, numberValue(shopValues[targetColumns[metric]])])),
     representatives,

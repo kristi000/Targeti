@@ -3,7 +3,6 @@
 
 import { useState, useMemo } from "react";
 import {
-  Bot,
   Settings,
   Check,
   Loader2,
@@ -15,6 +14,7 @@ import {
   ArrowUpDown,
   CirclePlus,
   Trash2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -41,9 +41,7 @@ import {
   getShopMetrics,
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
-import { AIAssistantDialog } from "./ai-assistant-dialog";
 import { useShop } from "./shop-provider";
-import { SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "./ui/sidebar";
 import { usePathname } from "next/navigation";
 import { ManageShopsDialog } from "./manage-shops-dialog";
 import { useTranslations } from "next-intl";
@@ -64,20 +62,10 @@ export function SidebarActions() {
     const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] || getInitialTargets() : getInitialTargets();
     const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
 
-    const latestData = useMemo(() => {
-        return performanceData.reduce((acc, day) => {
-            day.reps.forEach(rep => {
-                metrics.forEach(metric => {
-                    acc[metric] = (acc[metric] || 0) + rep[metric];
-                });
-            });
-            return acc;
-        }, {} as Record<PerformanceMetric, number>);
-    }, [performanceData, metrics]);
-    
     const [editingTargets, setEditingTargets] = useState<Target>(getInitialTargets);
     const [editingMetricSettings, setEditingMetricSettings] = useState<MetricSettings>({});
     const [editingMetricOrder, setEditingMetricOrder] = useState<PerformanceMetric[]>([...performanceMetrics]);
+    const [editingRepTargets, setEditingRepTargets] = useState<Record<string, Target>>({});
     const [weightSortDirection, setWeightSortDirection] = useState<"ascending" | "descending" | null>(null);
     const [newMetricName, setNewMetricName] = useState("");
     const [isSaving, setIsSaving] = useState(false);
@@ -86,6 +74,9 @@ export function SidebarActions() {
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
+    const activeMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
+    const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
+    const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
 
     const initialRepTotals = useMemo(() => {
         const totals: Record<string, Record<PerformanceMetric, number>> = {};
@@ -96,7 +87,7 @@ export function SidebarActions() {
             }, {} as Record<PerformanceMetric, number>);
         });
 
-        performanceData.forEach(day => {
+        performanceData.filter(day => day.date.startsWith(activeMonth)).forEach(day => {
             day.reps.forEach(repData => {
                 if (totals[repData.repId]) {
                     metrics.forEach(metric => {
@@ -106,7 +97,7 @@ export function SidebarActions() {
             });
         });
         return totals;
-    }, [performanceData, selectedShop?.salesRepresentatives, metrics]);
+    }, [performanceData, selectedShop?.salesRepresentatives, metrics, activeMonth]);
 
     const [editingRepTotals, setEditingRepTotals] = useState<Record<string, Record<PerformanceMetric, number>>>({});
 
@@ -193,16 +184,17 @@ export function SidebarActions() {
             }, {} as MetricSettings)
         );
         setEditingMetricOrder(getMetricOrder(selectedShop?.metricOrder, metrics));
+        setEditingRepTargets(selectedShop?.monthlyData?.[activeMonth]?.representativeTargets ?? Object.fromEntries((selectedShop?.salesRepresentatives ?? []).map(rep => [rep.id, Object.fromEntries(metrics.map(metric => [metric, monthlyTargets[metric] / Math.max(selectedShop?.salesRepresentatives?.length ?? 1, 1)])) as Target])));
         setNewMetricName("");
         setWeightSortDirection(null);
         setIsTargetDialogOpen(true);
     };
 
     const onSaveTargets = async () => {
-        if (!selectedShop) return;
+        if (!selectedShop || !weightsValid) return;
         setIsSaving(true);
         await updateMonthlyTargets(selectedShop.id, editingTargets);
-        await updateShop({ ...selectedShop, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder });
+        await updateShop({ ...selectedShop, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { collection: selectedShop.monthlyData?.[activeMonth]?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representativeTargets: editingRepTargets, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder } } });
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
@@ -233,7 +225,7 @@ export function SidebarActions() {
         }));
 
         const newPerformanceDataEntry: PerformanceData = {
-            date: new Date().toISOString().split("T")[0],
+            date: `${activeMonth}-01`,
             reps: repsData
         };
 
@@ -269,30 +261,26 @@ export function SidebarActions() {
         
     return (
         <>
-            <SidebarMenu>
+            <div className="flex flex-wrap items-center gap-2">
                 {isDashboard && (
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={handleOpenManageShops}>
-                            <Store />
+                    <Button type="button" variant="outline" size="sm" onClick={handleOpenManageShops}>
+                            <Store className="mr-2 h-4 w-4" />
                             <span>{t('manageShops')}</span>
-                        </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    </Button>
                 )}
                 {selectedShop && !isDashboard && (
                     <>
-                        <SidebarMenuItem className="px-2">
+                        <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
                             <ExcelImportDialog />
-                        </SidebarMenuItem>
+                        </div>
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogTrigger asChild>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton onClick={onOpenTargetDialog}>
-                                        <Settings />
+                                    <Button type="button" variant="outline" size="sm" onClick={onOpenTargetDialog}>
+                                        <Settings className="mr-2 h-4 w-4" />
                                         <span>{t('setMonthlyTargets')}</span>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
+                                    </Button>
                             </DialogTrigger>
-                            <DialogContent className="sm:max-w-3xl">
+                            <DialogContent className="sm:max-w-2xl">
                             <DialogHeader>
                                 <DialogTitle>{tDialog('setTargetsTitle', {shopName: selectedShop.name})}</DialogTitle>
                                 <DialogDescription>
@@ -407,8 +395,18 @@ export function SidebarActions() {
                                     </tbody>
                                 </table>
                             </div>
+                            <div className={`flex items-center gap-2 rounded-md border p-3 text-sm ${weightsValid ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300" : "border-destructive/40 bg-destructive/5 text-destructive"}`}>
+                                {!weightsValid && <AlertTriangle className="h-4 w-4 shrink-0" />}
+                                KPI weights total {(weightTotal * 100).toFixed(1)}%. They must total exactly 100% before saving.
+                            </div>
+                            <Accordion type="single" collapsible className="rounded-md border px-3">
+                                <AccordionItem value="representative-targets" className="border-0">
+                                    <AccordionTrigger>Individual representative targets</AccordionTrigger>
+                                    <AccordionContent><div className="space-y-4">{(selectedShop.salesRepresentatives ?? []).map(rep => <div key={rep.id}><p className="mb-2 font-medium">{rep.name}</p><div className="grid gap-2 sm:grid-cols-2">{editingMetricOrder.map(metric => <Label key={metric} className="grid grid-cols-[1fr_8rem] items-center gap-2 text-xs"><span className="truncate">{getMetricLabel(metric)}</span><Input type="number" className="text-right" value={editingRepTargets[rep.id]?.[metric] ?? ""} onChange={event => setEditingRepTargets(current => ({ ...current, [rep.id]: { ...current[rep.id], [metric]: Number(event.target.value) } }))} /></Label>)}</div></div>)}</div></AccordionContent>
+                                </AccordionItem>
+                            </Accordion>
                             <DialogFooter>
-                                <Button onClick={onSaveTargets} disabled={isSaving}>
+                                <Button onClick={onSaveTargets} disabled={isSaving || !weightsValid}>
                                 {isSaving ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 ) : (
@@ -422,21 +420,19 @@ export function SidebarActions() {
 
                         <Dialog open={isAchievementDialogOpen} onOpenChange={setIsAchievementDialogOpen}>
                             <DialogTrigger asChild>
-                                <SidebarMenuItem>
-                                    <SidebarMenuButton onClick={onOpenAchievementDialog}>
-                                        <Pencil />
+                                    <Button type="button" variant="outline" size="sm" onClick={onOpenAchievementDialog}>
+                                        <Pencil className="mr-2 h-4 w-4" />
                                         <span>{t('editAchievements')}</span>
-                                    </SidebarMenuButton>
-                                </SidebarMenuItem>
+                                    </Button>
                             </DialogTrigger>
-                            <DialogContent className="max-w-2xl">
+                            <DialogContent className="sm:max-w-xl">
                             <DialogHeader>
                                 <DialogTitle>{tDialog('editAchievementsTitle', {shopName: selectedShop.name})}</DialogTitle>
                                 <DialogDescription>
                                 {tDialog('editAchievementsDescription')}
                                 </DialogDescription>
                             </DialogHeader>
-                            <ScrollArea className="h-[60vh] pr-6">
+                            <ScrollArea className="h-[48vh] pr-4">
                             <Accordion type="single" collapsible className="w-full">
                                 {(selectedShop.salesRepresentatives || []).map(rep => (
                                     <AccordionItem key={rep.id} value={rep.name}>
@@ -487,26 +483,13 @@ export function SidebarActions() {
                             </DialogContent>
                         </Dialog>
                         
-                        <AIAssistantDialog
-                            dailyData={latestData}
-                            monthlyTarget={monthlyTargets}
-                            >
-                            <SidebarMenuItem>
-                                <SidebarMenuButton>
-                                    <Bot />
-                                    <span>{t('aiAssistant')}</span>
-                                </SidebarMenuButton>
-                            </SidebarMenuItem>
-                        </AIAssistantDialog>
-                        <SidebarMenuItem>
-                                <SidebarMenuButton onClick={handleOpenEditShop}>
-                                    <Edit />
+                                <Button type="button" variant="outline" size="sm" onClick={handleOpenEditShop}>
+                                    <Edit className="mr-2 h-4 w-4" />
                                     <span>{t('editShop')}</span>
-                                </SidebarMenuButton>
-                            </SidebarMenuItem>
+                                </Button>
                     </>
                 )}
-            </SidebarMenu>
+            </div>
             
             <ManageShopsDialog
                 isManagementDialogOpen={isManagementDialogOpen}

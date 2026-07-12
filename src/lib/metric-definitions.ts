@@ -1,4 +1,10 @@
-import type { PerformanceMetric, Target } from "@/lib/types";
+import type { MetricSettings, PerformanceMetric, Target } from "@/lib/types";
+
+export function getCustomMetricLabel(metric: PerformanceMetric, metricSettings?: MetricSettings) {
+  const configuredLabel = metricSettings?.[metric]?.label?.trim();
+  if (configuredLabel) return configuredLabel;
+  return metric.slice("custom_".length).replace(/_\d+$/, "").replace(/_/g, " ");
+}
 
 export const EXCEL_METRIC_LABELS: Record<PerformanceMetric, string> = {
   newSim: "Numra te rinj te shendetshem perfshire bartjet",

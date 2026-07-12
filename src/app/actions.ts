@@ -1,45 +1,13 @@
 
 "use server";
 
-import {
-  analyzePerformanceData,
-  type AnalyzePerformanceDataInput,
-} from "@/ai/flows/analyze-performance-data";
-import {
-  generateWhatsappMessage,
-  type GenerateWhatsappMessageInput,
-} from "@/ai/flows/generate-whatsapp-message";
-import { type PerformanceData, type Target, type Shop, type RepPerformanceData, getInitialTargets } from "@/lib/types";
+import { type PerformanceData, type Target, type Shop, type BonusSnapshot, getInitialTargets } from "@/lib/types";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, getDoc } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, runTransaction } from "firebase/firestore";
 
 // Ensure Firebase is initialized
 if (!db) {
   throw new Error("Firebase database not initialized. Please check your configuration.");
-}
-
-export async function handleAnalyzePerformanceData(
-  input: AnalyzePerformanceDataInput
-) {
-  try {
-    const result = await analyzePerformanceData(input);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error analyzing performance data:", error);
-    return { success: false, error: "Failed to analyze performance data." };
-  }
-}
-
-export async function handleGenerateWhatsappMessage(
-  input: GenerateWhatsappMessageInput
-) {
-  try {
-    const result = await generateWhatsappMessage(input);
-    return { success: true, data: result };
-  } catch (error) {
-    console.error("Error generating WhatsApp message:", error);
-    return { success: false, error: "Failed to generate message." };
-  }
 }
 
 export async function handleSaveTargets(shopId: string, targets: Target) {
@@ -71,10 +39,6 @@ export async function handleSavePerformanceData(shopId: string, data: Performanc
         const batch = writeBatch(db);
         const performanceCollectionRef = collection(db, "shops", shopId, "performance");
         
-        // Clear existing data for simplicity, or implement more complex update logic
-        const existingDocs = await getDocs(performanceCollectionRef);
-        existingDocs.forEach(doc => batch.delete(doc.ref));
-
         data.forEach(performanceEntry => {
             const docRef = doc(performanceCollectionRef, performanceEntry.date);
             batch.set(docRef, performanceEntry);
@@ -90,7 +54,9 @@ export async function handleSavePerformanceData(shopId: string, data: Performanc
             console.log("Falling back to local storage for performance data...");
             const { localDataManager } = await import('@/lib/local-storage');
             
-            localDataManager.savePerformanceData(shopId, data);
+            const merged = new Map(localDataManager.getPerformanceData(shopId).map(item => [item.date, item]));
+            data.forEach(item => merged.set(item.date, item));
+            localDataManager.savePerformanceData(shopId, [...merged.values()].sort((a, b) => a.date.localeCompare(b.date)));
             console.log("Performance data saved to local storage for shop:", shopId);
             
             return { success: true, data, fallback: true };
@@ -99,6 +65,24 @@ export async function handleSavePerformanceData(shopId: string, data: Performanc
             return { success: false, error: "Failed to save performance data" };
         }
     }
+}
+
+export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot) {
+    const snapshotRef = doc(db, "shops", shopId, "bonusSnapshots", snapshot.month);
+    try {
+        await runTransaction(db, async transaction => {
+            if ((await transaction.get(snapshotRef)).exists()) throw new Error("ALREADY_FINALIZED");
+            transaction.set(snapshotRef, JSON.parse(JSON.stringify(snapshot)) as BonusSnapshot);
+        });
+        return { success: true, data: snapshot };
+    } catch (error) {
+        return { success: false, error: error instanceof Error && error.message === "ALREADY_FINALIZED" ? "This month has already been finalized." : "Could not save the payroll snapshot." };
+    }
+}
+
+export async function fetchBonusSnapshots(shopId: string): Promise<Record<string, BonusSnapshot>> {
+    const snapshot = await getDocs(collection(db, "shops", shopId, "bonusSnapshots"));
+    return Object.fromEntries(snapshot.docs.map(item => [item.id, item.data() as BonusSnapshot]));
 }
 
 export async function handleAddShop(shopName: string, description?: string) {
@@ -183,9 +167,11 @@ export async function handleUpdateShop(shop: Shop) {
         await updateDoc(shopRef, {
             name: shop.name,
             description: shop.description,
+            ...(shop.revenue !== undefined && { revenue: shop.revenue }),
             salesRepresentatives: shop.salesRepresentatives,
-            metricSettings: shop.metricSettings,
-            metricOrder: shop.metricOrder,
+            ...(shop.metricSettings !== undefined && { metricSettings: shop.metricSettings }),
+            ...(shop.metricOrder !== undefined && { metricOrder: shop.metricOrder }),
+            ...(shop.monthlyData !== undefined && { monthlyData: shop.monthlyData }),
         });
         return { success: true, data: shop };
     } catch (error) {
@@ -244,10 +230,12 @@ export async function fetchShops(): Promise<Shop[]> {
                 id: doc.id,
                 name: data.name,
                 description: data.description,
+                revenue: data.revenue,
                 salesRepresentatives: data.salesRepresentatives,
             monthlyTargets: data.monthlyTargets,
             metricSettings: data.metricSettings,
             metricOrder: data.metricOrder,
+            monthlyData: data.monthlyData,
             });
         });
         return shops;

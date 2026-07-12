@@ -2,12 +2,14 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Trophy } from "lucide-react";
-import { endOfMonth, format, getDaysInMonth, isWithinInterval, parseISO, startOfMonth, subMonths } from "date-fns";
+import { ArrowLeft, Banknote, Trophy } from "lucide-react";
+import { endOfMonth, format, getDaysInMonth, isSameMonth, isWithinInterval, parseISO, startOfMonth, subMonths } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
 import { PerformanceTable } from "@/components/performance-table";
 import { WorkerPerformanceList } from "@/components/worker-performance-list";
+import { SidebarActions } from "@/components/sidebar-actions";
+import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +25,7 @@ export function DetailedDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
+  const revenue = selectedShop?.revenue;
   const [period, setPeriod] = useState<Period>("current");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -31,15 +34,20 @@ export function DetailedDashboardClient() {
   const monthlyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] : undefined;
   const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
   const now = new Date();
+  const latestDataDate = useMemo(() => allData.reduce<Date | null>((latest, entry) => {
+    const entryDate = parseISO(entry.date);
+    return !latest || entryDate > latest ? entryDate : latest;
+  }, null), [allData]);
+  const reportingMonth = latestDataDate ?? now;
   const selectedRange = useMemo(() => {
-    if (period === "current") return { start: startOfMonth(now), end: endOfMonth(now) };
+    if (period === "current") return { start: startOfMonth(reportingMonth), end: endOfMonth(reportingMonth) };
     if (period === "previous") {
-      const previous = subMonths(now, 1);
+      const previous = subMonths(reportingMonth, 1);
       return { start: startOfMonth(previous), end: endOfMonth(previous) };
     }
     if (!customStart || !customEnd) return null;
     return { start: parseISO(customStart), end: parseISO(customEnd) };
-  }, [period, customStart, customEnd]);
+  }, [period, customStart, customEnd, reportingMonth]);
 
   const performanceData = useMemo(() => {
     if (!selectedRange) return [];
@@ -59,7 +67,7 @@ export function DetailedDashboardClient() {
   const monthlyAchievement = monthlyTargets
     ? calculateTotalAchievement(monthlyTotals, monthlyTargets, selectedShop?.metricSettings)
     : 0;
-  const hasForecast = period === "current" && performanceData.length >= 2;
+  const hasForecast = period === "current" && isSameMonth(reportingMonth, now) && performanceData.length >= 2;
   const forecastData = useMemo(() => {
     if (!hasForecast) return undefined;
     const dayOfMonth = now.getDate();
@@ -77,8 +85,8 @@ export function DetailedDashboardClient() {
   return (
     <div className="flex h-full flex-col">
       <Header title={`${t("title")}: ${selectedShop.name}`} />
-      <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="space-y-6">
+      <div className="flex-1 overflow-y-auto p-3 md:p-4">
+        <div className="space-y-3">
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline" })}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link>
             <div className="flex flex-wrap items-center gap-2">
@@ -90,11 +98,13 @@ export function DetailedDashboardClient() {
               {(period !== "current" || customStart || customEnd) && <Button variant="ghost" onClick={() => { setPeriod("current"); setCustomStart(""); setCustomEnd(""); }}>{t("resetPeriod")}</Button>}
             </div>
           </div>
+          <ShopPageNav shopId={selectedShop.id} active="performance" />
+          <SidebarActions />
 
-          <Card>
-            <CardHeader><CardTitle>{t("totalPerformance")}</CardTitle><CardDescription>{t("overallAchievement")}</CardDescription></CardHeader>
-            <CardContent className="space-y-5">
-              <div className="flex items-baseline justify-center gap-2"><Trophy className="h-10 w-10 text-primary" /><p className="text-5xl font-bold tracking-tight">{monthlyAchievement.toFixed(1)}%</p></div>
+          <div className="grid gap-3 xl:grid-cols-2">
+          <Card className="overflow-hidden">
+            <CardHeader className="flex-row items-center justify-between space-y-0 px-4 py-3"><div><CardTitle className="text-base">{t("totalPerformance")}</CardTitle><CardDescription>{t("overallAchievement")}</CardDescription>{revenue !== undefined && <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" />{t("revenueValue")}: {new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(revenue)}</p>}</div><div className="flex items-center gap-2"><Trophy className="h-6 w-6 text-primary" /><p className="text-2xl font-bold tracking-tight">{monthlyAchievement.toFixed(1)}%</p></div></CardHeader>
+            <CardContent className="space-y-3 px-3 pb-3">
               <Progress value={monthlyAchievement} className="h-3" />
               <PerformanceTable
                 actuals={monthlyTotals}
@@ -105,11 +115,13 @@ export function DetailedDashboardClient() {
                 forecastAsOf={hasForecast ? format(now, "PP") : undefined}
                 storageKey={`shop-${selectedShop.id}`}
                 caption={t("performanceTable")}
+                compact
               />
             </CardContent>
           </Card>
 
           {selectedShop.salesRepresentatives?.length ? <WorkerPerformanceList salesRepresentatives={selectedShop.salesRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} metricSettings={selectedShop.metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
+          </div>
         </div>
       </div>
     </div>

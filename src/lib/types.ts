@@ -86,8 +86,41 @@ export type Shop = {
   id: string;
   name: string;
   description?: string;
+  revenue?: number;
   salesRepresentatives?: SalesRepresentative[];
   monthlyTargets?: Target;
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
+  monthlyData?: Record<string, MonthlyShopData>;
+};
+
+export type MonthlyShopData = {
+  collection: number;
+  targets: Target;
+  representativeTargets: Record<string, Target>;
+  metricSettings?: MetricSettings;
+  metricOrder?: PerformanceMetric[];
+};
+
+export type BonusSnapshot = {
+  month: string;
+  finalizedAt: string;
+  calculationVersion: string;
+  payoutTableVersion: string;
+  inputs: {
+    collection: number;
+    targets: Target;
+    representativeTargets: Record<string, Target>;
+    metricSettings?: MetricSettings;
+    metricOrder: PerformanceMetric[];
+    shopActuals: Record<string, number>;
+    representativeActuals: Record<string, Record<string, number>>;
+  };
+  manager: ReturnType<typeof import("./manager-bonus").calculateManagerBonus>;
+  representatives: Array<{
+    id: string;
+    name: string;
+    eligible: boolean;
+    result: ReturnType<typeof import("./sales-representative-bonus").calculateRepresentativeBonus>;
+  }>;
 };

@@ -8,6 +8,7 @@ import {
   type PerformanceMetric,
 } from "@/lib/types";
 import { Header } from "@/components/header";
+import { SidebarActions } from "@/components/sidebar-actions";
 import { useShop } from "@/components/shop-provider";
 import Link from "next/link";
 import { SalesRepresentativeRanking } from "./sales-representative-ranking";
@@ -44,6 +45,7 @@ export function DashboardClient() {
           <div className="text-center space-y-2">
             <p className="text-muted-foreground">No shops found</p>
             <p className="text-sm text-muted-foreground">Add a shop to get started</p>
+            <div className="flex justify-center pt-2"><SidebarActions /></div>
           </div>
         </div>
       </div>
@@ -119,6 +121,7 @@ export function DashboardClient() {
       <Header title={t('title')} />
       <div className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
         <div className="max-w-4xl mx-auto space-y-8">
+          <div className="flex justify-end"><SidebarActions /></div>
           {/* Network Overview */}
           <div className="text-center space-y-2">
             <h2 className="text-3xl font-light text-muted-foreground">{t('networkAverage')}</h2>
@@ -137,6 +140,7 @@ export function DashboardClient() {
                       <div className="flex items-center gap-3">
                         <div className="w-3 h-3 rounded-full bg-primary"></div>
                         <span className="font-medium">{shop.name}</span>
+                        {shop.revenue !== undefined && <span className="text-xs tabular-nums text-muted-foreground">{new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(shop.revenue)}</span>}
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-semibold">{totalAchievement.toFixed(1)}%</div>

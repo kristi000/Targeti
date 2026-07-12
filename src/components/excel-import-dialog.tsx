@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { importTargetWorkbook, type ImportedWorkbookData } from "@/lib/excel-import";
-import { getShopMetrics, performanceMetrics, type PerformanceData } from "@/lib/types";
+import { getShopMetrics, performanceMetrics, type PerformanceData, type Target } from "@/lib/types";
 import { EXCEL_METRIC_LABELS } from "@/lib/metric-definitions";
 import { useShop } from "./shop-provider";
 
@@ -63,9 +63,16 @@ export function ExcelImportDialog() {
         date: preview.date,
         reps: preview.representatives.map(rep => ({ repId: rep.id, ...customActuals[rep.id], ...rep.achievements })),
       }];
+      const month = preview.date.slice(0, 7);
+      const targets = { ...currentTargets, ...preview.targets };
+      const representativeTargets = Object.fromEntries(reps.map(rep => [
+        rep.id,
+        Object.fromEntries(Object.entries(targets).map(([metric, target]) => [metric, target / Math.max(reps.length, 1)])) as Target,
+      ])) as Record<string, Target>;
       await updateShop({
         ...selectedShop,
         name: preview.shopName,
+        revenue: preview.revenue,
         salesRepresentatives: reps,
         metricSettings: {
           ...selectedShop.metricSettings,
@@ -74,8 +81,18 @@ export function ExcelImportDialog() {
             { ...selectedShop.metricSettings?.[metric], label: EXCEL_METRIC_LABELS[metric] },
           ])),
         },
+        monthlyData: {
+          ...selectedShop.monthlyData,
+          [month]: {
+            collection: preview.revenue,
+            targets,
+            representativeTargets,
+            ...(selectedShop.metricSettings && { metricSettings: selectedShop.metricSettings }),
+            ...(selectedShop.metricOrder && { metricOrder: selectedShop.metricOrder }),
+          },
+        },
       });
-      await updateMonthlyTargets(selectedShop.id, { ...currentTargets, ...preview.targets });
+      await updateMonthlyTargets(selectedShop.id, targets);
       await updatePerformanceData(selectedShop.id, performance);
       await refreshDataForShop(selectedShop.id);
       toast({ title: "Excel data imported", description: `${reps.length} representatives, targets, and achievements were updated.` });
@@ -94,7 +111,7 @@ export function ExcelImportDialog() {
       <DialogTrigger asChild>
         <Button variant="outline" className="w-full justify-start gap-2"><FileSpreadsheet className="h-4 w-4" />Import Excel</Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Import targets and achievements</DialogTitle>
           <DialogDescription>Drop the One Shop Excel report. You can review it before replacing the selected shop&apos;s data.</DialogDescription>
@@ -122,6 +139,7 @@ export function ExcelImportDialog() {
               <div><p className="text-muted-foreground">Shop</p><p className="font-medium">{preview.shopName}</p></div>
               <div><p className="text-muted-foreground">Representatives</p><p className="font-medium">{preview.representatives.length}</p></div>
               <div><p className="text-muted-foreground">Achievement date</p><p className="font-medium">{preview.date}</p></div>
+              <div><p className="text-muted-foreground">Vlera e të Ardhurave</p><p className="font-medium tabular-nums">{new Intl.NumberFormat("sq-AL", { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(preview.revenue)}</p></div>
             </div>
             <p className="mt-3 text-xs text-muted-foreground">All {performanceMetrics.length} app metrics were found. Importing replaces the selected shop&apos;s current targets and achievements.</p>
           </div>
