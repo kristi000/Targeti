@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { calculateManagerBonus, MANAGER_PAYOUT_TABLE_VERSION } from "@/lib/manager-bonus";
 import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } from "@/lib/sales-representative-bonus";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { getMonthlyRepresentatives, getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
+import { getMonthlyRepresentatives, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
 
 export function BonusDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
@@ -43,7 +43,16 @@ export function BonusDashboardClient() {
   const metricSettings = monthData?.metricSettings ?? selectedShop?.metricSettings;
   const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricOrder: monthData?.metricOrder ?? selectedShop.metricOrder, metricSettings } : undefined, targets), [selectedShop, monthData?.metricOrder, metricSettings, targets]);
   const performanceData = useMemo(() => allData.filter(entry => entry.date.startsWith(selectedMonth)), [allData, selectedMonth]);
-  const totals = useMemo(() => performanceData.reduce((result, day) => { day.reps.forEach(rep => metrics.forEach(metric => { result.shop[metric] = (result.shop[metric] ?? 0) + (rep[metric] ?? 0); result.reps[rep.repId] ??= {} as Record<PerformanceMetric, number>; result.reps[rep.repId][metric] = (result.reps[rep.repId][metric] ?? 0) + (rep[metric] ?? 0); })); return result; }, { shop: {} as Record<PerformanceMetric, number>, reps: {} as Record<string, Record<PerformanceMetric, number>> }), [performanceData, metrics]);
+  const totals = useMemo(() => {
+    const reps = performanceData.reduce((result, day) => {
+      day.reps.forEach(rep => metrics.forEach(metric => {
+        result[rep.repId] ??= {} as Record<PerformanceMetric, number>;
+        result[rep.repId][metric] = (result[rep.repId][metric] ?? 0) + (rep[metric] ?? 0);
+      }));
+      return result;
+    }, {} as Record<string, Record<PerformanceMetric, number>>);
+    return { shop: getPerformanceShopActuals(performanceData, metrics), reps };
+  }, [performanceData, metrics]);
   if (!selectedShop || !targets) return null;
 
   const representatives = getMonthlyRepresentatives(selectedShop, selectedMonth);

@@ -82,6 +82,12 @@ export class LocalDataManager {
     localStorage.setItem(`${STORAGE_KEYS.TARGETS}_${shopId}`, JSON.stringify(targets));
   }
 
+  clearAllData(): void {
+    Object.keys(localStorage)
+      .filter(key => Object.values(STORAGE_KEYS).some(prefix => key === prefix || key.startsWith(`${prefix}_`)))
+      .forEach(key => localStorage.removeItem(key));
+  }
+
   // Initialize with sample data if empty
   initializeWithSampleData(): void {
     const shops = this.getShops();

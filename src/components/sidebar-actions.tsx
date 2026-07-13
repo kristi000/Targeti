@@ -50,9 +50,23 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./
 import { ScrollArea } from "./ui/scroll-area";
 import { ExcelImportDialog } from "./excel-import-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
+import { handleClearAllData } from "@/app/actions";
+import { useToast } from "@/hooks/use-toast";
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop } = useShop();
+    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData } = useShop();
+    const { toast } = useToast();
     const pathname = usePathname();
     const t = useTranslations("Sidebar");
     const tDialog = useTranslations("Dialogs");
@@ -81,6 +95,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isSaving, setIsSaving] = useState(false);
     const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
     const [isAchievementDialogOpen, setIsAchievementDialogOpen] = useState(false);
+    const [isClearingData, setIsClearingData] = useState(false);
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
@@ -317,21 +332,65 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             setIsManagementDialogOpen(true);
         }
     }
+
+    const clearAllData = async () => {
+        setIsClearingData(true);
+        try {
+            const result = await handleClearAllData();
+            if (!result.success) throw new Error(result.error);
+            const { localDataManager } = await import("@/lib/local-storage");
+            localDataManager.clearAllData();
+            await reloadData();
+            toast({ title: "All data cleared", description: "All shops, targets, achievements, and bonus snapshots were deleted." });
+        } catch (error) {
+            toast({
+                variant: "destructive",
+                title: "Could not clear data",
+                description: error instanceof Error ? error.message : "Please try again.",
+            });
+        } finally {
+            setIsClearingData(false);
+        }
+    };
         
     return (
         <>
             <div className="flex flex-wrap items-center gap-2">
                 {isDashboard && (
+                    <>
+                    <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
+                        <ExcelImportDialog />
+                    </div>
                     <Button type="button" variant="outline" size="sm" onClick={handleOpenManageShops}>
                             <Store className="mr-2 h-4 w-4" />
                             <span>{t('manageShops')}</span>
                     </Button>
+                    <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                            <Button type="button" variant="destructive" size="sm" disabled={isClearingData || !selectedShop}>
+                                {isClearingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
+                                Clear all data
+                            </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                            <AlertDialogHeader>
+                                <AlertDialogTitle>Clear all application data?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                    This permanently deletes every shop, target, achievement, representative, and finalized bonus snapshot. This action cannot be undone.
+                                </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => void clearAllData()}>
+                                    <Trash2 className="mr-2 h-4 w-4" />Delete everything
+                                </AlertDialogAction>
+                            </AlertDialogFooter>
+                        </AlertDialogContent>
+                    </AlertDialog>
+                    </>
                 )}
                 {selectedShop && !isDashboard && (
                     <>
-                        <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
-                            <ExcelImportDialog />
-                        </div>
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogTrigger asChild>
                                     <Button type="button" variant="outline" size="sm" onClick={onOpenTargetDialog}>

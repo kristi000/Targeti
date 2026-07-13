@@ -16,6 +16,7 @@ import {
   type Target,
   type SalesRepresentative,
   getMonthlyRepresentatives,
+  getPerformanceDatasetId,
 } from "@/lib/types";
 import { Award, TrendingUp } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
@@ -27,7 +28,7 @@ import { getDaysInMonth } from "date-fns";
 
 export function SalesRepresentativeRanking() {
   const t = useTranslations("Dashboard");
-  const { shops, allPerformanceData, allMonthlyTargets } = useShop();
+  const { shops, allPerformanceData, allMonthlyTargets, selectedDatasetId } = useShop();
 
   const rankedSalesReps = useMemo(() => {
     if (shops.length === 0) return [];
@@ -37,15 +38,25 @@ export function SalesRepresentativeRanking() {
     const daysInMonth = getDaysInMonth(today);
     const dayOfMonth = today.getDate();
 
+    const availableEntries = Object.values(allPerformanceData).flat();
+    const latestEntry = [...availableEntries].sort((a, b) => (b.importedAt ?? b.date).localeCompare(a.importedAt ?? a.date))[0];
+    const activeDatasetId = availableEntries.some(entry => getPerformanceDatasetId(entry) === selectedDatasetId)
+      ? selectedDatasetId
+      : latestEntry ? getPerformanceDatasetId(latestEntry) : "";
+
     shops.forEach((shop) => {
       const shopPerformanceData = allPerformanceData[shop.id] || [];
-      const latestMonth = shopPerformanceData.map(entry => entry.date.slice(0, 7)).sort().at(-1);
-      if (!latestMonth) return;
-      const salesRepresentatives = getMonthlyRepresentatives(shop, latestMonth);
+      const performanceData = shopPerformanceData.filter(entry => getPerformanceDatasetId(entry) === activeDatasetId);
+      const selectedEntry = performanceData[0];
+      if (!selectedEntry) return;
+      const latestMonth = selectedEntry.date.slice(0, 7);
+      const savedRepresentatives = getMonthlyRepresentatives(shop, latestMonth);
+      const representativesById = new Map(savedRepresentatives.map(rep => [rep.id, rep]));
+      selectedEntry.reps.forEach(rep => representativesById.set(rep.repId, { id: rep.repId, name: rep.repName ?? representativesById.get(rep.repId)?.name ?? rep.repId }));
+      const salesRepresentatives = [...representativesById.values()].filter(rep => selectedEntry.reps.some(entry => entry.repId === rep.id));
       if (salesRepresentatives.length === 0) return;
 
-      const performanceData = shopPerformanceData.filter(entry => entry.date.startsWith(latestMonth));
-      const monthlyTargets = shop.monthlyData?.[latestMonth]?.targets ?? allMonthlyTargets[shop.id];
+      const monthlyTargets = selectedEntry.targets ?? shop.monthlyData?.[latestMonth]?.targets ?? allMonthlyTargets[shop.id];
 
       if (!monthlyTargets || performanceData.length === 0) return;
       const metrics = getShopMetrics(shop, monthlyTargets);
@@ -91,7 +102,7 @@ export function SalesRepresentativeRanking() {
     });
 
     return allReps.sort((a, b) => b.achievement - a.achievement);
-  }, [shops, allPerformanceData, allMonthlyTargets]);
+  }, [shops, allPerformanceData, allMonthlyTargets, selectedDatasetId]);
 
   return (
     <div className="space-y-4">

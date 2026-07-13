@@ -50,7 +50,27 @@ export type PerformanceData = {
   id?: string;
   date: string; // YYYY-MM-DD
   reps: RepPerformanceData[];
+  shopActuals?: Partial<Record<PerformanceMetric, number>>;
+  importId?: string;
+  importName?: string;
+  importedAt?: string;
+  targets?: Target;
+  revenue?: number;
 };
+
+export function getPerformanceDatasetId(data: PerformanceData) {
+  return data.importId ?? data.id ?? data.date;
+}
+
+export function getPerformanceShopActuals(data: PerformanceData[], metrics: readonly PerformanceMetric[]) {
+  return metrics.reduce((totals, metric) => {
+    totals[metric] = data.reduce((sum, day) => sum + (
+      day.shopActuals?.[metric]
+      ?? day.reps.reduce((representativeSum, representative) => representativeSum + (representative[metric] ?? 0), 0)
+    ), 0);
+    return totals;
+  }, {} as Record<PerformanceMetric, number>);
+}
 
 export type Target = Record<PerformanceMetric, number>;
 

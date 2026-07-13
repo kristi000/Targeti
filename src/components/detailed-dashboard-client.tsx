@@ -16,7 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
-import { getMonthlyRepresentatives, getShopMetrics, type PerformanceMetric } from "@/lib/types";
+import { getMonthlyRepresentatives, getPerformanceShopActuals, getShopMetrics, type PerformanceMetric } from "@/lib/types";
 
 export function DetailedDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
@@ -44,12 +44,7 @@ export function DetailedDashboardClient() {
   const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings, metricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, metricSettings, metricOrder]);
   const performanceData = useMemo(() => allData.filter(day => day.date.startsWith(selectedMonth)), [allData, selectedMonth]);
 
-  const monthlyTotals = useMemo(() => performanceData.reduce((totals, day) => {
-    day.reps.forEach(rep => metrics.forEach(metric => {
-      totals[metric] = (totals[metric] || 0) + (rep[metric] || 0);
-    }));
-    return totals;
-  }, {} as Record<PerformanceMetric, number>), [performanceData, metrics]);
+  const monthlyTotals = useMemo(() => getPerformanceShopActuals(performanceData, metrics), [performanceData, metrics]);
 
   const monthlyAchievement = monthlyTargets
     ? calculateTotalAchievement(monthlyTotals, monthlyTargets, metricSettings)

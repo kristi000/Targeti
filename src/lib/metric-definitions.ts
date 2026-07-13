@@ -27,3 +27,15 @@ export const DEFAULT_MONTHLY_TARGETS: Target = {
   newPostpaid: 29,
   device: 253_000,
 };
+
+export const CONSOLIDATED_EXCEL_METRIC_WEIGHTS: Record<PerformanceMetric, number> = {
+  custom_mixmax: 0.15,
+  newLine: 0.20,
+  newTv: 0.05,
+  newSim: 0.15,
+  newPostpaid: 0.05,
+  migrations: 0.20,
+  mobileContractRenewal: 0.05,
+  device: 0.05,
+  fixContractRenewal: 0.10,
+};

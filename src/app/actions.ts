@@ -3,7 +3,7 @@
 
 import { type PerformanceData, type Target, type Shop, type BonusSnapshot, getInitialTargets } from "@/lib/types";
 import { db } from "@/lib/firebase";
-import { collection, addDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, runTransaction } from "firebase/firestore";
+import { collection, addDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, runTransaction, type DocumentReference } from "firebase/firestore";
 
 // Ensure Firebase is initialized
 if (!db) {
@@ -63,6 +63,32 @@ export async function handleSavePerformanceData(shopId: string, data: Performanc
         } catch (fallbackError) {
             console.error("Local storage fallback also failed:", fallbackError);
             return { success: false, error: "Failed to save performance data" };
+        }
+    }
+}
+
+export async function handleSaveExcelPerformanceData(shopId: string, data: PerformanceData[]) {
+    try {
+        const batch = writeBatch(db);
+        const performanceCollectionRef = collection(db, "shops", shopId, "performance");
+        data.forEach(performanceEntry => {
+            batch.set(doc(performanceCollectionRef, performanceEntry.importId ?? performanceEntry.date), performanceEntry);
+        });
+        await batch.commit();
+        return { success: true, data };
+    } catch (error) {
+        console.error(`Error saving Excel performance data for shop ${shopId}:`, error);
+        try {
+            const { localDataManager } = await import('@/lib/local-storage');
+            const existing = localDataManager.getPerformanceData(shopId);
+            const merged = new Map(existing.map(item => [item.importId ?? item.id ?? item.date, item]));
+            data.forEach(item => merged.set(item.importId ?? item.date, item));
+            const result = [...merged.values()].sort((a, b) => (a.importedAt ?? a.date).localeCompare(b.importedAt ?? b.date));
+            localDataManager.savePerformanceData(shopId, result);
+            return { success: true, data: result, fallback: true };
+        } catch (fallbackError) {
+            console.error("Local storage Excel save also failed:", fallbackError);
+            return { success: false, error: "Failed to save Excel performance data." };
         }
     }
 }
@@ -216,6 +242,34 @@ export async function handleDeleteShop(shopId: string) {
             console.error("Local storage fallback also failed:", fallbackError);
             return { success: false, error: "Failed to delete shop." };
         }
+    }
+}
+
+export async function handleClearAllData() {
+    try {
+        const shopsSnapshot = await getDocs(collection(db, "shops"));
+        const references: DocumentReference[] = [];
+
+        await Promise.all(shopsSnapshot.docs.map(async shopDocument => {
+            const [performance, bonusSnapshots] = await Promise.all([
+                getDocs(collection(db, "shops", shopDocument.id, "performance")),
+                getDocs(collection(db, "shops", shopDocument.id, "bonusSnapshots")),
+            ]);
+            references.push(...performance.docs.map(item => item.ref));
+            references.push(...bonusSnapshots.docs.map(item => item.ref));
+            references.push(shopDocument.ref);
+        }));
+
+        for (let start = 0; start < references.length; start += 450) {
+            const batch = writeBatch(db);
+            references.slice(start, start + 450).forEach(reference => batch.delete(reference));
+            await batch.commit();
+        }
+
+        return { success: true };
+    } catch (error) {
+        console.error("Error clearing application data:", error);
+        return { success: false, error: "Failed to clear all data." };
     }
 }
 
