@@ -1,9 +1,21 @@
 "use server";
 
 import { revalidateTag, unstable_cache } from "next/cache";
+import {
+  addDoc,
+  collection,
+  collectionGroup,
+  deleteDoc,
+  doc,
+  getDocs,
+  runTransaction,
+  updateDoc,
+  writeBatch,
+  type DocumentReference,
+} from "firebase/firestore";
 import { z } from "zod";
 
-import { adminDb } from "@/lib/firebase-admin";
+import { db } from "@/lib/firebase";
 import {
   bonusSnapshotSchema,
   newShopSchema,
@@ -60,7 +72,7 @@ export async function handleSaveTargets(shopId: string, targets: Target) {
   try {
     const validShopId = shopIdSchema.parse(shopId);
     const validTargets = targetSchema.parse(targets) as Target;
-    await adminDb.doc(`shops/${validShopId}`).update({ monthlyTargets: validTargets });
+    await updateDoc(doc(db, "shops", validShopId), { monthlyTargets: validTargets });
     invalidateShopData();
     return { success: true as const, data: validTargets };
   } catch (error) {
@@ -73,11 +85,11 @@ async function savePerformanceData(shopId: string, data: PerformanceData[], useI
   // Zod's catch-all output cannot express the mixed repId/metric index signature,
   // but the schema has validated every property before this conversion.
   const validData = performanceDataListSchema.parse(data) as unknown as PerformanceData[];
-  const batch = adminDb.batch();
+  const batch = writeBatch(db);
 
   validData.forEach(entry => {
     const documentId = useImportId ? entry.importId ?? entry.date : entry.date;
-    batch.set(adminDb.doc(`shops/${validShopId}/performance/${documentId}`), toFirestoreData(entry));
+    batch.set(doc(db, "shops", validShopId, "performance", documentId), toFirestoreData(entry));
   });
 
   await batch.commit();
@@ -107,10 +119,10 @@ export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot)
   try {
     const validShopId = shopIdSchema.parse(shopId);
     const validSnapshot = bonusSnapshotSchema.parse(snapshot) as BonusSnapshot;
-    const snapshotRef = adminDb.doc(`shops/${validShopId}/bonusSnapshots/${validSnapshot.month}`);
+    const snapshotRef = doc(db, "shops", validShopId, "bonusSnapshots", validSnapshot.month);
 
-    await adminDb.runTransaction(async transaction => {
-      if ((await transaction.get(snapshotRef)).exists) throw new Error("ALREADY_FINALIZED");
+    await runTransaction(db, async transaction => {
+      if ((await transaction.get(snapshotRef)).exists()) throw new Error("ALREADY_FINALIZED");
       transaction.set(snapshotRef, toFirestoreData(validSnapshot));
     });
 
@@ -125,7 +137,7 @@ export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot)
 
 export async function fetchBonusSnapshots(shopId: string): Promise<Record<string, BonusSnapshot>> {
   const validShopId = shopIdSchema.parse(shopId);
-  const snapshot = await adminDb.collection(`shops/${validShopId}/bonusSnapshots`).get();
+  const snapshot = await getDocs(collection(db, "shops", validShopId, "bonusSnapshots"));
 
   return Object.fromEntries(snapshot.docs.flatMap(document => {
     const result = bonusSnapshotSchema.safeParse(document.data());
@@ -146,7 +158,7 @@ export async function handleAddShop(shopName: string, description?: string) {
       monthlyTargets,
       createdAt: new Date().toISOString(),
     };
-    const document = await adminDb.collection("shops").add(toFirestoreData(shopData));
+    const document = await addDoc(collection(db, "shops"), toFirestoreData(shopData));
     invalidateShopData();
 
     return {
@@ -162,7 +174,7 @@ export async function handleUpdateShop(shop: Shop) {
   try {
     const validShop = shopSchema.parse(shop) as Shop;
     const { id, ...shopData } = validShop;
-    await adminDb.doc(`shops/${id}`).update(toFirestoreData(shopData));
+    await updateDoc(doc(db, "shops", id), toFirestoreData(shopData));
     invalidateShopData();
     return { success: true as const, data: validShop };
   } catch (error) {
@@ -173,7 +185,16 @@ export async function handleUpdateShop(shop: Shop) {
 export async function handleDeleteShop(shopId: string) {
   try {
     const validShopId = shopIdSchema.parse(shopId);
-    await adminDb.recursiveDelete(adminDb.doc(`shops/${validShopId}`));
+    const shopRef = doc(db, "shops", validShopId);
+    const [performance, bonusSnapshots] = await Promise.all([
+      getDocs(collection(db, "shops", validShopId, "performance")),
+      getDocs(collection(db, "shops", validShopId, "bonusSnapshots")),
+    ]);
+    const batch = writeBatch(db);
+    performance.docs.forEach(item => batch.delete(item.ref));
+    bonusSnapshots.docs.forEach(item => batch.delete(item.ref));
+    batch.delete(shopRef);
+    await batch.commit();
     invalidateShopData();
     return { success: true as const };
   } catch (error) {
@@ -183,7 +204,22 @@ export async function handleDeleteShop(shopId: string) {
 
 export async function handleClearAllData() {
   try {
-    await adminDb.recursiveDelete(adminDb.collection("shops"));
+    const shops = await getDocs(collection(db, "shops"));
+    const references: DocumentReference[] = [];
+    await Promise.all(shops.docs.map(async shop => {
+      const [performance, bonusSnapshots] = await Promise.all([
+        getDocs(collection(db, "shops", shop.id, "performance")),
+        getDocs(collection(db, "shops", shop.id, "bonusSnapshots")),
+      ]);
+      references.push(...performance.docs.map(item => item.ref));
+      references.push(...bonusSnapshots.docs.map(item => item.ref));
+      references.push(shop.ref);
+    }));
+    for (let start = 0; start < references.length; start += 450) {
+      const batch = writeBatch(db);
+      references.slice(start, start + 450).forEach(reference => batch.delete(reference));
+      await batch.commit();
+    }
     invalidateShopData();
     return { success: true as const };
   } catch (error) {
@@ -192,7 +228,7 @@ export async function handleClearAllData() {
 }
 
 export async function fetchShops(): Promise<Shop[]> {
-  const snapshot = await adminDb.collection("shops").get();
+  const snapshot = await getDocs(collection(db, "shops"));
   return snapshot.docs.flatMap(document => {
     const shop = parseFirestoreDocument(shopSchema, document.id, document.data());
     return shop ? [shop as Shop] : [];
@@ -201,7 +237,7 @@ export async function fetchShops(): Promise<Shop[]> {
 
 export async function fetchPerformanceData(shopId: string): Promise<PerformanceData[]> {
   const validShopId = shopIdSchema.parse(shopId);
-  const snapshot = await adminDb.collection(`shops/${validShopId}/performance`).get();
+  const snapshot = await getDocs(collection(db, "shops", validShopId, "performance"));
   return snapshot.docs.flatMap(document => {
     const result = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
     if (result.success) return [result.data as unknown as PerformanceData];
@@ -213,7 +249,7 @@ export async function fetchPerformanceData(shopId: string): Promise<PerformanceD
 const loadShopData = unstable_cache(async (): Promise<ShopData> => {
   const [shops, performanceSnapshot] = await Promise.all([
     fetchShops(),
-    adminDb.collectionGroup("performance").get(),
+    getDocs(collectionGroup(db, "performance")),
   ]);
   const performanceData = Object.fromEntries(shops.map(shop => [shop.id, [] as PerformanceData[]]));
 
