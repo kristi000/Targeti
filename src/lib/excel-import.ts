@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { read, utils, type WorkBook, type WorkSheet } from "xlsx";
+import type { WorkBook, WorkSheet } from "xlsx";
 import { EXCEL_METRIC_LABELS } from "@/lib/metric-definitions";
 import { performanceMetrics, type PerformanceMetric, type Target } from "@/lib/types";
 
@@ -20,6 +20,11 @@ const shopSchema = z.object({
   date: z.string().date(),
   targets: numericRecordSchema,
   achievements: numericRecordSchema,
+  qualityMetrics: z.object({
+    checklistScore: z.number().finite().nonnegative().optional(),
+    npsScore: z.number().finite().optional(),
+    npsResponses: z.number().finite().nonnegative().optional(),
+  }).optional(),
   representatives: z.array(z.object({
     id: z.string().min(1),
     name: z.string().trim().min(1),
@@ -28,22 +33,32 @@ const shopSchema = z.object({
   })).min(1),
 });
 
-const importedWorkbookSchema = z.object({ shops: z.array(shopSchema).min(1) });
+const importedWorkbookSchema = z.object({
+  shops: z.array(shopSchema).min(1),
+  detectedMetrics: z.array(z.string().min(1)).min(1),
+  detectedMetricLabels: z.record(z.string().min(1)),
+  warnings: z.array(z.string()),
+});
 
 export type ImportedShopData = z.infer<typeof shopSchema>;
-export type ImportedWorkbookData = z.infer<typeof importedWorkbookSchema>;
+export type ImportedWorkbookData = Omit<z.infer<typeof importedWorkbookSchema>, "detectedMetrics"> & {
+  detectedMetrics: PerformanceMetric[];
+};
 
 type Cell = string | number | boolean | Date | null | undefined;
+type SheetToJson = typeof import("xlsx")["utils"]["sheet_to_json"];
 type MetricColumns = Partial<Record<PerformanceMetric, number>>;
 type Table = {
   rows: Cell[][];
   headerStart: number;
   headerEnd: number;
   headers: string[];
+  displayHeaders: string[];
   identityColumn: number;
   shopColumn: number;
   targetColumns: MetricColumns;
   achievementColumns: MetricColumns;
+  metricLabels: Partial<Record<PerformanceMetric, string>>;
 };
 
 const consolidatedMetricLabels: Partial<Record<PerformanceMetric, string>> = { custom_mixmax: "MixMax" };
@@ -61,14 +76,41 @@ function normalize(value: Cell) {
     .trim();
 }
 
-function numberValue(value: Cell) {
-  if (typeof value === "number") return Number.isFinite(value) && value >= 0 ? value : 0;
+function numberValue(value: Cell, warnings?: string[]) {
+  const warn = () => {
+    const message = "One or more non-empty numeric cells were invalid or negative and were set to zero. Review all zero values before importing.";
+    if (warnings && !warnings.includes(message)) warnings.push(message);
+  };
+  if (typeof value === "number") {
+    if (Number.isFinite(value) && value >= 0) return value;
+    warn();
+    return 0;
+  }
   const text = String(value ?? "").trim().replace(/\s/g, "");
+  if (!text) return 0;
   const normalized = text.includes(",") && text.includes(".")
     ? text.replace(/,/g, "")
     : text.replace(",", ".");
+  const numericText = normalized.replace(/[^0-9.-]/g, "");
+  if (!numericText || numericText === "-" || numericText === "." || numericText === "-.") {
+    warn();
+    return 0;
+  }
+  const parsed = Number(numericText);
+  if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  warn();
+  return 0;
+}
+
+function signedNumberValue(value: Cell, warnings?: string[]) {
+  const text = String(value ?? "").trim().replace(/\s/g, "");
+  if (!text) return 0;
+  const normalized = text.includes(",") && text.includes(".") ? text.replace(/,/g, "") : text.replace(",", ".");
   const parsed = Number(normalized.replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  if (Number.isFinite(parsed)) return parsed;
+  const message = "One or more quality-indicator cells were invalid and were set to zero. Review NPS and checklist values before importing.";
+  if (warnings && !warnings.includes(message)) warnings.push(message);
+  return 0;
 }
 
 function representativeId(name: string) {
@@ -82,8 +124,8 @@ function excelDate(value: Cell) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function rowsOf(sheet: WorkSheet) {
-  return utils.sheet_to_json<Cell[]>(sheet, { header: 1, raw: true, defval: null });
+function rowsOf(sheet: WorkSheet, sheetToJson: SheetToJson) {
+  return sheetToJson<Cell[]>(sheet, { header: 1, raw: true, defval: null });
 }
 
 function columnHeaders(rows: Cell[][], start: number, end: number) {
@@ -93,51 +135,84 @@ function columnHeaders(rows: Cell[][], start: number, end: number) {
   ));
 }
 
+function displayColumnHeaders(rows: Cell[][], start: number, end: number) {
+  const width = Math.max(...rows.slice(start, end + 1).map(row => row.length), 0);
+  return Array.from({ length: width }, (_, column) => rows
+    .slice(start, end + 1)
+    .map(row => String(row[column] ?? "").trim())
+    .filter(Boolean)
+    .join(" "));
+}
+
 function aliasColumn(headers: string[], aliases: string[]) {
   return headers.findIndex(header => aliases.some(alias => header === normalize(alias)));
 }
 
-function hasMarker(header: string, markers: string[]) {
-  const words = header.split(" ");
-  return markers.some(marker => words.includes(marker));
-}
-
-function metricColumns(headers: string[], kind: "target" | "achievement", customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
+function metricId(label: string, customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
   const labels = { ...EXCEL_METRIC_LABELS, ...consolidatedMetricLabels, ...customMetricLabels };
-  const markers = kind === "target" ? targetMarkers : achievementMarkers;
-  return Object.fromEntries(Object.entries(labels).flatMap(([metric, label]) => {
-    const expected = normalize(label);
-    const column = headers.findIndex(header =>
-      header.includes(expected) && hasMarker(header.replace(expected, "").trim(), markers),
-    );
-    return column < 0 ? [] : [[metric, column]];
-  })) as MetricColumns;
+  const known = Object.entries(labels).find(([, knownLabel]) => normalize(knownLabel) === label)?.[0];
+  if (known) return known as PerformanceMetric;
+  return `custom_${label.replace(/\s+/g, "_")}` as PerformanceMetric;
 }
 
-function findTables(workbook: WorkBook, role: "shop" | "representative", customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
+function splitMetricHeader(header: string) {
+  const words = header.split(" ");
+  const marker = words.at(-1);
+  if (!marker) return null;
+  if (targetMarkers.includes(marker)) return { kind: "target" as const, label: words.slice(0, -1).join(" ") };
+  if (achievementMarkers.includes(marker)) return { kind: "achievement" as const, label: words.slice(0, -1).join(" ") };
+  return null;
+}
+
+function dynamicMetricColumns(headers: string[], displayHeaders: string[], customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
+  const candidates = new Map<string, { target?: number; achievement?: number; displayLabel?: string }>();
+  headers.forEach((header, column) => {
+    const parsed = splitMetricHeader(header);
+    if (!parsed?.label) return;
+    if (parsed.label.includes("vlera e te ardhurave") || parsed.label.includes("vlera e ardhurave") || parsed.label === "revenue") return;
+    const candidate = candidates.get(parsed.label) ?? {};
+    candidate[parsed.kind] = column;
+    candidate.displayLabel ??= displayHeaders[column].replace(/\s+(T|A|Target|Targets|Achievement|Achievements|Actual|Actuals)\s*$/i, "").trim();
+    candidates.set(parsed.label, candidate);
+  });
+
+  const targetColumns: MetricColumns = {};
+  const achievementColumns: MetricColumns = {};
+  const metricLabels: Partial<Record<PerformanceMetric, string>> = {};
+  candidates.forEach((candidate, label) => {
+    if (candidate.target === undefined || candidate.achievement === undefined) return;
+    const metric = metricId(label, customMetricLabels);
+    targetColumns[metric] = candidate.target;
+    achievementColumns[metric] = candidate.achievement;
+    metricLabels[metric] = candidate.displayLabel || label;
+  });
+  return { targetColumns, achievementColumns, metricLabels };
+}
+
+function findTables(workbook: WorkBook, role: "shop" | "representative", customMetricLabels: Partial<Record<PerformanceMetric, string>>, sheetToJson: SheetToJson) {
   const aliases = role === "shop" ? shopAliases : userAliases;
   const tables: Table[] = [];
 
   for (const sheetName of workbook.SheetNames) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
-    const rows = rowsOf(sheet);
+    const rows = rowsOf(sheet, sheetToJson);
     let best: (Table & { score: number }) | null = null;
 
     for (let start = 0; start < rows.length; start += 1) {
       for (let depth = 1; depth <= 3 && start + depth <= rows.length; depth += 1) {
         const headerEnd = start + depth - 1;
         const headers = columnHeaders(rows, start, headerEnd);
+        const displayHeaders = displayColumnHeaders(rows, start, headerEnd);
         const identityColumn = aliasColumn(headers, aliases);
         if (identityColumn < 0) continue;
-        const targetColumns = metricColumns(headers, "target", customMetricLabels);
-        const achievementColumns = metricColumns(headers, "achievement", customMetricLabels);
+        const { targetColumns, achievementColumns, metricLabels } = dynamicMetricColumns(headers, displayHeaders, customMetricLabels);
         const metricCount = Object.keys(targetColumns).length + Object.keys(achievementColumns).length;
         if (!metricCount) continue;
         const shopColumn = aliasColumn(headers, shopAliases);
         const score = metricCount * 10 + (shopColumn >= 0 ? 2 : 0) - depth;
         if (!best || score > best.score) {
-          best = { rows, headerStart: start, headerEnd, headers, identityColumn, shopColumn, targetColumns, achievementColumns, score };
+          best = { rows, headerStart: start, headerEnd, headers, displayHeaders, identityColumn, shopColumn, targetColumns, achievementColumns, metricLabels, score };
         }
       }
     }
@@ -153,10 +228,10 @@ function emptyMetrics() {
   return Object.fromEntries(performanceMetrics.map(metric => [metric, 0])) as Target;
 }
 
-function metricsFrom(row: Cell[], columns: MetricColumns) {
+function metricsFrom(row: Cell[], columns: MetricColumns, warnings?: string[]) {
   return {
     ...emptyMetrics(),
-    ...Object.fromEntries(Object.entries(columns).map(([metric, column]) => [metric, numberValue(row[column!])])),
+    ...Object.fromEntries(Object.entries(columns).map(([metric, column]) => [metric, numberValue(row[column!], warnings)])),
   } as Target;
 }
 
@@ -196,9 +271,10 @@ function dataRows(table: Table) {
   return rows;
 }
 
-function parseDetectedWorkbook(workbook: WorkBook, customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
-  const shopTable = findTables(workbook, "shop", customMetricLabels)[0];
-  const representativeTable = findTables(workbook, "representative", customMetricLabels)[0];
+function parseDetectedWorkbook(workbook: WorkBook, customMetricLabels: Partial<Record<PerformanceMetric, string>>, sheetToJson: SheetToJson) {
+  const warnings: string[] = [];
+  const shopTable = findTables(workbook, "shop", customMetricLabels, sheetToJson)[0];
+  const representativeTable = findTables(workbook, "representative", customMetricLabels, sheetToJson)[0];
   if (!shopTable || !representativeTable) {
     throw new Error("Could not find the shop and representative target/achievement tables in this workbook.");
   }
@@ -222,8 +298,8 @@ function parseDetectedWorkbook(workbook: WorkBook, customMetricLabels: Partial<R
     representatives.push({
       id: representativeId(name),
       name,
-      achievements: metricsFrom(row, representativeTable.achievementColumns),
-      ...(Object.keys(representativeTable.targetColumns).length && { targets: metricsFrom(row, representativeTable.targetColumns) }),
+      achievements: metricsFrom(row, representativeTable.achievementColumns, warnings),
+      ...(Object.keys(representativeTable.targetColumns).length && { targets: metricsFrom(row, representativeTable.targetColumns, warnings) }),
     });
     representativesByShop.set(key, representatives);
   }
@@ -238,32 +314,52 @@ function parseDetectedWorkbook(workbook: WorkBook, customMetricLabels: Partial<R
     : shopTable.headers.findIndex(header =>
         header.includes("vlera e te ardhurave") || header.includes("vlera e ardhurave") || header.includes("revenue"),
       );
+  const checklistColumn = shopTable.headers.findIndex(header => header.includes("vleresimi i checklist") || header.includes("checklist score"));
+  const npsColumn = shopTable.headers.findIndex(header => header.includes("vleresimi i nps") || header === "nps" || header.includes("nps score"));
+  const npsResponsesColumn = shopTable.headers.findIndex(header => header.includes("nps numri i vleresimeve") || header.includes("nps responses"));
   const shops = shopRows.flatMap(row => {
     const shopName = String(row[shopTable.identityColumn] ?? "").trim();
     const representatives = representativesByShop.get(normalize(shopName)) ?? [];
     if (!shopName || !representatives.length) return [];
     const achievements = Object.keys(shopTable.achievementColumns).length
-      ? metricsFrom(row, shopTable.achievementColumns)
+      ? metricsFrom(row, shopTable.achievementColumns, warnings)
       : performanceMetrics.reduce((totals, metric) => {
           totals[metric] = representatives.reduce((sum, representative) => sum + representative.achievements[metric], 0);
           return totals;
         }, emptyMetrics());
     return [{
       shopName,
-      revenue: revenueColumn >= 0 ? numberValue(row[revenueColumn]) : 0,
+      revenue: revenueColumn >= 0 ? numberValue(row[revenueColumn], warnings) : 0,
       date,
-      targets: metricsFrom(row, shopTable.targetColumns),
+      targets: metricsFrom(row, shopTable.targetColumns, warnings),
       achievements,
       representatives,
+      ...((checklistColumn >= 0 || npsColumn >= 0 || npsResponsesColumn >= 0) && { qualityMetrics: {
+        ...(checklistColumn >= 0 && { checklistScore: numberValue(row[checklistColumn], warnings) }),
+        ...(npsColumn >= 0 && { npsScore: signedNumberValue(row[npsColumn], warnings) }),
+        ...(npsResponsesColumn >= 0 && { npsResponses: numberValue(row[npsResponsesColumn], warnings) }),
+      } }),
     }];
   });
 
   if (!shops.length) throw new Error("Target and achievement tables were found, but their shops and representatives could not be matched.");
-  return importedWorkbookSchema.parse({ shops });
+  const detectedMetrics = Array.from(new Set([
+    ...Object.keys(shopTable.targetColumns),
+    ...Object.keys(shopTable.achievementColumns),
+    ...Object.keys(representativeTable.targetColumns),
+    ...Object.keys(representativeTable.achievementColumns),
+  ])) as PerformanceMetric[];
+  const detectedMetricLabels = Object.fromEntries(detectedMetrics.map(metric => [
+    metric,
+    shopTable.metricLabels[metric] ?? representativeTable.metricLabels[metric] ?? metric,
+  ]));
+  if (revenueColumn < 0) warnings.push("No revenue column was detected. Revenue was set to zero for review.");
+  return importedWorkbookSchema.parse({ shops, detectedMetrics, detectedMetricLabels, warnings }) as ImportedWorkbookData;
 }
 
 export async function importTargetWorkbook(file: File, customMetricLabels: Partial<Record<PerformanceMetric, string>> = {}) {
   if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error("Please choose an Excel .xlsx or .xls file.");
+  const { read, utils } = await import("xlsx");
   const workbook = read(await file.arrayBuffer(), { type: "array", cellDates: true });
-  return parseDetectedWorkbook(workbook, customMetricLabels);
+  return parseDetectedWorkbook(workbook, customMetricLabels, utils.sheet_to_json);
 }

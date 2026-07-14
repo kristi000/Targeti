@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { getDaysInMonth } from "date-fns";
+import { getDaysInMonth, parseISO } from "date-fns";
 import {
   ArrowDownRight,
   ArrowRight,
@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { cn, calculateTotalAchievement } from "@/lib/utils";
-import { getPerformanceDatasetId, getPerformanceShopActuals, getShopMetrics } from "@/lib/types";
+import { getOverviewPerformanceData, getPerformanceShopActuals, getShopMetrics } from "@/lib/types";
 
 const periods = ["Today", "This week", "This month", "3 months"] as const;
 type Period = (typeof periods)[number];
@@ -41,12 +41,12 @@ export function DashboardClient() {
 
   const datasets = useMemo(() => {
     const byId = new Map<string, { id: string; name: string; date: string; importedAt: string }>();
-    Object.values(allPerformanceData).flat().forEach(entry => {
-      const id = getPerformanceDatasetId(entry);
+    Object.values(allPerformanceData).flatMap(getOverviewPerformanceData).forEach(entry => {
+      const id = entry.date.slice(0, 7);
       const existing = byId.get(id);
       const importedAt = entry.importedAt ?? entry.date;
       if (!existing || importedAt > existing.importedAt) {
-        byId.set(id, { id, name: entry.importName ?? `Excel report ${entry.date}`, date: entry.date, importedAt });
+        byId.set(id, { id, name: id, date: entry.date, importedAt });
       }
     });
     return [...byId.values()].sort((left, right) => right.importedAt.localeCompare(left.importedAt));
@@ -54,36 +54,43 @@ export function DashboardClient() {
   const activeDatasetId = datasets.some(dataset => dataset.id === selectedDatasetId) ? selectedDatasetId : datasets[0]?.id ?? "";
 
   const shopPerformances = useMemo(() => {
-    const today = new Date();
-    const daysInMonth = getDaysInMonth(today);
-    const dayOfMonth = Math.max(today.getDate(), 1);
-
     return shops.map((shop) => {
-      const performanceData = (allPerformanceData[shop.id] || []).filter(entry => getPerformanceDatasetId(entry) === activeDatasetId);
+      const performanceData = getOverviewPerformanceData(allPerformanceData[shop.id] || []).filter(entry => entry.date.startsWith(activeDatasetId));
       const monthlyTargets = performanceData[0]?.targets ?? allMonthlyTargets[shop.id];
       if (!monthlyTargets || performanceData.length === 0) {
-        return { shop, revenue: performanceData[0]?.revenue ?? shop.revenue ?? 0, totalAchievement: 0, forecastAchievement: 0 };
+        return { shop, revenue: 0, totalAchievement: 0, forecastAchievement: null as number | null, isFinal: false, hasData: false };
       }
 
-      const metrics = getShopMetrics(shop, monthlyTargets);
+      const report = performanceData[0];
+      const monthData = shop.monthlyData?.[report.date.slice(0, 7)];
+      const metricSettings = monthData?.metricSettings ?? shop.metricSettings;
+      const metrics = getShopMetrics({ ...shop, metricSettings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, monthlyTargets);
       const monthlyTotals = getPerformanceShopActuals(performanceData, metrics);
-      const totalAchievement = calculateTotalAchievement(monthlyTotals, monthlyTargets, shop.metricSettings);
+      const totalAchievement = calculateTotalAchievement(monthlyTotals, monthlyTargets, metricSettings);
+      const isFinal = report.reportType === "completedMonth";
+      const forecastDate = parseISO(report.asOfDate ?? report.date);
+      const dayOfMonth = Math.max(forecastDate.getDate(), 1);
+      const daysInMonth = getDaysInMonth(forecastDate);
 
       return {
         shop,
-        revenue: performanceData[0]?.revenue ?? shop.revenue ?? 0,
+        revenue: report.revenue ?? 0,
         totalAchievement,
-        forecastAchievement: (totalAchievement / dayOfMonth) * daysInMonth,
+        forecastAchievement: isFinal ? null : (totalAchievement / dayOfMonth) * daysInMonth,
+        isFinal,
+        hasData: true,
       };
     }).sort((a, b) => b.totalAchievement - a.totalAchievement);
   }, [shops, allPerformanceData, allMonthlyTargets, activeDatasetId]);
 
   const summary = useMemo(() => {
-    const count = shopPerformances.length;
-    const average = count ? shopPerformances.reduce((sum, item) => sum + item.totalAchievement, 0) / count : 0;
-    const forecast = count ? shopPerformances.reduce((sum, item) => sum + item.forecastAchievement, 0) / count : 0;
+    const reportingEntries = shopPerformances.filter(item => item.hasData);
+    const average = reportingEntries.length ? reportingEntries.reduce((sum, item) => sum + item.totalAchievement, 0) / reportingEntries.length : 0;
+    const forecastEntries = shopPerformances.filter(item => item.forecastAchievement !== null);
+    const forecast = forecastEntries.length ? forecastEntries.reduce((sum, item) => sum + (item.forecastAchievement ?? 0), 0) / forecastEntries.length : null;
+    const allFinal = reportingEntries.length > 0 && reportingEntries.every(item => item.isFinal);
     const revenue = shopPerformances.reduce((sum, item) => sum + item.revenue, 0);
-    return { average, forecast, revenue };
+    return { average, forecast, revenue, allFinal };
   }, [shopPerformances, shops]);
 
   if (loading) {
@@ -108,9 +115,9 @@ export function DashboardClient() {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {datasets.length > 0 && <label className="grid gap-1 text-xs text-muted-foreground">
-                Excel data
+                Reporting month
                 <select className="h-9 max-w-64 rounded-md border bg-background px-3 text-sm text-foreground" value={activeDatasetId} onChange={event => setSelectedDatasetId(event.target.value)}>
-                  {datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name} · {dataset.date}</option>)}
+                  {datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
                 </select>
               </label>}
               <div className="flex rounded-lg border bg-background p-1 shadow-sm" aria-label="Reporting period">
@@ -122,7 +129,7 @@ export function DashboardClient() {
 
           <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard label="Overall achievement" value={`${summary.average.toFixed(1)}%`} detail="Network average" icon={Gauge} trend={summary.average >= 100 ? "On target" : `${(100 - summary.average).toFixed(1)} pts to target`} positive={summary.average >= 100} />
-            <SummaryCard label="EOM forecast" value={`${summary.forecast.toFixed(1)}%`} detail="Based on current pace" icon={ArrowUpRight} trend={`${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast >= summary.average} />
+            <SummaryCard label="EOM forecast" value={summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`} detail={summary.allFinal ? "Completed month" : "Based on current pace"} icon={ArrowUpRight} trend={summary.forecast === null ? undefined : `${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast !== null && summary.forecast >= summary.average} />
             <SummaryCard label="Total revenue" value={currency.format(summary.revenue)} detail={period} icon={CircleDollarSign} />
             <SummaryCard label="Active shops" value={String(shops.length)} detail="Reporting locations" icon={Building2} trend={`${shopPerformances.filter((item) => item.totalAchievement >= 100).length} on target`} positive />
           </section>
@@ -154,17 +161,17 @@ export function DashboardClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {shopPerformances.map(({ shop, totalAchievement, forecastAchievement }, index) => {
-                    const health = getHealth(totalAchievement);
+                  {shopPerformances.map(({ shop, totalAchievement, forecastAchievement, isFinal, revenue, hasData }, index) => {
+                    const health = hasData ? getHealth(totalAchievement) : { label: "No data", color: "bg-slate-400", text: "text-slate-600" };
                     return (
                       <tr key={shop.id} className="group bg-white even:bg-slate-50/70 hover:bg-emerald-50/70">
                         <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-3 text-center font-mono text-xs text-slate-500">{index + 1}</td>
                         <td className="border-b border-r border-slate-200 px-3 py-3 font-medium text-slate-900">{shop.name}</td>
-                        <td className="border-b border-r border-slate-200 px-3 py-3"><span className={cn("inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs font-semibold", health.text, totalAchievement >= 100 ? "bg-emerald-100" : totalAchievement >= 80 ? "bg-amber-100" : "bg-rose-100")}><span className={cn("h-2 w-2 rounded-full", health.color)} />{health.label}</span></td>
-                        <td className="border-b border-r border-slate-200 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{totalAchievement.toFixed(1)}%</td>
-                        <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{forecastAchievement.toFixed(1)}%</td>
-                        <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{shop.revenue === undefined ? "—" : currency.format(shop.revenue)}</td>
-                        <td className="border-b border-r border-slate-200 px-3 py-3"><div className="flex items-center gap-3"><Progress value={Math.min(totalAchievement, 100)} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-10 text-right font-mono text-xs text-slate-500">100%</span></div></td>
+                        <td className="border-b border-r border-slate-200 px-3 py-3"><span className={cn("inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs font-semibold", health.text, !hasData ? "bg-slate-100" : totalAchievement >= 100 ? "bg-emerald-100" : totalAchievement >= 80 ? "bg-amber-100" : "bg-rose-100")}><span className={cn("h-2 w-2 rounded-full", health.color)} />{health.label}</span></td>
+                        <td className="border-b border-r border-slate-200 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{hasData ? `${totalAchievement.toFixed(1)}%` : "—"}</td>
+                        <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{isFinal ? <span className="font-medium text-slate-900">Final</span> : forecastAchievement === null ? "—" : `${forecastAchievement.toFixed(1)}%`}</td>
+                        <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{hasData ? currency.format(revenue) : "—"}</td>
+                        <td className="border-b border-r border-slate-200 px-3 py-3">{hasData ? <div className="flex items-center gap-3"><Progress value={Math.min(totalAchievement, 100)} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-10 text-right font-mono text-xs text-slate-500">100%</span></div> : <span className="text-xs text-slate-500">Excluded or not imported</span>}</td>
                         <td className="border-b border-slate-200 px-2 py-3 text-center"><Link href={`/${locale}/shop/${shop.id}`} aria-label={`Open ${shop.name}`} className="inline-flex rounded p-1 text-slate-400 hover:bg-white hover:text-primary"><ArrowRight className="h-4 w-4" /></Link></td>
                       </tr>
                     );
@@ -175,7 +182,7 @@ export function DashboardClient() {
                     <td className="border-r border-t border-slate-300 px-2 py-2" />
                     <td className="border-r border-t border-slate-300 px-3 py-2" colSpan={2}>NETWORK TOTAL / AVERAGE</td>
                     <td className="border-r border-t border-slate-300 px-3 py-2 text-right tabular-nums">{summary.average.toFixed(1)}%</td>
-                    <td className="border-r border-t border-slate-300 px-3 py-2 text-right tabular-nums">{summary.forecast.toFixed(1)}%</td>
+                    <td className="border-r border-t border-slate-300 px-3 py-2 text-right tabular-nums">{summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`}</td>
                     <td className="border-r border-t border-slate-300 px-3 py-2 text-right tabular-nums">{currency.format(summary.revenue)}</td>
                     <td className="border-t border-slate-300 px-3 py-2" colSpan={2} />
                   </tr>

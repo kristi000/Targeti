@@ -54,9 +54,51 @@ export type PerformanceData = {
   importId?: string;
   importName?: string;
   importedAt?: string;
+  reportType?: "midMonth" | "completedMonth";
+  asOfDate?: string;
+  includeInOverview?: boolean;
+  qualityMetrics?: QualityMetrics;
   targets?: Target;
   revenue?: number;
 };
+
+export type QualityMetrics = {
+  checklistScore?: number;
+  npsScore?: number;
+  npsResponses?: number;
+};
+
+export function getActivePerformanceData(data: PerformanceData[]): PerformanceData[] {
+  const latestExcelByMonth = new Map<string, PerformanceData>();
+  const manualEntries: PerformanceData[] = [];
+
+  data.forEach(entry => {
+    if (!entry.importId) {
+      manualEntries.push(entry);
+      return;
+    }
+
+    const month = entry.date.slice(0, 7);
+    const current = latestExcelByMonth.get(month);
+    const entryTime = entry.importedAt ?? entry.date;
+    const currentTime = current?.importedAt ?? current?.date ?? "";
+    if (!current || entryTime > currentTime) latestExcelByMonth.set(month, entry);
+  });
+
+  const effectiveManualEntries = manualEntries.filter(entry => !latestExcelByMonth.has(entry.date.slice(0, 7)));
+  return [...effectiveManualEntries, ...latestExcelByMonth.values()].sort((left, right) => left.date.localeCompare(right.date));
+}
+
+export function getOverviewPerformanceData(data: PerformanceData[]): PerformanceData[] {
+  return getActivePerformanceData(data).filter(entry => entry.includeInOverview !== false);
+}
+
+export function getQuarterKey(date: string) {
+  const [year, monthText] = date.slice(0, 7).split("-");
+  const month = Number(monthText);
+  const quarter = Math.min(Math.max(Math.ceil(month / 3), 1), 4);
+  return `${year}-Q${quarter}`;
+}
 
 export function getPerformanceDatasetId(data: PerformanceData) {
   return data.importId ?? data.id ?? data.date;
@@ -112,6 +154,12 @@ export type Shop = {
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
   monthlyData?: Record<string, MonthlyShopData>;
+  quarterSettings?: Record<string, QuarterMetricSettings>;
+};
+
+export type QuarterMetricSettings = {
+  metricSettings: MetricSettings;
+  metricOrder: PerformanceMetric[];
 };
 
 export type MonthlyShopData = {
@@ -121,6 +169,7 @@ export type MonthlyShopData = {
   representativeTargets: Record<string, Target>;
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
+  qualityMetrics?: QualityMetrics;
 };
 
 export function getMonthlyRepresentatives(shop: Shop, month: string): SalesRepresentative[] {

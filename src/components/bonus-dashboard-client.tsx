@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast";
 import { calculateManagerBonus, MANAGER_PAYOUT_TABLE_VERSION } from "@/lib/manager-bonus";
 import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } from "@/lib/sales-representative-bonus";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { getMonthlyRepresentatives, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
 
 export function BonusDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
@@ -42,7 +42,7 @@ export function BonusDashboardClient() {
   const targets = monthData?.targets ?? legacyTargets;
   const metricSettings = monthData?.metricSettings ?? selectedShop?.metricSettings;
   const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricOrder: monthData?.metricOrder ?? selectedShop.metricOrder, metricSettings } : undefined, targets), [selectedShop, monthData?.metricOrder, metricSettings, targets]);
-  const performanceData = useMemo(() => allData.filter(entry => entry.date.startsWith(selectedMonth)), [allData, selectedMonth]);
+  const performanceData = useMemo(() => getActivePerformanceData(allData).filter(entry => entry.date.startsWith(selectedMonth)), [allData, selectedMonth]);
   const totals = useMemo(() => {
     const reps = performanceData.reduce((result, day) => {
       day.reps.forEach(rep => metrics.forEach(metric => {

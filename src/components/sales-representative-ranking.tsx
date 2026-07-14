@@ -16,7 +16,7 @@ import {
   type Target,
   type SalesRepresentative,
   getMonthlyRepresentatives,
-  getPerformanceDatasetId,
+  getOverviewPerformanceData,
 } from "@/lib/types";
 import { Award, TrendingUp } from "lucide-react";
 import { ScrollArea } from "./ui/scroll-area";
@@ -24,7 +24,7 @@ import { useTranslations } from "next-intl";
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { useShop } from "./shop-provider";
-import { getDaysInMonth } from "date-fns";
+import { getDaysInMonth, parseISO } from "date-fns";
 
 export function SalesRepresentativeRanking() {
   const t = useTranslations("Dashboard");
@@ -33,20 +33,17 @@ export function SalesRepresentativeRanking() {
   const rankedSalesReps = useMemo(() => {
     if (shops.length === 0) return [];
     
-    const allReps: { name: string; shopName: string; achievement: number, forecastAchievement: number }[] = [];
-    const today = new Date();
-    const daysInMonth = getDaysInMonth(today);
-    const dayOfMonth = today.getDate();
+    const allReps: { name: string; shopName: string; achievement: number; forecastAchievement: number | null }[] = [];
 
-    const availableEntries = Object.values(allPerformanceData).flat();
+    const availableEntries = Object.values(allPerformanceData).flatMap(getOverviewPerformanceData);
     const latestEntry = [...availableEntries].sort((a, b) => (b.importedAt ?? b.date).localeCompare(a.importedAt ?? a.date))[0];
-    const activeDatasetId = availableEntries.some(entry => getPerformanceDatasetId(entry) === selectedDatasetId)
+    const activeDatasetId = availableEntries.some(entry => entry.date.startsWith(selectedDatasetId))
       ? selectedDatasetId
-      : latestEntry ? getPerformanceDatasetId(latestEntry) : "";
+      : latestEntry?.date.slice(0, 7) ?? "";
 
     shops.forEach((shop) => {
-      const shopPerformanceData = allPerformanceData[shop.id] || [];
-      const performanceData = shopPerformanceData.filter(entry => getPerformanceDatasetId(entry) === activeDatasetId);
+      const shopPerformanceData = getOverviewPerformanceData(allPerformanceData[shop.id] || []);
+      const performanceData = shopPerformanceData.filter(entry => entry.date.startsWith(activeDatasetId));
       const selectedEntry = performanceData[0];
       if (!selectedEntry) return;
       const latestMonth = selectedEntry.date.slice(0, 7);
@@ -59,7 +56,12 @@ export function SalesRepresentativeRanking() {
       const monthlyTargets = selectedEntry.targets ?? shop.monthlyData?.[latestMonth]?.targets ?? allMonthlyTargets[shop.id];
 
       if (!monthlyTargets || performanceData.length === 0) return;
-      const metrics = getShopMetrics(shop, monthlyTargets);
+      const monthData = shop.monthlyData?.[latestMonth];
+      const metricSettings = monthData?.metricSettings ?? shop.metricSettings;
+      const metrics = getShopMetrics({ ...shop, metricSettings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, monthlyTargets);
+      const forecastDate = parseISO(selectedEntry.asOfDate ?? selectedEntry.date);
+      const daysInMonth = getDaysInMonth(forecastDate);
+      const dayOfMonth = Math.max(forecastDate.getDate(), 1);
 
       // Simplified calculation - only process if we have data
       const repTotals: Record<string, Record<PerformanceMetric, number>> = {};
@@ -85,12 +87,12 @@ export function SalesRepresentativeRanking() {
 
       salesRepresentatives.forEach((rep) => {
         const currentTotals = repTotals[rep.id];
-        const achievement = calculateTotalAchievement(currentTotals, repTargets, shop.metricSettings);
+        const achievement = calculateTotalAchievement(currentTotals, repTargets, metricSettings);
         
         // Simplified forecast calculation
-        const forecastAchievement = dayOfMonth > 0 
-          ? (achievement / dayOfMonth) * daysInMonth 
-          : achievement;
+        const forecastAchievement = selectedEntry.reportType === "completedMonth"
+          ? null
+          : (achievement / dayOfMonth) * daysInMonth;
 
         allReps.push({
           name: rep.name,
@@ -122,7 +124,7 @@ export function SalesRepresentativeRanking() {
             <div className="text-right">
               <div className="text-lg font-semibold">{rep.achievement.toFixed(1)}%</div>
               <div className="text-xs text-muted-foreground">
-                EOM: {rep.forecastAchievement.toFixed(1)}%
+                EOM: {rep.forecastAchievement === null ? "Final" : `${rep.forecastAchievement.toFixed(1)}%`}
               </div>
             </div>
           </div>

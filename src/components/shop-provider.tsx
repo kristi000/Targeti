@@ -1,9 +1,9 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useMemo, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { type Shop, type PerformanceData, type Target, getInitialTargets } from '@/lib/types';
-import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSaveTargets, handleSavePerformanceData, fetchShops, fetchPerformanceData } from '@/app/actions';
+import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSaveTargets, handleSavePerformanceData, fetchShopData, type ShopData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 
@@ -27,12 +27,12 @@ type ShopContextType = {
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
-export function ShopProvider({ children }: { children: React.ReactNode }) {
-  const [shops, setShops] = useState<Shop[]>([]);
-  const [selectedShop, setSelectedShop] = useState<Shop | null>(null);
-  const [allPerformanceData, setAllPerformanceData] = useState<Record<string, PerformanceData[]>>({});
-  const [allMonthlyTargets, setAllMonthlyTargets] = useState<Record<string, Target>>({});
-  const [loading, setLoading] = useState(true);
+export function ShopProvider({ children, initialData }: { children: React.ReactNode; initialData: ShopData }) {
+  const [shops, setShops] = useState<Shop[]>(initialData.shops);
+  const [selectedShop, setSelectedShop] = useState<Shop | null>(initialData.shops[0] ?? null);
+  const [allPerformanceData, setAllPerformanceData] = useState<Record<string, PerformanceData[]>>(initialData.performanceData);
+  const [allMonthlyTargets, setAllMonthlyTargets] = useState<Record<string, Target>>(initialData.monthlyTargets);
+  const [loading, setLoading] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
 
   const { toast } = useToast();
@@ -40,14 +40,12 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
 
   const refreshDataForShop = useCallback(async (shopId: string) => {
     try {
-        const perfData = await fetchPerformanceData(shopId);
-        setAllPerformanceData(prev => ({ ...prev, [shopId]: perfData }));
-
-        const updatedShops = await fetchShops();
-        const shop = updatedShops.find(s => s.id === shopId);
-        if (shop?.monthlyTargets) {
-            setAllMonthlyTargets(prev => ({ ...prev, [shopId]: shop.monthlyTargets! }));
-        }
+        const data = await fetchShopData();
+        const shop = data.shops.find(item => item.id === shopId);
+        setShops(data.shops);
+        setAllPerformanceData(data.performanceData);
+        setAllMonthlyTargets(data.monthlyTargets);
+        if (shop) setSelectedShop(shop);
     } catch (error) {
         console.error(`Failed to refresh data for shop ${shopId}:`, error);
         toast({
@@ -61,33 +59,13 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      console.log("Loading initial data...");
-      
-      const shops = await fetchShops();
-      const performanceData: Record<string, PerformanceData[]> = {};
-      const monthlyTargets: Record<string, Target> = {};
-      
-      for (const shop of shops) {
-        try {
-          const perfData = await fetchPerformanceData(shop.id);
-          performanceData[shop.id] = perfData;
-        } catch (error) {
-          console.warn(`Failed to fetch performance data for shop ${shop.id}:`, error);
-          performanceData[shop.id] = [];
-        }
-        
-        if (shop.monthlyTargets) {
-          monthlyTargets[shop.id] = shop.monthlyTargets;
-        }
-      }
+      const { shops, performanceData, monthlyTargets } = await fetchShopData();
       
       setShops(shops);
       setAllPerformanceData(performanceData);
       setAllMonthlyTargets(monthlyTargets);
       
       setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
-      
-      console.log("Data loaded successfully");
       
     } catch (error) {
       console.error("Failed to load initial data:", error);
@@ -100,12 +78,6 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     }
   }, [toast, t]);
-
-  useEffect(() => {
-    loadInitialData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
 
   const addShop = useCallback(async (shopName: string, description?: string) => {
     setLoading(true);
@@ -121,14 +93,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
             }
             setAllPerformanceData(prev => ({...prev, [newShop.id]: []}));
             
-            if (result.fallback) {
-                toast({ 
-                    title: t('shopAdded'), 
-                    description: `${t('shopAddedSuccess', {shopName})} (Saved locally)` 
-                });
-            } else {
-                toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
-            }
+            toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
         } else {
             console.error("Failed to add shop:", result.error);
             toast({ variant: "destructive", title: t('error'), description: result.error || t('addShopFailed') });
@@ -149,11 +114,7 @@ export function ShopProvider({ children }: { children: React.ReactNode }) {
         setSelectedShop(prev => prev ? {...prev, ...result.data!} : null);
       }
       
-      if (result.fallback) {
-        toast({ title: t('shopUpdated'), description: `${t('shopUpdatedSuccess', {shopName: updatedShop.name})} (Saved locally)` });
-      } else {
-        toast({ title: t('shopUpdated'), description: t('shopUpdatedSuccess', {shopName: updatedShop.name}) });
-      }
+      toast({ title: t('shopUpdated'), description: t('shopUpdatedSuccess', {shopName: updatedShop.name}) });
     } else {
       toast({ variant: "destructive", title: t('error'), description: t('updateShopFailed') });
     }

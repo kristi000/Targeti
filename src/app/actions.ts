@@ -1,322 +1,240 @@
-
 "use server";
 
-import { type PerformanceData, type Target, type Shop, type BonusSnapshot, getInitialTargets } from "@/lib/types";
-import { db } from "@/lib/firebase";
-import { collection, addDoc, doc, updateDoc, deleteDoc, writeBatch, getDocs, runTransaction, type DocumentReference } from "firebase/firestore";
+import { revalidateTag, unstable_cache } from "next/cache";
+import { z } from "zod";
 
-// Ensure Firebase is initialized
-if (!db) {
-  throw new Error("Firebase database not initialized. Please check your configuration.");
+import { adminDb } from "@/lib/firebase-admin";
+import {
+  bonusSnapshotSchema,
+  newShopSchema,
+  performanceDataListSchema,
+  performanceDataSchema,
+  shopIdSchema,
+  shopSchema,
+  targetSchema,
+} from "@/lib/persistence-schemas";
+import { getInitialTargets, type BonusSnapshot, type PerformanceData, type Shop, type Target } from "@/lib/types";
+
+export type ShopData = {
+  shops: Shop[];
+  performanceData: Record<string, PerformanceData[]>;
+  monthlyTargets: Record<string, Target>;
+};
+
+const SHOP_DATA_CACHE_TAG = "shop-data";
+
+function invalidateShopData() {
+  revalidateTag(SHOP_DATA_CACHE_TAG);
+}
+
+function validationMessage(error: z.ZodError) {
+  return error.issues[0]?.message ?? "Invalid data.";
+}
+
+function mutationError(operation: string, error: unknown) {
+  if (error instanceof z.ZodError) return validationMessage(error);
+  console.error(`Firestore ${operation} failed:`, error);
+  return `Could not ${operation}. Please try again.`;
+}
+
+function parseFirestoreDocument<T>(schema: z.ZodType<T>, id: string, value: unknown): T | null {
+  const result = schema.safeParse({ id, ...(value as Record<string, unknown>) });
+  if (result.success) return result.data;
+  console.error(`Ignoring invalid Firestore document ${id}:`, result.error.flatten());
+  return null;
+}
+
+function toFirestoreData<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(item => toFirestoreData(item)) as T;
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).flatMap(([key, entry]) =>
+        entry === undefined ? [] : [[key, toFirestoreData(entry)]],
+      ),
+    ) as T;
+  }
+  return value;
 }
 
 export async function handleSaveTargets(shopId: string, targets: Target) {
   try {
-    const shopRef = doc(db, "shops", shopId);
-    await updateDoc(shopRef, { monthlyTargets: targets });
-    return { success: true, data: targets };
+    const validShopId = shopIdSchema.parse(shopId);
+    const validTargets = targetSchema.parse(targets) as Target;
+    await adminDb.doc(`shops/${validShopId}`).update({ monthlyTargets: validTargets });
+    invalidateShopData();
+    return { success: true as const, data: validTargets };
   } catch (error) {
-    console.error("Error saving targets with Firebase:", error);
-    
-    // If Firebase fails, try local storage as fallback
-    try {
-        console.log("Falling back to local storage for targets...");
-        const { localDataManager } = await import('@/lib/local-storage');
-        
-        localDataManager.saveTargets(shopId, targets as Target);
-        console.log("Targets saved to local storage for shop:", shopId);
-        
-        return { success: true, data: targets, fallback: true };
-    } catch (fallbackError) {
-        console.error("Local storage fallback also failed:", fallbackError);
-        return { success: false, error: "Failed to save targets." };
-    }
+    return { success: false as const, error: mutationError("save targets", error) };
   }
 }
 
-export async function handleSavePerformanceData(shopId: string, data: PerformanceData[]) {
-    try {
-        const batch = writeBatch(db);
-        const performanceCollectionRef = collection(db, "shops", shopId, "performance");
-        
-        data.forEach(performanceEntry => {
-            const docRef = doc(performanceCollectionRef, performanceEntry.date);
-            batch.set(docRef, performanceEntry);
-        });
+async function savePerformanceData(shopId: string, data: PerformanceData[], useImportId: boolean) {
+  const validShopId = shopIdSchema.parse(shopId);
+  // Zod's catch-all output cannot express the mixed repId/metric index signature,
+  // but the schema has validated every property before this conversion.
+  const validData = performanceDataListSchema.parse(data) as unknown as PerformanceData[];
+  const batch = adminDb.batch();
 
-        await batch.commit();
-        return { success: true, data };
-    } catch (error) {
-        console.error(`Error saving performance data with Firebase for shop ${shopId}:`, error);
-        
-        // If Firebase fails, try local storage as fallback
-        try {
-            console.log("Falling back to local storage for performance data...");
-            const { localDataManager } = await import('@/lib/local-storage');
-            
-            const merged = new Map(localDataManager.getPerformanceData(shopId).map(item => [item.date, item]));
-            data.forEach(item => merged.set(item.date, item));
-            localDataManager.savePerformanceData(shopId, [...merged.values()].sort((a, b) => a.date.localeCompare(b.date)));
-            console.log("Performance data saved to local storage for shop:", shopId);
-            
-            return { success: true, data, fallback: true };
-        } catch (fallbackError) {
-            console.error("Local storage fallback also failed:", fallbackError);
-            return { success: false, error: "Failed to save performance data" };
-        }
-    }
+  validData.forEach(entry => {
+    const documentId = useImportId ? entry.importId ?? entry.date : entry.date;
+    batch.set(adminDb.doc(`shops/${validShopId}/performance/${documentId}`), toFirestoreData(entry));
+  });
+
+  await batch.commit();
+  invalidateShopData();
+  return validData;
+}
+
+export async function handleSavePerformanceData(shopId: string, data: PerformanceData[]) {
+  try {
+    const validData = await savePerformanceData(shopId, data, false);
+    return { success: true as const, data: validData };
+  } catch (error) {
+    return { success: false as const, error: mutationError("save performance data", error) };
+  }
 }
 
 export async function handleSaveExcelPerformanceData(shopId: string, data: PerformanceData[]) {
-    try {
-        const batch = writeBatch(db);
-        const performanceCollectionRef = collection(db, "shops", shopId, "performance");
-        data.forEach(performanceEntry => {
-            batch.set(doc(performanceCollectionRef, performanceEntry.importId ?? performanceEntry.date), performanceEntry);
-        });
-        await batch.commit();
-        return { success: true, data };
-    } catch (error) {
-        console.error(`Error saving Excel performance data for shop ${shopId}:`, error);
-        try {
-            const { localDataManager } = await import('@/lib/local-storage');
-            const existing = localDataManager.getPerformanceData(shopId);
-            const merged = new Map(existing.map(item => [item.importId ?? item.id ?? item.date, item]));
-            data.forEach(item => merged.set(item.importId ?? item.date, item));
-            const result = [...merged.values()].sort((a, b) => (a.importedAt ?? a.date).localeCompare(b.importedAt ?? b.date));
-            localDataManager.savePerformanceData(shopId, result);
-            return { success: true, data: result, fallback: true };
-        } catch (fallbackError) {
-            console.error("Local storage Excel save also failed:", fallbackError);
-            return { success: false, error: "Failed to save Excel performance data." };
-        }
-    }
+  try {
+    const validData = await savePerformanceData(shopId, data, true);
+    return { success: true as const, data: validData };
+  } catch (error) {
+    return { success: false as const, error: mutationError("save Excel performance data", error) };
+  }
 }
 
 export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot) {
-    const snapshotRef = doc(db, "shops", shopId, "bonusSnapshots", snapshot.month);
-    try {
-        await runTransaction(db, async transaction => {
-            if ((await transaction.get(snapshotRef)).exists()) throw new Error("ALREADY_FINALIZED");
-            transaction.set(snapshotRef, JSON.parse(JSON.stringify(snapshot)) as BonusSnapshot);
-        });
-        return { success: true, data: snapshot };
-    } catch (error) {
-        return { success: false, error: error instanceof Error && error.message === "ALREADY_FINALIZED" ? "This month has already been finalized." : "Could not save the payroll snapshot." };
+  try {
+    const validShopId = shopIdSchema.parse(shopId);
+    const validSnapshot = bonusSnapshotSchema.parse(snapshot) as BonusSnapshot;
+    const snapshotRef = adminDb.doc(`shops/${validShopId}/bonusSnapshots/${validSnapshot.month}`);
+
+    await adminDb.runTransaction(async transaction => {
+      if ((await transaction.get(snapshotRef)).exists) throw new Error("ALREADY_FINALIZED");
+      transaction.set(snapshotRef, toFirestoreData(validSnapshot));
+    });
+
+    return { success: true as const, data: validSnapshot };
+  } catch (error) {
+    if (error instanceof Error && error.message === "ALREADY_FINALIZED") {
+      return { success: false as const, error: "This month has already been finalized." };
     }
+    return { success: false as const, error: mutationError("finalize the payroll snapshot", error) };
+  }
 }
 
 export async function fetchBonusSnapshots(shopId: string): Promise<Record<string, BonusSnapshot>> {
-    const snapshot = await getDocs(collection(db, "shops", shopId, "bonusSnapshots"));
-    return Object.fromEntries(snapshot.docs.map(item => [item.id, item.data() as BonusSnapshot]));
+  const validShopId = shopIdSchema.parse(shopId);
+  const snapshot = await adminDb.collection(`shops/${validShopId}/bonusSnapshots`).get();
+
+  return Object.fromEntries(snapshot.docs.flatMap(document => {
+    const result = bonusSnapshotSchema.safeParse(document.data());
+    if (result.success) return [[document.id, result.data as BonusSnapshot] as const];
+    console.error(`Ignoring invalid bonus snapshot ${document.ref.path}:`, result.error.flatten());
+    return [];
+  }));
 }
 
 export async function handleAddShop(shopName: string, description?: string) {
-    try {
-        console.log("Starting to add shop:", shopName);
-        
-        // Check if we can access the database
-        if (!db) {
-            throw new Error("Firestore database not initialized");
-        }
+  try {
+    const input = newShopSchema.parse({ name: shopName, description });
+    const monthlyTargets = getInitialTargets();
+    const shopData = {
+      name: input.name,
+      description: input.description ?? "",
+      salesRepresentatives: [],
+      monthlyTargets,
+      createdAt: new Date().toISOString(),
+    };
+    const document = await adminDb.collection("shops").add(toFirestoreData(shopData));
+    invalidateShopData();
 
-        const monthlyTargets = getInitialTargets();
-        
-        // Create the shop document
-        const shopsCollectionRef = collection(db, "shops");
-        console.log("Collection reference created");
-        
-        const shopData = {
-            name: shopName,
-            description: description || "",
-            salesRepresentatives: [],
-            monthlyTargets,
-            createdAt: new Date().toISOString()
-        };
-        
-        console.log("Adding document to collection...");
-        const docRef = await addDoc(shopsCollectionRef, shopData);
-        console.log("Document added successfully with ID:", docRef.id);
-        
-        const newShop: Shop = {
-            id: docRef.id,
-            name: shopName,
-            description: description || "",
-            salesRepresentatives: [],
-            monthlyTargets,
-        };
-        
-        console.log("Shop created successfully:", newShop);
-        return { success: true, data: newShop };
-    } catch (error) {
-        console.error("Error adding shop with Firebase:", error);
-        
-        // If Firebase fails, try local storage as fallback
-        try {
-            console.log("Falling back to local storage...");
-            const { localDataManager } = await import('@/lib/local-storage');
-            
-            const newShop: Shop = {
-                id: `local-${Date.now()}`,
-                name: shopName,
-                description: description || "",
-                salesRepresentatives: [],
-                monthlyTargets: getInitialTargets(),
-            };
-            
-            localDataManager.saveShop(newShop);
-            console.log("Shop saved to local storage:", newShop);
-            
-            return { success: true, data: newShop, fallback: true };
-        } catch (fallbackError) {
-            console.error("Local storage fallback also failed:", fallbackError);
-            
-            // Provide more specific error messages
-            if (error instanceof Error) {
-                if (error.message.includes("permission-denied")) {
-                    return { success: false, error: "Permission denied. Please check your Firebase security rules." };
-                } else if (error.message.includes("unavailable")) {
-                    return { success: false, error: "Firebase service unavailable. Please check your internet connection." };
-                } else if (error.message.includes("NOT_FOUND")) {
-                    return { success: false, error: "Database not found. Using local storage as fallback." };
-                }
-            }
-            
-            return { success: false, error: `Failed to add shop: ${error instanceof Error ? error.message : 'Unknown error'}` };
-        }
-    }
+    return {
+      success: true as const,
+      data: { id: document.id, ...shopData } satisfies Shop,
+    };
+  } catch (error) {
+    return { success: false as const, error: mutationError("add the shop", error) };
+  }
 }
 
 export async function handleUpdateShop(shop: Shop) {
-    try {
-        const shopRef = doc(db, "shops", shop.id);
-        await updateDoc(shopRef, {
-            name: shop.name,
-            description: shop.description,
-            ...(shop.revenue !== undefined && { revenue: shop.revenue }),
-            salesRepresentatives: shop.salesRepresentatives,
-            ...(shop.metricSettings !== undefined && { metricSettings: shop.metricSettings }),
-            ...(shop.metricOrder !== undefined && { metricOrder: shop.metricOrder }),
-            ...(shop.monthlyData !== undefined && { monthlyData: shop.monthlyData }),
-        });
-        return { success: true, data: shop };
-    } catch (error) {
-        console.error("Error updating shop with Firebase:", error);
-        
-        // If Firebase fails, try local storage as fallback
-        try {
-            console.log("Falling back to local storage for update...");
-            const { localDataManager } = await import('@/lib/local-storage');
-            
-            localDataManager.saveShop(shop);
-            console.log("Shop updated in local storage:", shop);
-            
-            return { success: true, data: shop, fallback: true };
-        } catch (fallbackError) {
-            console.error("Local storage fallback also failed:", fallbackError);
-            return { success: false, error: "Failed to update shop." };
-        }
-    }
+  try {
+    const validShop = shopSchema.parse(shop) as Shop;
+    const { id, ...shopData } = validShop;
+    await adminDb.doc(`shops/${id}`).update(toFirestoreData(shopData));
+    invalidateShopData();
+    return { success: true as const, data: validShop };
+  } catch (error) {
+    return { success: false as const, error: mutationError("update the shop", error) };
+  }
 }
 
 export async function handleDeleteShop(shopId: string) {
-    try {
-        await deleteDoc(doc(db, "shops", shopId));
-        return { success: true };
-    } catch (error) {
-        console.error("Error deleting shop with Firebase:", error);
-        
-        // If Firebase fails, try local storage as fallback
-        try {
-            console.log("Falling back to local storage for delete...");
-            const { localDataManager } = await import('@/lib/local-storage');
-            
-            const deleted = localDataManager.deleteShop(shopId);
-            if (deleted) {
-                console.log("Shop deleted from local storage:", shopId);
-                return { success: true, fallback: true };
-            } else {
-                return { success: false, error: "Shop not found." };
-            }
-        } catch (fallbackError) {
-            console.error("Local storage fallback also failed:", fallbackError);
-            return { success: false, error: "Failed to delete shop." };
-        }
-    }
+  try {
+    const validShopId = shopIdSchema.parse(shopId);
+    await adminDb.recursiveDelete(adminDb.doc(`shops/${validShopId}`));
+    invalidateShopData();
+    return { success: true as const };
+  } catch (error) {
+    return { success: false as const, error: mutationError("delete the shop", error) };
+  }
 }
 
 export async function handleClearAllData() {
-    try {
-        const shopsSnapshot = await getDocs(collection(db, "shops"));
-        const references: DocumentReference[] = [];
-
-        await Promise.all(shopsSnapshot.docs.map(async shopDocument => {
-            const [performance, bonusSnapshots] = await Promise.all([
-                getDocs(collection(db, "shops", shopDocument.id, "performance")),
-                getDocs(collection(db, "shops", shopDocument.id, "bonusSnapshots")),
-            ]);
-            references.push(...performance.docs.map(item => item.ref));
-            references.push(...bonusSnapshots.docs.map(item => item.ref));
-            references.push(shopDocument.ref);
-        }));
-
-        for (let start = 0; start < references.length; start += 450) {
-            const batch = writeBatch(db);
-            references.slice(start, start + 450).forEach(reference => batch.delete(reference));
-            await batch.commit();
-        }
-
-        return { success: true };
-    } catch (error) {
-        console.error("Error clearing application data:", error);
-        return { success: false, error: "Failed to clear all data." };
-    }
+  try {
+    await adminDb.recursiveDelete(adminDb.collection("shops"));
+    invalidateShopData();
+    return { success: true as const };
+  } catch (error) {
+    return { success: false as const, error: mutationError("clear application data", error) };
+  }
 }
 
 export async function fetchShops(): Promise<Shop[]> {
-    try {
-        const shopsCollection = collection(db, "shops");
-        const shopsSnapshot = await getDocs(shopsCollection);
-        const shops: Shop[] = [];
-        shopsSnapshot.forEach(doc => {
-            const data = doc.data();
-            shops.push({
-                id: doc.id,
-                name: data.name,
-                description: data.description,
-                revenue: data.revenue,
-                salesRepresentatives: data.salesRepresentatives,
-            monthlyTargets: data.monthlyTargets,
-            metricSettings: data.metricSettings,
-            metricOrder: data.metricOrder,
-            monthlyData: data.monthlyData,
-            });
-        });
-        return shops;
-    } catch (error) {
-        console.error("Firebase fetchShops failed, using local storage:", error);
-        
-        // Fallback to local storage
-        const { localDataManager } = await import('@/lib/local-storage');
-        localDataManager.initializeWithSampleData();
-        return localDataManager.getShops();
-    }
+  const snapshot = await adminDb.collection("shops").get();
+  return snapshot.docs.flatMap(document => {
+    const shop = parseFirestoreDocument(shopSchema, document.id, document.data());
+    return shop ? [shop as Shop] : [];
+  });
 }
 
 export async function fetchPerformanceData(shopId: string): Promise<PerformanceData[]> {
-    try {
-        const performanceCollection = collection(db, "shops", shopId, "performance");
-        const performanceSnapshot = await getDocs(performanceCollection);
-        const performanceData: PerformanceData[] = [];
-        performanceSnapshot.forEach(doc => {
-            performanceData.push({ id: doc.id, ...doc.data() } as PerformanceData);
-        });
-        return performanceData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    } catch (error) {
-        console.error(`Firebase fetchPerformanceData failed for shop ${shopId}, using local storage:`, error);
-        
-        // Fallback to local storage
-        const { localDataManager } = await import('@/lib/local-storage');
-        return localDataManager.getPerformanceData(shopId);
-    }
+  const validShopId = shopIdSchema.parse(shopId);
+  const snapshot = await adminDb.collection(`shops/${validShopId}/performance`).get();
+  return snapshot.docs.flatMap(document => {
+    const result = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
+    if (result.success) return [result.data as unknown as PerformanceData];
+    console.error(`Ignoring invalid performance document ${document.ref.path}:`, result.error.flatten());
+    return [];
+  }).sort((left, right) => left.date.localeCompare(right.date));
+}
+
+const loadShopData = unstable_cache(async (): Promise<ShopData> => {
+  const [shops, performanceSnapshot] = await Promise.all([
+    fetchShops(),
+    adminDb.collectionGroup("performance").get(),
+  ]);
+  const performanceData = Object.fromEntries(shops.map(shop => [shop.id, [] as PerformanceData[]]));
+
+  performanceSnapshot.forEach(document => {
+    const shopId = document.ref.parent.parent?.id;
+    if (!shopId || !performanceData[shopId]) return;
+    const result = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
+    if (result.success) performanceData[shopId].push(result.data as unknown as PerformanceData);
+    else console.error(`Ignoring invalid performance document ${document.ref.path}:`, result.error.flatten());
+  });
+  Object.values(performanceData).forEach(entries => entries.sort((left, right) => left.date.localeCompare(right.date)));
+
+  return {
+    shops,
+    performanceData,
+    monthlyTargets: Object.fromEntries(
+      shops.flatMap(shop => shop.monthlyTargets ? [[shop.id, shop.monthlyTargets] as const] : []),
+    ),
+  };
+}, [SHOP_DATA_CACHE_TAG], { revalidate: 60, tags: [SHOP_DATA_CACHE_TAG] });
+
+export async function fetchShopData(): Promise<ShopData> {
+  return loadShopData();
 }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
 import { AppLayout } from "@/components/app-layout";
 import { ShopProvider } from "@/components/shop-provider";
+import { fetchShopData } from "@/app/actions";
 
 type Props = {
   children: React.ReactNode;
@@ -22,10 +23,11 @@ export default async function LocaleLayout({
    } catch (error) {
      redirect('/en');
    }
+   const initialShopData = await fetchShopData();
 
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
-      <ShopProvider>
+      <ShopProvider initialData={initialShopData}>
         <AppLayout>{children}</AppLayout>
       </ShopProvider>
     </NextIntlClientProvider>

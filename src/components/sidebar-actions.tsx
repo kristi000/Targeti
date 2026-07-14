@@ -40,6 +40,7 @@ import {
   getInitialTargets,
   getShopMetrics,
   getMonthlyRepresentatives,
+  getActivePerformanceData,
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
@@ -111,7 +112,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             }, {} as Record<PerformanceMetric, number>);
         });
 
-        performanceData.filter(day => day.date.startsWith(activeMonth)).forEach(day => {
+        getActivePerformanceData(performanceData).filter(day => day.date.startsWith(activeMonth)).forEach(day => {
             day.reps.forEach(repData => {
                 if (totals[repData.repId]) {
                     metrics.forEach(metric => {
@@ -338,8 +339,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         try {
             const result = await handleClearAllData();
             if (!result.success) throw new Error(result.error);
-            const { localDataManager } = await import("@/lib/local-storage");
-            localDataManager.clearAllData();
             await reloadData();
             toast({ title: "All data cleared", description: "All shops, targets, achievements, and bonus snapshots were deleted." });
         } catch (error) {
@@ -391,6 +390,9 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 )}
                 {selectedShop && !isDashboard && (
                     <>
+                        <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
+                            <ExcelImportDialog restrictToSelectedShop />
+                        </div>
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogTrigger asChild>
                                     <Button type="button" variant="outline" size="sm" onClick={onOpenTargetDialog}>

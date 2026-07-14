@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Banknote, Trophy } from "lucide-react";
+import { ArrowLeft, Banknote, ClipboardCheck, MessageSquareText, Trophy, Users } from "lucide-react";
 import { format, getDaysInMonth, isSameMonth, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
@@ -16,14 +16,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
-import { getMonthlyRepresentatives, getPerformanceShopActuals, getShopMetrics, type PerformanceMetric } from "@/lib/types";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceShopActuals, getShopMetrics, type PerformanceMetric } from "@/lib/types";
 
 export function DetailedDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
-  const revenue = selectedShop?.revenue;
   const [selectedMonthValue, setSelectedMonthValue] = useState("");
+  const [selectedVersionId, setSelectedVersionId] = useState("active");
 
   const allData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
   const now = new Date();
@@ -36,29 +36,43 @@ export function DetailedDashboardClient() {
     return months.length ? months : [currentMonth];
   }, [allData, selectedShop?.monthlyData, currentMonth]);
   const selectedMonth = availableMonths.includes(selectedMonthValue) ? selectedMonthValue : availableMonths[0] ?? format(now, "yyyy-MM");
+  const monthVersions = useMemo(() => allData
+    .filter(entry => entry.importId && entry.date.startsWith(selectedMonth))
+    .sort((left, right) => (right.importedAt ?? right.date).localeCompare(left.importedAt ?? left.date)), [allData, selectedMonth]);
+  const selectedVersion = selectedVersionId === "active"
+    ? undefined
+    : monthVersions.find(entry => getPerformanceDatasetId(entry) === selectedVersionId);
+  const performanceData = useMemo(() => selectedVersion
+    ? [selectedVersion]
+    : getActivePerformanceData(allData).filter(day => day.date.startsWith(selectedMonth)), [allData, selectedMonth, selectedVersion]);
   const monthData = selectedShop?.monthlyData?.[selectedMonth];
-  const monthlyRepresentatives = selectedShop ? getMonthlyRepresentatives(selectedShop, selectedMonth) : [];
-  const monthlyTargets = monthData?.targets ?? (selectedShop ? allMonthlyTargets[selectedShop.id] : undefined);
+  const monthlyRepresentatives = selectedVersion
+    ? selectedVersion.reps.map(rep => ({ id: rep.repId, name: rep.repName ?? rep.repId }))
+    : selectedShop ? getMonthlyRepresentatives(selectedShop, selectedMonth) : [];
+  const monthlyTargets = selectedVersion?.targets ?? monthData?.targets ?? (selectedShop ? allMonthlyTargets[selectedShop.id] : undefined);
   const metricSettings = monthData?.metricSettings ?? selectedShop?.metricSettings;
   const metricOrder = monthData?.metricOrder ?? selectedShop?.metricOrder;
   const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings, metricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, metricSettings, metricOrder]);
-  const performanceData = useMemo(() => allData.filter(day => day.date.startsWith(selectedMonth)), [allData, selectedMonth]);
-
   const monthlyTotals = useMemo(() => getPerformanceShopActuals(performanceData, metrics), [performanceData, metrics]);
 
   const monthlyAchievement = monthlyTargets
     ? calculateTotalAchievement(monthlyTotals, monthlyTargets, metricSettings)
     : 0;
-  const hasForecast = isSameMonth(parseISO(`${selectedMonth}-01`), now) && performanceData.length >= 2;
+  const excelReport = performanceData.find(entry => entry.importId);
+  const revenue = excelReport?.revenue ?? monthData?.collection ?? selectedShop?.revenue;
+  const qualityMetrics = excelReport?.qualityMetrics ?? monthData?.qualityMetrics;
+  const isFinal = excelReport?.reportType === "completedMonth";
+  const forecastDate = excelReport?.reportType === "midMonth" ? parseISO(excelReport.asOfDate ?? excelReport.date) : now;
+  const hasForecast = !isFinal && (excelReport?.reportType === "midMonth" || (isSameMonth(parseISO(`${selectedMonth}-01`), now) && performanceData.length >= 2));
   const forecastData = useMemo(() => {
     if (!hasForecast) return undefined;
-    const dayOfMonth = now.getDate();
-    const daysInMonth = getDaysInMonth(now);
+    const dayOfMonth = forecastDate.getDate();
+    const daysInMonth = getDaysInMonth(forecastDate);
     return metrics.reduce((forecast, metric) => {
       forecast[metric] = dayOfMonth > 0 ? ((monthlyTotals[metric] || 0) / dayOfMonth) * daysInMonth : 0;
       return forecast;
     }, {} as Record<PerformanceMetric, number>);
-  }, [hasForecast, monthlyTotals, metrics]);
+  }, [hasForecast, monthlyTotals, metrics, forecastDate]);
 
   if (!selectedShop || !monthlyTargets) {
     return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex-1 p-4 md:p-6 lg:p-8"><Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
@@ -72,10 +86,14 @@ export function DetailedDashboardClient() {
           <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
             <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline" })}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link>
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={selectedMonth} onValueChange={setSelectedMonthValue}>
+              <Select value={selectedMonth} onValueChange={value => { setSelectedMonthValue(value); setSelectedVersionId("active"); }}>
                 <SelectTrigger className="w-44" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
                 <SelectContent>{availableMonths.map(month => <SelectItem key={month} value={month}>{format(parseISO(`${month}-01`), "MMMM yyyy")}</SelectItem>)}</SelectContent>
               </Select>
+              {monthVersions.length > 1 && <Select value={selectedVersion ? selectedVersionId : "active"} onValueChange={setSelectedVersionId}>
+                <SelectTrigger className="w-56" aria-label="Import version"><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="active">Latest active import</SelectItem>{monthVersions.map((entry, index) => <SelectItem key={getPerformanceDatasetId(entry)} value={getPerformanceDatasetId(entry)}>{index === 0 ? "Latest" : `Older ${index}`} · {entry.importName ?? entry.date}</SelectItem>)}</SelectContent>
+              </Select>}
             </div>
           </div>
           <ShopPageNav shopId={selectedShop.id} active="performance" />
@@ -92,13 +110,16 @@ export function DetailedDashboardClient() {
                 metricSettings={metricSettings}
                 metricOrder={metrics}
                 forecasts={forecastData}
-                forecastAsOf={hasForecast ? format(now, "PP") : undefined}
+                forecastAsOf={hasForecast ? format(forecastDate, "PP") : undefined}
+                isFinal={isFinal}
                 storageKey={`shop-${selectedShop.id}`}
                 caption={t("performanceTable")}
                 compact
               />
             </CardContent>
           </Card>
+
+          {qualityMetrics && <Card className="overflow-hidden"><CardHeader className="px-4 py-3"><CardTitle className="text-base">Quality indicators</CardTitle><CardDescription>Reported separately from weighted target metrics</CardDescription></CardHeader><CardContent className="grid gap-3 px-4 pb-4 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">{qualityMetrics.checklistScore !== undefined && <div className="rounded-md border bg-muted/20 p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><ClipboardCheck className="h-3.5 w-3.5" />Checklist</p><p className="mt-1 text-xl font-semibold tabular-nums">{qualityMetrics.checklistScore.toFixed(1)}</p></div>}{qualityMetrics.npsScore !== undefined && <div className="rounded-md border bg-muted/20 p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><MessageSquareText className="h-3.5 w-3.5" />NPS</p><p className="mt-1 text-xl font-semibold tabular-nums">{qualityMetrics.npsScore.toFixed(1)}</p></div>}{qualityMetrics.npsResponses !== undefined && <div className="rounded-md border bg-muted/20 p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Users className="h-3.5 w-3.5" />Responses</p><p className="mt-1 text-xl font-semibold tabular-nums">{qualityMetrics.npsResponses}</p></div>}</CardContent></Card>}
 
           {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
           </div>

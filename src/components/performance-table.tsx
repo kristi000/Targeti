@@ -32,7 +32,7 @@ const COMPACT_WIDTHS: Record<Column, number> = {
   target: 55,
   actual: 55,
   achievement: 150,
-  forecast: 0,
+  forecast: 110,
 };
 
 const statusStyles = (achievement: number) => achievement >= 100
@@ -48,6 +48,7 @@ type PerformanceTableProps = {
   metricOrder?: PerformanceMetric[];
   forecasts?: Record<PerformanceMetric, number>;
   forecastAsOf?: string;
+  isFinal?: boolean;
   storageKey: string;
   caption: string;
   simplified?: boolean;
@@ -61,6 +62,7 @@ export function PerformanceTable({
   metricOrder,
   forecasts,
   forecastAsOf,
+  isFinal = false,
   storageKey,
   caption,
   simplified = false,
@@ -89,8 +91,9 @@ export function PerformanceTable({
   };
 
   const metricLabel = (metric: PerformanceMetric) => metric.startsWith("custom_") ? getCustomMetricLabel(metric, metricSettings) : tMetric(metric);
+  const showForecast = !simplified && (Boolean(forecasts) || isFinal || !compact);
   const columns: Column[] = compact
-    ? ["metric", "target", "actual", "achievement"]
+    ? ["metric", "target", "actual", "achievement", ...(showForecast ? ["forecast" as const] : [])]
     : simplified
     ? ["metric", "target", "actual", "achievement"]
     : ["metric", "target", "actual", "achievement", "forecast"];
@@ -178,7 +181,7 @@ export function PerformanceTable({
           <div><dt className="text-muted-foreground">{t("target")}</dt><dd className="font-medium tabular-nums">{Math.round(target)}</dd></div>
           <div><dt className="text-muted-foreground">{t("actual")}</dt><dd className="font-medium tabular-nums">{actual}</dd></div>
           <div><dt className="text-muted-foreground">{t("achievement")}</dt><dd className={cn("font-semibold tabular-nums", statusStyles(achievement))}>{Math.min(achievement, 120).toFixed(1)}%</dd></div>
-          {!simplified && <div><dt className="text-muted-foreground">{t("eomForecast")}</dt><dd className="font-medium tabular-nums">{forecast === undefined ? t("notAvailable") : `${Math.round(forecast)} (${Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)`}</dd></div>}
+          {!simplified && <div><dt className="text-muted-foreground">{t("eomForecast")}</dt><dd className="font-medium tabular-nums">{isFinal ? "Final" : forecast === undefined ? t("notAvailable") : `${Math.round(forecast)} (${Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)`}</dd></div>}
         </dl>
       </div>
     );
@@ -190,7 +193,7 @@ export function PerformanceTable({
         <td className={cn("px-2 text-right font-semibold tabular-nums", compact ? "py-1" : "py-3", statusStyles(achievement))}>
           {simplified ? Math.min(achievement, 120).toFixed(1) + "%" : <div className="flex items-center gap-2"><Progress value={achievement} max={120} markerValue={100} className="h-2 flex-1" /><span className="w-14">{Math.min(achievement, 120).toFixed(1)}%</span></div>}
         </td>
-        {!simplified && !compact && <td className="px-3 py-3 text-right tabular-nums text-muted-foreground">{forecast === undefined ? t("notAvailable") : <>{Math.round(forecast)} <span className="text-xs">({Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)</span></>}</td>}
+        {showForecast && <td className={cn("px-3 text-right tabular-nums text-muted-foreground", compact ? "py-1" : "py-3")}>{isFinal ? <span className="font-medium text-foreground">Final</span> : forecast === undefined ? t("notAvailable") : <>{Math.round(forecast)} <span className="text-xs">({Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)</span></>}</td>}
       </tr>
     );
   };
@@ -198,12 +201,12 @@ export function PerformanceTable({
   return (
     <div className="space-y-2">
       {!compact && <div className="flex items-center justify-between gap-3">
-        {!simplified && <p className="text-xs text-muted-foreground">{forecastAsOf ? t("forecastAsOf", { date: forecastAsOf }) : t("forecastUnavailable")}</p>}
+        {!simplified && <p className="text-xs text-muted-foreground">{isFinal ? "Completed month · final values" : forecastAsOf ? t("forecastAsOf", { date: forecastAsOf }) : t("forecastUnavailable")}</p>}
         <Button type="button" variant="ghost" size="sm" className="ml-auto gap-2" onClick={reset}><RotateCcw className="h-4 w-4" />{t("resetTable")}</Button>
       </div>}
       <div className="grid gap-3 md:hidden">{metrics.map(metric => renderValues(metric, true))}</div>
       <div className="hidden overflow-x-auto rounded-md border md:block">
-        <table className={cn("w-full table-fixed text-sm", compact ? "min-w-[385px] text-xs" : "min-w-[700px]")}>
+        <table className={cn("w-full table-fixed text-sm", compact ? (showForecast ? "min-w-[495px] text-xs" : "min-w-[385px] text-xs") : "min-w-[700px]")}>
           <caption className="sr-only">{caption}</caption>
           <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground"><tr className="border-b">
             {columns.map(column => <th key={column} scope="col" aria-sort={preferences.sort?.column === column ? preferences.sort.direction : "none"} style={{ width: compact ? COMPACT_WIDTHS[column] : preferences.widths[column] }} className={cn("group relative px-2 font-medium", compact ? "py-1" : "py-2")}><button type="button" className={cn("flex w-full items-center gap-1 hover:text-foreground", column === "metric" || column === "achievement" ? "justify-start" : "justify-end")} onClick={() => toggleSort(column)}>{labels[column]}{sortIcon(column)}</button>{!compact && <span role="separator" aria-orientation="vertical" aria-label={t("resizeColumn", { column: labels[column] })} className="absolute inset-y-1 right-0 w-1 cursor-col-resize touch-none rounded bg-border opacity-0 group-hover:opacity-100" onPointerDown={event => startResize(column, event)} />}</th>)}
