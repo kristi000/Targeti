@@ -3,9 +3,9 @@ import { z } from "zod";
 import { performanceMetrics } from "@/lib/types";
 
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date in YYYY-MM-DD format");
-const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, "Expected a month in YYYY-MM format");
+export const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, "Expected a month in YYYY-MM format");
 const documentIdSchema = z.string().trim().min(1).max(150).refine(value => !value.includes("/"), "Invalid document ID");
-const metricKeySchema = z.string().refine(
+export const metricKeySchema = z.string().refine(
   value => (performanceMetrics as readonly string[]).includes(value) || /^custom_[A-Za-z0-9_-]{1,80}$/.test(value),
   "Invalid performance metric",
 );
@@ -79,6 +79,7 @@ export const shopSchema = z.object({
   monthlyTargets: targetSchema.optional(),
   metricSettings: metricSettingsSchema.optional(),
   metricOrder: metricOrderSchema.optional(),
+  disabledMetrics: metricOrderSchema.optional(),
   monthlyData: z.record(monthSchema, monthlyShopDataSchema).optional(),
   quarterSettings: z.record(
     z.string().regex(/^\d{4}-Q[1-4]$/),
@@ -113,4 +114,20 @@ export const bonusSnapshotSchema = z.object({
     eligible: z.boolean(),
     result: z.record(z.unknown()),
   }).strict()).max(500),
+}).strict();
+
+export const activityEventSchema = z.object({
+  id: documentIdSchema.optional(),
+  action: z.enum(["excel_imported", "excel_import_undone", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "metric_deleted", "all_data_deleted", "user_role_changed"]),
+  occurredAt: z.string().datetime({ offset: true }),
+  actor: z.object({
+    id: z.string().trim().min(1).max(255),
+    name: z.string().trim().min(1).max(120),
+    email: z.string().trim().email().max(255),
+    role: z.enum(["admin", "editor", "viewer"]),
+  }).strict(),
+  summary: z.string().trim().min(1).max(500),
+  shopIds: z.array(documentIdSchema).max(500),
+  shopNames: z.array(z.string().trim().min(1).max(120)).max(500),
+  metadata: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).optional(),
 }).strict();

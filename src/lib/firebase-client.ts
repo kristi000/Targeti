@@ -1,7 +1,7 @@
-import "server-only";
+"use client";
 
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 
 const firebaseConfig = {
   projectId: "perf-tracker-lmp2b",
@@ -14,4 +14,4 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-export const db = getFirestore(app);
+export const clientAuth = getAuth(app);

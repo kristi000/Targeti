@@ -6,8 +6,11 @@ import { type Shop, type PerformanceData, type Target, getInitialTargets } from 
 import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSaveTargets, handleSavePerformanceData, fetchShopData, type ShopData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
+import type { AppActor } from '@/lib/access';
 
 type ShopContextType = {
+  actor: AppActor;
+  isAdmin: boolean;
   shops: Shop[];
   selectedShop: Shop | null;
   setSelectedShop: (shop: Shop | null) => void;
@@ -27,7 +30,7 @@ type ShopContextType = {
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
-export function ShopProvider({ children, initialData }: { children: React.ReactNode; initialData: ShopData }) {
+export function ShopProvider({ children, initialData, actor }: { children: React.ReactNode; initialData: ShopData; actor: AppActor }) {
   const [shops, setShops] = useState<Shop[]>(initialData.shops);
   const [selectedShop, setSelectedShop] = useState<Shop | null>(initialData.shops[0] ?? null);
   const [allPerformanceData, setAllPerformanceData] = useState<Record<string, PerformanceData[]>>(initialData.performanceData);
@@ -167,6 +170,8 @@ export function ShopProvider({ children, initialData }: { children: React.ReactN
   }, []);
 
   const contextValue = useMemo(() => ({
+    actor,
+    isAdmin: actor.role === "admin",
     shops,
     selectedShop: selectedShop,
     setSelectedShop: handleSetSelectedShop,
@@ -182,7 +187,7 @@ export function ShopProvider({ children, initialData }: { children: React.ReactN
     reloadData: loadInitialData,
     selectedDatasetId,
     setSelectedDatasetId,
-  }), [shops, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, loading, refreshDataForShop, loadInitialData, selectedDatasetId]);
+  }), [actor, shops, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, loading, refreshDataForShop, loadInitialData, selectedDatasetId]);
   
   return (
     <ShopContext.Provider value={contextValue}>

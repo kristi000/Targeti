@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useRef, useState, type DragEvent } from "react";
-import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, Upload } from "lucide-react";
-import { getDaysInMonth, parseISO } from "date-fns";
-import { handleAddShop, handleSaveExcelPerformanceData, handleSaveTargets, handleUpdateShop } from "@/app/actions";
+import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
+import { format, getDaysInMonth, parseISO } from "date-fns";
+import { handleAddShop, handleRegisterImport, handleSaveExcelPerformanceData, handleUndoLatestImport, handleUpdateShop } from "@/app/actions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -33,6 +33,7 @@ type ReviewState = {
   keptMetrics: Partial<Record<PerformanceMetric, boolean>>;
   metricSettings: MetricSettings;
   targetedRepresentatives: Record<string, boolean>;
+  skippedRecords: number;
 };
 
 const normalizeName = (value: string) => value.trim().toLocaleLowerCase();
@@ -99,7 +100,11 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
         throw new Error(`This workbook does not contain data for ${selectedShop?.name ?? "the selected shop"}.`);
       }
 
-      const date = workbook.shops[0].date;
+      const detectedDate = workbook.shops[0].date;
+      const today = format(new Date(), "yyyy-MM-dd");
+      const date = detectedDate.endsWith("-01") && detectedDate.slice(0, 7) === today.slice(0, 7)
+        ? today
+        : detectedDate;
       const reportMonth = date.slice(0, 7);
       const parsedDate = parseISO(date);
       const reportType = parsedDate.getDate() >= getDaysInMonth(parsedDate) ? "completedMonth" : "midMonth";
@@ -121,7 +126,7 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
         shop.representatives.map(representative => [representativeKey(shopIndex, representative.id), true]),
       ));
 
-      setReview({ workbook, reportType, reportMonth, asOfDate: date, includeInOverview: true, metricOrder, keptMetrics, metricSettings, targetedRepresentatives });
+      setReview({ workbook, reportType, reportMonth, asOfDate: date, includeInOverview: true, metricOrder, keptMetrics, metricSettings, targetedRepresentatives, skippedRecords: ignoredShopCount });
       setFileName(file.name);
     } catch (error) {
       toast({ variant: "destructive", title: "Import failed", description: error instanceof Error ? error.message : "The workbook could not be read." });
@@ -207,11 +212,13 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
         };
         return settings;
       }, {} as MetricSettings);
+      const importChanges: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: import("@/lib/types").Shop | null; importedShop: import("@/lib/types").Shop }> = [];
 
       for (const [shopIndex, imported] of review.workbook.shops.entries()) {
         let shop = restrictToSelectedShop && selectedShop
           ? selectedShop
           : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
+        const previousShop = shop ? structuredClone(shop) : null;
         if (!shop) {
           const created = await handleAddShop(imported.shopName, "Imported from Excel report");
           if (!created.success || !created.data) throw new Error(`Could not create ${imported.shopName}.`);
@@ -232,6 +239,7 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
         const updatedShop = {
           ...shop,
           revenue: collection,
+          monthlyTargets: targets,
           salesRepresentatives: reps,
           monthlyData: {
             ...shop.monthlyData,
@@ -266,11 +274,14 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
         }];
         const results = await Promise.all([
           handleUpdateShop(updatedShop),
-          handleSaveTargets(shop.id, targets),
           handleSaveExcelPerformanceData(shop.id, performance),
         ]);
         if (results.some(result => !result.success)) throw new Error(`Could not save ${imported.shopName}.`);
+        importChanges.push({ shopId: shop.id, shopName: imported.shopName, performanceId: importId, previousShop, importedShop: updatedShop });
       }
+
+      const registration = await handleRegisterImport(importId, fileName, review.reportMonth, importChanges);
+      if (!registration.success) throw new Error(registration.error);
 
       await reloadData();
       toast({ title: "Excel data imported", description: `${review.workbook.shops.length} shops and ${representativeCount} representatives were updated. The file was retained as an independent version.` });
@@ -290,6 +301,26 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
   };
   const keptMetricOrder = review?.metricOrder.filter(metric => review.keptMetrics[metric]) ?? [];
   const totalWeight = keptMetricOrder.reduce((sum, metric) => sum + Number(review?.metricSettings[metric]?.weight ?? 0), 0);
+  const previewCounts = useMemo(() => {
+    if (!review) return { created: 0, updated: 0, skipped: 0, invalid: 0 };
+    const invalid = validation.errors.length ? review.workbook.shops.length : 0;
+    const created = invalid ? 0 : review.workbook.shops.filter(imported => !shops.some(shop => normalizeName(shop.name) === normalizeName(imported.shopName))).length;
+    return { created, updated: invalid ? 0 : review.workbook.shops.length - created, skipped: review.skippedRecords, invalid };
+  }, [review, validation.errors.length, shops]);
+
+  const undoLatestImport = async () => {
+    setLoading(true);
+    try {
+      const result = await handleUndoLatestImport();
+      if (!result.success) throw new Error(result.error);
+      await reloadData();
+      toast({ title: "Import undone", description: `${result.fileName} was rolled back safely.` });
+    } catch (error) {
+      toast({ variant: "destructive", title: "Could not undo import", description: error instanceof Error ? error.message : "Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return <Dialog open={open} onOpenChange={next => { setOpen(next); if (!next && !loading) reset(); }}>
     <DialogTrigger asChild><Button variant="outline" className="w-full justify-start gap-2"><FileSpreadsheet className="h-4 w-4" />Import Excel</Button></DialogTrigger>
@@ -300,11 +331,14 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
       </DialogHeader>
       <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={event => void readFile(event.target.files?.[0])} />
 
-      {!review ? <div role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }} onDragEnter={event => { event.preventDefault(); setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={handleDrop} className={`flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-colors ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/60"}`}>
+      {!review ? <><div role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }} onDragEnter={event => { event.preventDefault(); setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={handleDrop} className={`flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-colors ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/60"}`}>
         {loading ? <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" /> : <Upload className="mb-3 h-8 w-8 text-muted-foreground" />}
         <p className="font-medium">{loading ? "Reading workbook…" : "Drop Excel here or click to browse"}</p>
         <p className="mt-1 text-sm text-muted-foreground">.xlsx and .xls files · one reporting month</p>
-      </div> : <div className="space-y-5">
+      </div><div className="flex justify-end"><Button type="button" variant="ghost" disabled={loading} onClick={() => void undoLatestImport()}><RotateCcw className="mr-2 h-4 w-4" />Undo latest import</Button></div></> : <div className="space-y-5">
+        <section aria-label="Import impact preview" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {([['Created', previewCounts.created, 'text-emerald-700'], ['Updated', previewCounts.updated, 'text-blue-700'], ['Skipped', previewCounts.skipped, 'text-amber-700'], ['Invalid', previewCounts.invalid, 'text-destructive']] as const).map(([label, count, color]) => <div key={label} className="rounded-lg border bg-background p-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-semibold tabular-nums ${color}`}>{count}</p><p className="text-xs text-muted-foreground">records</p></div>)}
+        </section>
         <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-4">
           <Label className="grid gap-1.5">Report type<select className="h-10 rounded-md border bg-background px-3 text-sm" value={review.reportType} onChange={event => setReview(current => current && { ...current, reportType: event.target.value as ReviewState["reportType"] })}><option value="midMonth">Mid-month update</option><option value="completedMonth">Completed month</option></select></Label>
           <Label className="grid gap-1.5">Reporting month<Input type="month" value={review.reportMonth} onChange={event => { const reportMonth = event.target.value; setReview(current => current && { ...current, reportMonth, asOfDate: reportMonth ? moveDateToMonth(current.asOfDate, reportMonth) : current.asOfDate }); }} /></Label>

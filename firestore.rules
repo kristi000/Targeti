@@ -1,21 +1,8 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Access currently goes through the app's server actions, but the Firebase
-    // web SDK still evaluates client rules. Add authentication before tightening
-    // these rules; keep public access limited to the collections the app uses.
-    match /shops/{shopId} {
-      allow read, write: if true;
-
-      match /performance/{performanceId} {
-        allow read, write: if true;
-      }
-
-      match /bonusSnapshots/{snapshotId} {
-        allow read, write: if true;
-      }
-    }
-
+    // The browser never accesses Firestore directly. Authenticated server
+    // actions use the Admin SDK and IAM, so all client SDK access is denied.
     match /{document=**} {
       allow read, write: if false;
     }

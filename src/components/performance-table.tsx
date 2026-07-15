@@ -106,7 +106,11 @@ export function PerformanceTable({
   };
 
   const metrics = useMemo(() => {
-    const ordered = getMetricOrder(metricOrder, Object.keys(targets) as PerformanceMetric[]);
+    const targetMetrics = Object.keys(targets) as PerformanceMetric[];
+    const availableMetrics = metricOrder?.length
+      ? metricOrder.filter(metric => targetMetrics.includes(metric))
+      : targetMetrics;
+    const ordered = getMetricOrder(metricOrder, availableMetrics);
     if (!preferences.sort) return ordered;
     const { column, direction } = preferences.sort;
     const value = (metric: PerformanceMetric): string | number => {
@@ -175,13 +179,15 @@ export function PerformanceTable({
     const forecastPercentage = target > 0 && forecast !== undefined ? (forecast / target) * 100 : undefined;
     const Icon = metric in METRIC_CONFIG ? METRIC_CONFIG[metric as keyof typeof METRIC_CONFIG].icon : Gauge;
     if (mobile) return (
-      <div key={metric} className="rounded-lg border p-3">
-        <div className="mb-3 flex items-center gap-2 font-medium"><Icon className="h-4 w-4 text-muted-foreground" />{metricLabel(metric)}</div>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-          <div><dt className="text-muted-foreground">{t("target")}</dt><dd className="font-medium tabular-nums">{Math.round(target)}</dd></div>
-          <div><dt className="text-muted-foreground">{t("actual")}</dt><dd className="font-medium tabular-nums">{actual}</dd></div>
-          <div><dt className="text-muted-foreground">{t("achievement")}</dt><dd className={cn("font-semibold tabular-nums", statusStyles(achievement))}>{Math.min(achievement, 120).toFixed(1)}%</dd></div>
-          {!simplified && <div><dt className="text-muted-foreground">{t("eomForecast")}</dt><dd className="font-medium tabular-nums">{isFinal ? "Final" : forecast === undefined ? t("notAvailable") : `${Math.round(forecast)} (${Math.min(forecastPercentage ?? 0, 120).toFixed(1)}%)`}</dd></div>}
+      <div key={metric} className="rounded-md border px-3 py-2.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2 font-medium"><Icon className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="truncate">{metricLabel(metric)}</span></div>
+          <span className={cn("shrink-0 text-sm font-semibold tabular-nums", statusStyles(achievement))}>{Math.min(achievement, 120).toFixed(1)}%</span>
+        </div>
+        <dl className={cn("mt-2 grid gap-2 text-xs", simplified ? "grid-cols-2" : "grid-cols-3")}>
+          <div className="flex gap-1"><dt className="text-muted-foreground">{t("target")}:</dt><dd className="font-medium tabular-nums">{Math.round(target)}</dd></div>
+          <div className="flex gap-1"><dt className="text-muted-foreground">{t("actual")}:</dt><dd className="font-medium tabular-nums">{actual}</dd></div>
+          {!simplified && <div className="text-right"><dt className="sr-only">{t("eomForecast")}</dt><dd className="font-medium tabular-nums text-muted-foreground">{isFinal ? "Final" : forecast === undefined ? t("notAvailable") : `EOM ${Math.round(forecast)} · ${Math.min(forecastPercentage ?? 0, 120).toFixed(0)}%`}</dd></div>}
         </dl>
       </div>
     );
@@ -204,7 +210,7 @@ export function PerformanceTable({
         {!simplified && <p className="text-xs text-muted-foreground">{isFinal ? "Completed month · final values" : forecastAsOf ? t("forecastAsOf", { date: forecastAsOf }) : t("forecastUnavailable")}</p>}
         <Button type="button" variant="ghost" size="sm" className="ml-auto gap-2" onClick={reset}><RotateCcw className="h-4 w-4" />{t("resetTable")}</Button>
       </div>}
-      <div className="grid gap-3 md:hidden">{metrics.map(metric => renderValues(metric, true))}</div>
+      <div className="grid gap-2 md:hidden">{metrics.map(metric => renderValues(metric, true))}</div>
       <div className="hidden overflow-x-auto rounded-md border md:block">
         <table className={cn("w-full table-fixed text-sm", compact ? (showForecast ? "min-w-[495px] text-xs" : "min-w-[385px] text-xs") : "min-w-[700px]")}>
           <caption className="sr-only">{caption}</caption>

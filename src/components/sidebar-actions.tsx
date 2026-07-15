@@ -15,6 +15,7 @@ import {
   CirclePlus,
   Trash2,
   AlertTriangle,
+  MoreHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,8 +25,13 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -50,6 +56,7 @@ import { useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { ScrollArea } from "./ui/scroll-area";
 import { ExcelImportDialog } from "./excel-import-dialog";
+import { ActivityHistoryDialog } from "./activity-history-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleClearAllData } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
@@ -62,11 +69,10 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData } = useShop();
+    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, isAdmin, actor } = useShop();
     const { toast } = useToast();
     const pathname = usePathname();
     const t = useTranslations("Sidebar");
@@ -74,10 +80,11 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const tMetric = useTranslations("Metrics");
 
     const isDashboard = !pathname.includes('/shop/');
+    const canEdit = actor.role !== "viewer";
     
     const performanceData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
     const latestDataMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
-    const activeMonth = activeMonthOverride ?? latestDataMonth;
+    const activeMonth = activeMonthOverride ?? (isDashboard && selectedDatasetId ? selectedDatasetId : latestDataMonth);
     const monthlyRepresentatives = useMemo(
         () => selectedShop ? getMonthlyRepresentatives(selectedShop, activeMonth) : [],
         [selectedShop, activeMonth]
@@ -97,6 +104,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
     const [isAchievementDialogOpen, setIsAchievementDialogOpen] = useState(false);
     const [isClearingData, setIsClearingData] = useState(false);
+    const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
@@ -223,7 +231,12 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         setIsSaving(true);
         await updateMonthlyTargets(selectedShop.id, editingTargets);
         const roundedRepresentativeTargets = Object.fromEntries(Object.entries(editingRepTargets).map(([repId, targets]) => [repId, roundRepresentativeTargets(targets)]));
-        await updateShop({ ...selectedShop, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { collection: selectedShop.monthlyData?.[activeMonth]?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representatives: monthlyRepresentatives, representativeTargets: roundedRepresentativeTargets, metricSettings: editingMetricSettings, metricOrder: editingMetricOrder } } });
+        const disabledMetrics = new Set(selectedShop.disabledMetrics ?? []);
+        const preservedDisabledSettings = Object.fromEntries(Object.entries(selectedShop.metricSettings ?? {}).filter(([metric]) => disabledMetrics.has(metric as PerformanceMetric)));
+        const metricSettings = { ...preservedDisabledSettings, ...editingMetricSettings };
+        const preservedDisabledOrder = (selectedShop.metricOrder ?? []).filter(metric => disabledMetrics.has(metric));
+        const metricOrder = [...editingMetricOrder, ...preservedDisabledOrder.filter(metric => !editingMetricOrder.includes(metric))];
+        await updateShop({ ...selectedShop, metricSettings, metricOrder, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { collection: selectedShop.monthlyData?.[activeMonth]?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representatives: monthlyRepresentatives, representativeTargets: roundedRepresentativeTargets, metricSettings, metricOrder } } });
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
@@ -288,7 +301,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         setIsAchievementDialogOpen(false);
     };
 
-    const handleSaveShop = (shop: Shop) => {
+    const handleSaveShop = async (shop: Shop) => {
         if (activeMonthOverride && selectedShop?.id === shop.id) {
             const existingMonth = selectedShop.monthlyData?.[activeMonth];
             const representatives = shop.salesRepresentatives ?? [];
@@ -296,7 +309,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 rep.id,
                 existingMonth?.representativeTargets[rep.id] ?? getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length),
             ]));
-            void updateShop({
+            await updateShop({
                 ...shop,
                 salesRepresentatives: selectedShop.salesRepresentatives,
                 monthlyData: {
@@ -306,20 +319,18 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                         targets: existingMonth?.targets ?? monthlyTargets,
                         representatives,
                         representativeTargets,
-                        metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
-                        metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
+                        metricSettings: shop.monthlyData?.[activeMonth]?.metricSettings ?? existingMonth?.metricSettings ?? selectedShop.metricSettings,
+                        metricOrder: shop.monthlyData?.[activeMonth]?.metricOrder ?? existingMonth?.metricOrder ?? selectedShop.metricOrder,
                     },
                 },
             });
         } else {
-            void updateShop(shop);
+            await updateShop(shop);
         }
-        setIsManagementDialogOpen(false);
     };
 
-    const handleDeleteShop = (shopId: string) => {
-        deleteShop(shopId);
-        setIsManagementDialogOpen(false);
+    const handleDeleteShop = async (shopId: string) => {
+        await deleteShop(shopId);
     }
 
     const handleOpenManageShops = () => {
@@ -357,6 +368,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             <div className="flex flex-wrap items-center gap-2">
                 {isDashboard && (
                     <>
+                    {canEdit && <>
                     <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
                         <ExcelImportDialog />
                     </div>
@@ -364,13 +376,22 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             <Store className="mr-2 h-4 w-4" />
                             <span>{t('manageShops')}</span>
                     </Button>
-                    <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                            <Button type="button" variant="destructive" size="sm" disabled={isClearingData || !selectedShop}>
-                                {isClearingData ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}
-                                Clear all data
+                    </>}
+                    <ActivityHistoryDialog />
+                    {isAdmin && <>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="More data actions">
+                                <MoreHorizontal className="h-4 w-4" />
                             </Button>
-                        </AlertDialogTrigger>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={isClearingData || !selectedShop} onSelect={() => setIsClearDialogOpen(true)}>
+                                <Trash2 className="mr-2 h-4 w-4" />Clear all data
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <AlertDialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
                         <AlertDialogContent>
                             <AlertDialogHeader>
                                 <AlertDialogTitle>Clear all application data?</AlertDialogTitle>
@@ -380,26 +401,33 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                                 <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => void clearAllData()}>
+                                <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { setIsClearDialogOpen(false); void clearAllData(); }}>
                                     <Trash2 className="mr-2 h-4 w-4" />Delete everything
                                 </AlertDialogAction>
                             </AlertDialogFooter>
                         </AlertDialogContent>
                     </AlertDialog>
+                    </>}
                     </>
                 )}
-                {selectedShop && !isDashboard && (
+                {selectedShop && !isDashboard && canEdit && (
                     <>
                         <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
                             <ExcelImportDialog restrictToSelectedShop />
                         </div>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button type="button" variant="outline" size="sm">
+                                    <Settings className="mr-2 h-4 w-4" />Manage shop<MoreHorizontal className="ml-2 h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start">
+                                <DropdownMenuItem onSelect={onOpenTargetDialog}><Settings className="mr-2 h-4 w-4" />{t('setMonthlyTargets')}</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={onOpenAchievementDialog}><Pencil className="mr-2 h-4 w-4" />{t('editAchievements')}</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={handleOpenEditShop}><Edit className="mr-2 h-4 w-4" />{t('editShop')}</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
-                            <DialogTrigger asChild>
-                                    <Button type="button" variant="outline" size="sm" onClick={onOpenTargetDialog}>
-                                        <Settings className="mr-2 h-4 w-4" />
-                                        <span>{t('setMonthlyTargets')}</span>
-                                    </Button>
-                            </DialogTrigger>
                             <DialogContent className="sm:max-w-2xl">
                             <DialogHeader>
                                 <DialogTitle>{tDialog('setTargetsTitle', {shopName: selectedShop.name})}</DialogTitle>
@@ -539,12 +567,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                         </Dialog>
 
                         <Dialog open={isAchievementDialogOpen} onOpenChange={setIsAchievementDialogOpen}>
-                            <DialogTrigger asChild>
-                                    <Button type="button" variant="outline" size="sm" onClick={onOpenAchievementDialog}>
-                                        <Pencil className="mr-2 h-4 w-4" />
-                                        <span>{t('editAchievements')}</span>
-                                    </Button>
-                            </DialogTrigger>
                             <DialogContent className="sm:max-w-xl">
                             <DialogHeader>
                                 <DialogTitle>{tDialog('editAchievementsTitle', {shopName: selectedShop.name})}</DialogTitle>
@@ -602,11 +624,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             </DialogFooter>
                             </DialogContent>
                         </Dialog>
-                        
-                                <Button type="button" variant="outline" size="sm" onClick={handleOpenEditShop}>
-                                    <Edit className="mr-2 h-4 w-4" />
-                                    <span>{t('editShop')}</span>
-                                </Button>
                     </>
                 )}
             </div>
@@ -622,6 +639,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 onSave={handleSaveShop}
                 onDelete={handleDeleteShop}
                 representativeMonth={activeMonthOverride}
+                settingsMonth={activeMonth}
             />
         </>
     );

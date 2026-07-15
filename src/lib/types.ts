@@ -25,14 +25,15 @@ export function getMetricOrder(
   return [...savedMetrics, ...availableMetrics.filter((metric) => !savedMetrics.includes(metric))];
 }
 
-export function getShopMetrics(shop?: Pick<Shop, "metricSettings" | "metricOrder" | "monthlyTargets">, targets?: Target): PerformanceMetric[] {
-  const available = [...performanceMetrics] as PerformanceMetric[];
+export function getShopMetrics(shop?: Pick<Shop, "metricSettings" | "metricOrder" | "monthlyTargets" | "disabledMetrics">, targets?: Target): PerformanceMetric[] {
+  const disabledMetrics = new Set(shop?.disabledMetrics ?? []);
+  const available = performanceMetrics.filter(metric => !disabledMetrics.has(metric)) as PerformanceMetric[];
   const candidates = [
     ...(shop?.metricOrder ?? []),
     ...Object.keys(shop?.metricSettings ?? {}),
     ...Object.keys(targets ?? shop?.monthlyTargets ?? {}),
   ] as PerformanceMetric[];
-  candidates.forEach(metric => { if (!available.includes(metric)) available.push(metric); });
+  candidates.forEach(metric => { if (!disabledMetrics.has(metric) && !available.includes(metric)) available.push(metric); });
   return getMetricOrder(shop?.metricOrder, available);
 }
 
@@ -153,6 +154,7 @@ export type Shop = {
   monthlyTargets?: Target;
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
+  disabledMetrics?: PerformanceMetric[];
   monthlyData?: Record<string, MonthlyShopData>;
   quarterSettings?: Record<string, QuarterMetricSettings>;
 };
@@ -197,4 +199,26 @@ export type BonusSnapshot = {
     eligible: boolean;
     result: ReturnType<typeof import("./sales-representative-bonus").calculateRepresentativeBonus>;
   }>;
+};
+
+export type ActivityAction =
+  | "excel_imported"
+  | "excel_import_undone"
+  | "targets_changed"
+  | "shop_created"
+  | "shop_edited"
+  | "shop_deleted"
+  | "metric_deleted"
+  | "all_data_deleted"
+  | "user_role_changed";
+
+export type ActivityEvent = {
+  id: string;
+  action: ActivityAction;
+  occurredAt: string;
+  actor: { id: string; name: string; email: string; role: "admin" | "editor" | "viewer" };
+  summary: string;
+  shopIds: string[];
+  shopNames: string[];
+  metadata?: Record<string, string | number | boolean>;
 };
