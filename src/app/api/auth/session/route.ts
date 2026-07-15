@@ -10,8 +10,27 @@ function configuredValues(name: string) {
   return new Set((process.env[name] ?? "").split(",").map(value => value.trim().toLocaleLowerCase()).filter(Boolean));
 }
 
+function firstForwardedValue(value: string | null) {
+  return value?.split(",", 1)[0]?.trim() || null;
+}
+
+function hasValidRequestOrigin(request: NextRequest) {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+
+  const host = firstForwardedValue(request.headers.get("x-forwarded-host")) ?? request.headers.get("host");
+  const protocol = firstForwardedValue(request.headers.get("x-forwarded-proto")) ?? request.nextUrl.protocol.slice(0, -1);
+  if (!host) return origin === request.nextUrl.origin;
+
+  try {
+    return new URL(origin).origin === new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return false;
+  }
+}
+
 export async function POST(request: NextRequest) {
-  if (request.headers.get("origin") !== request.nextUrl.origin) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  if (!hasValidRequestOrigin(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   try {
     const { idToken } = bodySchema.parse(await request.json());
     const token = await adminAuth.verifyIdToken(idToken, true);
@@ -47,7 +66,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (request.headers.get("origin") !== request.nextUrl.origin) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+  if (!hasValidRequestOrigin(request)) return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   const response = NextResponse.json({ success: true });
   response.cookies.set(SESSION_COOKIE_NAME, "", { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "lax", path: "/", maxAge: 0 });
   return response;
