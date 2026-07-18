@@ -1,9 +1,9 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
-import { type Shop, type PerformanceData, type Target, getInitialTargets } from '@/lib/types';
-import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSaveTargets, handleSavePerformanceData, fetchShopData, type ShopData } from '@/app/actions';
+import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
+import { type Shop, type Supervisor, type PerformanceData, type Target, getInitialTargets } from '@/lib/types';
+import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSaveTargets, handleSavePerformanceData, fetchPerformanceData, fetchPerformanceDataForMonth, fetchShopData, type ShopData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 import type { AppActor } from '@/lib/access';
@@ -12,6 +12,7 @@ type ShopContextType = {
   actor: AppActor;
   isAdmin: boolean;
   shops: Shop[];
+  supervisors: Supervisor[];
   selectedShop: Shop | null;
   setSelectedShop: (shop: Shop | null) => void;
   addShop: (shopName: string, description?: string) => Promise<void>;
@@ -23,6 +24,9 @@ type ShopContextType = {
   updateMonthlyTargets: (shopId: string, targets: Target) => void;
   loading: boolean;
   refreshDataForShop: (shopId: string) => Promise<void>;
+  refreshShopDirectory: () => Promise<void>;
+  loadPerformanceForShop: (shopId: string) => Promise<void>;
+  loadPerformanceMonth: (month: string) => Promise<void>;
   reloadData: () => Promise<void>;
   selectedDatasetId: string;
   setSelectedDatasetId: (datasetId: string) => void;
@@ -32,22 +36,29 @@ const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
 export function ShopProvider({ children, initialData, actor }: { children: React.ReactNode; initialData: ShopData; actor: AppActor }) {
   const [shops, setShops] = useState<Shop[]>(initialData.shops);
+  const [supervisors, setSupervisors] = useState<Supervisor[]>(initialData.supervisors);
   const [selectedShop, setSelectedShop] = useState<Shop | null>(initialData.shops[0] ?? null);
-  const [allPerformanceData, setAllPerformanceData] = useState<Record<string, PerformanceData[]>>(initialData.performanceData);
+  const [allPerformanceData, setAllPerformanceData] = useState<Record<string, PerformanceData[]>>({});
   const [allMonthlyTargets, setAllMonthlyTargets] = useState<Record<string, Target>>(initialData.monthlyTargets);
   const [loading, setLoading] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
+  const loadedShopIds = useRef(new Set<string>());
+  const loadedMonths = useRef(new Set<string>());
+  const shopRequests = useRef(new Map<string, Promise<PerformanceData[]>>());
+  const monthRequests = useRef(new Map<string, Promise<Record<string, PerformanceData[]>>>());
 
   const { toast } = useToast();
   const t = useTranslations("Toasts");
 
   const refreshDataForShop = useCallback(async (shopId: string) => {
     try {
-        const data = await fetchShopData();
+        const [data, performanceData] = await Promise.all([fetchShopData(), fetchPerformanceData(shopId)]);
         const shop = data.shops.find(item => item.id === shopId);
         setShops(data.shops);
-        setAllPerformanceData(data.performanceData);
+        setSupervisors(data.supervisors);
+        setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
         setAllMonthlyTargets(data.monthlyTargets);
+        loadedShopIds.current.add(shopId);
         if (shop) setSelectedShop(shop);
     } catch (error) {
         console.error(`Failed to refresh data for shop ${shopId}:`, error);
@@ -59,16 +70,55 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     }
   }, [toast, t]);
 
+  const loadPerformanceForShop = useCallback(async (shopId: string) => {
+    if (loadedShopIds.current.has(shopId)) return;
+    const request = shopRequests.current.get(shopId) ?? fetchPerformanceData(shopId);
+    shopRequests.current.set(shopId, request);
+    try {
+      const performanceData = await request;
+      loadedShopIds.current.add(shopId);
+      setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
+    } finally {
+      shopRequests.current.delete(shopId);
+    }
+  }, []);
+
+  const loadPerformanceMonth = useCallback(async (month: string) => {
+    if (!month || loadedMonths.current.has(month)) return;
+    const request = monthRequests.current.get(month) ?? fetchPerformanceDataForMonth(month);
+    monthRequests.current.set(month, request);
+    try {
+      const performanceByShop = await request;
+      loadedMonths.current.add(month);
+      setAllPerformanceData(current => {
+        const next = { ...current };
+        const shopIds = new Set([...Object.keys(current), ...Object.keys(performanceByShop)]);
+        shopIds.forEach(shopId => {
+          const retained = (current[shopId] ?? []).filter(entry => !entry.date.startsWith(month));
+          next[shopId] = [...retained, ...(performanceByShop[shopId] ?? [])]
+            .sort((left, right) => left.date.localeCompare(right.date));
+        });
+        return next;
+      });
+    } finally {
+      monthRequests.current.delete(month);
+    }
+  }, []);
+
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      const { shops, performanceData, monthlyTargets } = await fetchShopData();
+      const { shops, supervisors, monthlyTargets } = await fetchShopData();
       
       setShops(shops);
-      setAllPerformanceData(performanceData);
+      setSupervisors(supervisors);
       setAllMonthlyTargets(monthlyTargets);
       
       setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
+      loadedShopIds.current.clear();
+      loadedMonths.current.clear();
+      if (selectedShop?.id) await loadPerformanceForShop(selectedShop.id);
+      if (selectedDatasetId) await loadPerformanceMonth(selectedDatasetId);
       
     } catch (error) {
       console.error("Failed to load initial data:", error);
@@ -80,7 +130,15 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     } finally {
       setLoading(false);
     }
-  }, [toast, t]);
+  }, [toast, t, selectedShop?.id, selectedDatasetId, loadPerformanceForShop, loadPerformanceMonth]);
+
+  const refreshShopDirectory = useCallback(async () => {
+    const { shops, supervisors, monthlyTargets } = await fetchShopData();
+    setShops(shops);
+    setSupervisors(supervisors);
+    setAllMonthlyTargets(monthlyTargets);
+    setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
+  }, []);
 
   const addShop = useCallback(async (shopName: string, description?: string) => {
     setLoading(true);
@@ -173,6 +231,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     actor,
     isAdmin: actor.role === "admin",
     shops,
+    supervisors,
     selectedShop: selectedShop,
     setSelectedShop: handleSetSelectedShop,
     addShop,
@@ -184,10 +243,13 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     updateMonthlyTargets,
     loading,
     refreshDataForShop,
+    refreshShopDirectory,
+    loadPerformanceForShop,
+    loadPerformanceMonth,
     reloadData: loadInitialData,
     selectedDatasetId,
     setSelectedDatasetId,
-  }), [actor, shops, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, loading, refreshDataForShop, loadInitialData, selectedDatasetId]);
+  }), [actor, shops, supervisors, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, loading, refreshDataForShop, refreshShopDirectory, loadPerformanceForShop, loadPerformanceMonth, loadInitialData, selectedDatasetId]);
   
   return (
     <ShopContext.Provider value={contextValue}>

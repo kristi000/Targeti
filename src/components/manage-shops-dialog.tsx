@@ -66,7 +66,7 @@ export function ManageShopsDialog({
   representativeMonth,
   settingsMonth,
 }: ManageShopsDialogProps) {
-  const { shops, addShop, allMonthlyTargets, refreshDataForShop, loading, isAdmin } = useShop();
+  const { shops, supervisors, addShop, allMonthlyTargets, refreshDataForShop, loading, isAdmin } = useShop();
   const { toast } = useToast();
   const t = useTranslations("Dialogs");
   const [query, setQuery] = useState("");
@@ -78,13 +78,14 @@ export function ManageShopsDialog({
   const [bulkSaving, setBulkSaving] = useState(false);
   const [removingMetric, setRemovingMetric] = useState<PerformanceMetric | null>(null);
   const [restoringMetric, setRestoringMetric] = useState<PerformanceMetric | null>(null);
+  const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
 
   const filteredShops = useMemo(() => {
     const normalizedQuery = normalize(query);
     return [...shops]
-      .filter(shop => !normalizedQuery || normalize(`${shop.name} ${shop.description ?? ""}`).includes(normalizedQuery))
+      .filter(shop => !normalizedQuery || normalize(`${shop.name} ${shop.description ?? ""} ${supervisorsById.get(shop.supervisorId ?? "") ?? ""}`).includes(normalizedQuery))
       .sort((left, right) => left.name.localeCompare(right.name));
-  }, [query, shops]);
+  }, [query, shops, supervisorsById]);
 
   const newNameExists = shops.some(shop => normalize(shop.name) === normalize(newShopName));
   const editNameExists = editingShop
@@ -374,7 +375,7 @@ export function ManageShopsDialog({
                           {filteredShops.map((shop, index) => (
                             <tr key={shop.id} className="bg-white even:bg-slate-50/70 hover:bg-emerald-50/70">
                               <td className="border-b border-r border-slate-200 bg-slate-100 px-3 py-3 text-center font-mono text-xs text-slate-500">{index + 1}</td>
-                              <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left font-medium text-slate-900">{shop.name}</th>
+                              <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left"><span className="block font-medium text-slate-900">{shop.name}</span><span className="mt-0.5 block text-xs font-normal text-slate-500">Supervisor: {supervisorsById.get(shop.supervisorId ?? "") ?? "Unassigned"}</span></th>
                               <td className="max-w-sm truncate border-b border-r border-slate-200 px-3 py-3 text-slate-500">{shop.description || "—"}</td>
                               <td className="border-b border-r border-slate-200 px-3 py-3 text-slate-600"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{shop.salesRepresentatives?.length ?? 0}</span></td>
                               <td className="border-b border-slate-200 px-3 py-2"><ShopActions shop={shop} onEdit={setEditingShop} onDelete={onDelete} canDelete={isAdmin} /></td>
@@ -386,7 +387,7 @@ export function ManageShopsDialog({
                     <div className="divide-y md:hidden">
                       {filteredShops.map(shop => (
                         <div key={shop.id} className="space-y-2 p-4">
-                          <div className="flex items-start justify-between gap-3"><div><p className="font-medium">{shop.name}</p><p className="mt-0.5 text-sm text-muted-foreground">{shop.description || "—"}</p></div><span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><Users className="h-3.5 w-3.5" />{shop.salesRepresentatives?.length ?? 0}</span></div>
+                          <div className="flex items-start justify-between gap-3"><div><p className="font-medium">{shop.name}</p><p className="mt-0.5 text-xs text-muted-foreground">Supervisor: {supervisorsById.get(shop.supervisorId ?? "") ?? "Unassigned"}</p><p className="mt-0.5 text-sm text-muted-foreground">{shop.description || "—"}</p></div><span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground"><Users className="h-3.5 w-3.5" />{shop.salesRepresentatives?.length ?? 0}</span></div>
                           <ShopActions shop={shop} onEdit={setEditingShop} onDelete={onDelete} canDelete={isAdmin} />
                         </div>
                       ))}

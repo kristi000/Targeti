@@ -13,7 +13,7 @@ import { useTranslations } from "next-intl";
 export default function DetailedDashboardPage() {
   const params = useParams();
   const shopId = params.shopId as string;
-  const { shops, selectedShop, setSelectedShop } = useShop();
+  const { shops, selectedShop, setSelectedShop, loadPerformanceForShop } = useShop();
   const locale = useLocale();
   const t = useTranslations("DetailedDashboard");
 
@@ -22,7 +22,8 @@ export default function DetailedDashboardPage() {
     if (shopFromParams && selectedShop?.id !== shopFromParams.id) {
       setSelectedShop(shopFromParams);
     }
-  }, [shops, shopId, selectedShop, setSelectedShop]);
+    if (shopFromParams) void loadPerformanceForShop(shopFromParams.id);
+  }, [shops, shopId, selectedShop, setSelectedShop, loadPerformanceForShop]);
 
   if (!selectedShop || selectedShop.id !== shopId) {
     // This can show a loading state or null while the correct shop is being set.

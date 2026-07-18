@@ -32,7 +32,7 @@ export function ActivityHistoryDialog() {
       <div className="divide-y rounded-md border">
         {events.map(event => <article key={event.id} className="space-y-1 p-3">
           <div className="flex items-start justify-between gap-4"><p className="font-medium">{event.summary}</p><time className="shrink-0 text-xs text-muted-foreground" dateTime={event.occurredAt}>{new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.occurredAt))}</time></div>
-          <p className="text-sm text-muted-foreground">{event.actor.name} · {event.actor.email}</p>
+          <p className="text-sm text-muted-foreground">{event.actor.name} · {event.actor.username ? `@${event.actor.username}` : event.actor.email}</p>
           {event.shopNames.length > 0 && <p className="flex items-center gap-1 text-xs text-muted-foreground"><MapPin className="h-3.5 w-3.5" />{event.shopNames.join(", ")}</p>}
         </article>)}
         {!loading && !events.length && <p className="p-8 text-center text-sm text-muted-foreground">No activity has been recorded yet.</p>}

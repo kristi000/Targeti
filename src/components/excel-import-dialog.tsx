@@ -56,7 +56,7 @@ function moveDateToMonth(date: string, month: string) {
 }
 
 export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrictToSelectedShop?: boolean }) {
-  const { selectedShop, shops, allMonthlyTargets, allPerformanceData, reloadData } = useShop();
+  const { selectedShop, shops, allMonthlyTargets, allPerformanceData, loadPerformanceMonth, reloadData } = useShop();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -106,6 +106,7 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
         ? today
         : detectedDate;
       const reportMonth = date.slice(0, 7);
+      await loadPerformanceMonth(reportMonth);
       const parsedDate = parseISO(date);
       const reportType = parsedDate.getDate() >= getDaysInMonth(parsedDate) ? "completedMonth" : "midMonth";
       const savedQuarter = selectedShop?.quarterSettings?.[getQuarterKey(date)];

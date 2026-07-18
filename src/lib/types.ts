@@ -42,6 +42,11 @@ export type SalesRepresentative = {
   name: string;
 };
 
+export type Supervisor = {
+  id: string;
+  name: string;
+};
+
 export type RepPerformanceData = {
   repId: string;
 } & Omit<Record<PerformanceMetric, number>, "repName"> & { repName?: string };
@@ -148,6 +153,7 @@ export type MetricSettings = Partial<Record<PerformanceMetric, MetricSetting>>;
 export type Shop = {
   id: string;
   name: string;
+  supervisorId?: string;
   description?: string;
   revenue?: number;
   salesRepresentatives?: SalesRepresentative[];
@@ -204,19 +210,26 @@ export type BonusSnapshot = {
 export type ActivityAction =
   | "excel_imported"
   | "excel_import_undone"
+  | "excel_import_removed"
   | "targets_changed"
   | "shop_created"
   | "shop_edited"
   | "shop_deleted"
+  | "supervisor_created"
+  | "supervisor_edited"
+  | "supervisor_deleted"
+  | "supervisor_assignments_changed"
+  | "representatives_deleted"
   | "metric_deleted"
   | "all_data_deleted"
+  | "user_created"
   | "user_role_changed";
 
 export type ActivityEvent = {
   id: string;
   action: ActivityAction;
   occurredAt: string;
-  actor: { id: string; name: string; email: string; role: "admin" | "editor" | "viewer" };
+  actor: { id: string; name: string; username?: string; email?: string; role: "admin" | "editor" | "viewer" };
   summary: string;
   shopIds: string[];
   shopNames: string[];

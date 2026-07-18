@@ -9,6 +9,7 @@ import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getMetricOrder, type MetricSettings, type PerformanceData, type PerformanceMetric, type SalesRepresentative, type Target } from "@/lib/types";
 import { useTranslations } from "next-intl";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 type Props = {
   salesRepresentatives: SalesRepresentative[];
@@ -23,6 +24,7 @@ const statusClass = (value: number) => value >= 100 ? "text-emerald-700 dark:tex
 
 export function WorkerPerformanceList({ salesRepresentatives, performanceData, monthlyTargets, metricSettings, metricOrder, shopId }: Props) {
   const t = useTranslations("DetailedDashboard");
+  const isDesktop = useMediaQuery("(min-width: 1280px)");
   const metrics = useMemo(() => getMetricOrder(metricOrder, Object.keys(monthlyTargets) as PerformanceMetric[]), [metricOrder, monthlyTargets]);
   const representativeData = useMemo(() => {
     const totals = salesRepresentatives.reduce((result, representative) => {
@@ -42,7 +44,7 @@ export function WorkerPerformanceList({ salesRepresentatives, performanceData, m
   }, [salesRepresentatives, performanceData, monthlyTargets, metricSettings, metrics]);
 
   return <section id="representative-bonuses" className="scroll-mt-4 space-y-4 xl:col-span-2">
-  <section className="space-y-4 xl:hidden">
+  {!isDesktop ? <section className="space-y-4">
     <div><h2 className="text-xl font-semibold">{t("salesRepPerformance")}</h2><p className="text-sm text-muted-foreground">{t("individualPerformance")}</p></div>
     <Accordion type="multiple" className="space-y-3">
       {representativeData.map(representative => <AccordionItem key={representative.id} value={representative.id} className="rounded-lg border px-4">
@@ -52,8 +54,7 @@ export function WorkerPerformanceList({ salesRepresentatives, performanceData, m
         </AccordionContent>
       </AccordionItem>)}
     </Accordion>
-  </section>
-  <div className="hidden gap-3 xl:grid xl:grid-cols-2">
+  </section> : <div className="grid gap-3 xl:grid-cols-2">
   {representativeData.map(representative => (
     <Card key={representative.id} className="overflow-hidden">
       <CardHeader className="flex-row items-center justify-between space-y-0 px-4 py-3">
@@ -65,6 +66,6 @@ export function WorkerPerformanceList({ salesRepresentatives, performanceData, m
       </CardContent>
     </Card>
   ))}
-  </div>
+  </div>}
   </section>;
 }

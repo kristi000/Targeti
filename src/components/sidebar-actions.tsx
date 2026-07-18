@@ -16,6 +16,9 @@ import {
   Trash2,
   AlertTriangle,
   MoreHorizontal,
+  UserRoundCog,
+  UsersRound,
+  FileClock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +55,9 @@ import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
 import { usePathname } from "next/navigation";
 import { ManageShopsDialog } from "./manage-shops-dialog";
+import { ManageSupervisorsDialog } from "./manage-supervisors-dialog";
+import { ManageRepresentativesDialog } from "./manage-representatives-dialog";
+import { ManageImportsDialog } from "./manage-imports-dialog";
 import { useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { ScrollArea } from "./ui/scroll-area";
@@ -107,6 +113,9 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
+    const [isSupervisorDialogOpen, setIsSupervisorDialogOpen] = useState(false);
+    const [isRepresentativeDialogOpen, setIsRepresentativeDialogOpen] = useState(false);
+    const [isImportManagementDialogOpen, setIsImportManagementDialogOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
@@ -372,11 +381,20 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                     <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
                         <ExcelImportDialog />
                     </div>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setIsImportManagementDialogOpen(true)}>
+                        <FileClock className="mr-2 h-4 w-4" />Manage imports
+                    </Button>
                     <Button type="button" variant="outline" size="sm" onClick={handleOpenManageShops}>
                             <Store className="mr-2 h-4 w-4" />
                             <span>{t('manageShops')}</span>
                     </Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setIsRepresentativeDialogOpen(true)}>
+                        <UsersRound className="mr-2 h-4 w-4" />Manage representatives
+                    </Button>
                     </>}
+                    {isAdmin && <Button type="button" variant="outline" size="sm" onClick={() => setIsSupervisorDialogOpen(true)}>
+                        <UserRoundCog className="mr-2 h-4 w-4" />Manage supervisors
+                    </Button>}
                     <ActivityHistoryDialog />
                     {isAdmin && <>
                     <DropdownMenu>
@@ -641,6 +659,9 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 representativeMonth={activeMonthOverride}
                 settingsMonth={activeMonth}
             />
+            {isAdmin && <ManageSupervisorsDialog open={isSupervisorDialogOpen} onOpenChange={setIsSupervisorDialogOpen} />}
+            <ManageRepresentativesDialog open={isRepresentativeDialogOpen} onOpenChange={setIsRepresentativeDialogOpen} month={activeMonth} />
+            <ManageImportsDialog open={isImportManagementDialogOpen} onOpenChange={setIsImportManagementDialogOpen} />
         </>
     );
 }

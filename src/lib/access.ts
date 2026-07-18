@@ -1,36 +1,18 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import { z } from "zod";
-import { adminAuth } from "@/lib/firebase-admin";
 import { SESSION_COOKIE_NAME } from "@/lib/auth-constants";
+import { getActorForSession, type LocalActor } from "@/lib/local-auth";
 
-const roleSchema = z.enum(["admin", "editor", "viewer"]);
-
-export type AppRole = z.infer<typeof roleSchema>;
-export type AppActor = {
-  id: string;
-  name: string;
-  email: string;
-  role: AppRole;
-};
+export type AppRole = LocalActor["role"];
+export type AppActor = LocalActor;
 
 export async function getCurrentActor(): Promise<AppActor> {
   const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
   if (!sessionCookie) throw new Error("UNAUTHENTICATED");
-  try {
-    const token = await adminAuth.verifySessionCookie(sessionCookie, true);
-    const email = token.email?.trim();
-    if (!email) throw new Error("UNAUTHENTICATED");
-    return {
-      id: token.uid,
-      email,
-      name: token.name?.trim() || email.split("@")[0] || "Targeti user",
-      role: roleSchema.catch("viewer").parse(token.role),
-    };
-  } catch {
-    throw new Error("UNAUTHENTICATED");
-  }
+  const actor = await getActorForSession(sessionCookie);
+  if (!actor) throw new Error("UNAUTHENTICATED");
+  return actor;
 }
 
 export async function requireAdmin() {

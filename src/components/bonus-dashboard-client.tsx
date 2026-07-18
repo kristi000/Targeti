@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { ArrowLeft, BriefcaseBusiness, CalendarCheck, CheckCircle2, CircleDollarSign, Store, Users, UserX } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
-import { fetchBonusSnapshots, saveBonusSnapshot } from "@/app/actions";
+import { fetchBonusSnapshot, saveBonusSnapshot } from "@/app/actions";
 import { Header } from "@/components/header";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
@@ -25,17 +26,22 @@ export function BonusDashboardClient() {
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const allData = selectedShop ? allPerformanceData[selectedShop.id] ?? [] : [];
   const months = useMemo(() => Array.from(new Set([
     ...allData.map(item => item.date.slice(0, 7)),
     ...Object.keys(selectedShop?.monthlyData ?? {}),
   ])).sort().reverse(), [allData, selectedShop?.monthlyData]);
   const [selectedMonth, setSelectedMonth] = useState("");
-  const [snapshots, setSnapshots] = useState<Record<string, BonusSnapshot>>({});
   const [finalizing, setFinalizing] = useState(false);
 
   useEffect(() => { if (!selectedMonth && months[0]) setSelectedMonth(months[0]); }, [months, selectedMonth]);
-  useEffect(() => { if (selectedShop) void fetchBonusSnapshots(selectedShop.id).then(setSnapshots).catch(() => setSnapshots({})); }, [selectedShop]);
+  const snapshotQuery = useQuery({
+    queryKey: ["bonus-snapshot", selectedShop?.id, selectedMonth],
+    queryFn: () => fetchBonusSnapshot(selectedShop!.id, selectedMonth),
+    enabled: Boolean(selectedShop && selectedMonth),
+    staleTime: 60_000,
+  });
 
   const legacyTargets = selectedShop ? allMonthlyTargets[selectedShop.id] : undefined;
   const monthData = selectedShop?.monthlyData?.[selectedMonth];
@@ -63,7 +69,7 @@ export function BonusDashboardClient() {
   representatives.forEach(rep => { totals.reps[rep.id] ??= Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>; });
   const liveManager = collection === undefined ? null : calculateManagerBonus(collection, totals.shop, targets, metrics, metricSettings);
   const liveRepresentatives = collection === undefined ? [] : representatives.map(rep => ({ id: rep.id, name: rep.name, result: calculateRepresentativeBonus(collection, totals.reps[rep.id], individualTargets[rep.id], totals.shop, targets, metrics, metricSettings) }));
-  const snapshot = snapshots[selectedMonth];
+  const snapshot = snapshotQuery.data ?? null;
   const managerResult = snapshot?.manager ?? liveManager;
   const representativeResults = snapshot?.representatives ?? liveRepresentatives.map(item => ({ ...item, eligible: item.result.shopBonusEligible }));
   const displayRepresentatives = snapshot?.representatives.map(item => ({ id: item.id, name: item.name })) ?? representatives;
@@ -78,7 +84,7 @@ export function BonusDashboardClient() {
     try {
       const result = await saveBonusSnapshot(selectedShop.id, nextSnapshot);
       if (!result.success) throw new Error(result.error);
-      setSnapshots(current => ({ ...current, [selectedMonth]: nextSnapshot }));
+      queryClient.setQueryData(["bonus-snapshot", selectedShop.id, selectedMonth], nextSnapshot);
       toast({ title: "Month finalized", description: `${selectedMonth} is now locked for payroll.` });
     } catch (error) { toast({ variant: "destructive", title: "Finalization failed", description: error instanceof Error ? error.message : "Could not save the payroll snapshot." }); }
     finally { setFinalizing(false); }

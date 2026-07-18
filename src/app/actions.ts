@@ -5,17 +5,15 @@ import {
   addDoc,
   collection,
   collectionGroup,
+  deleteField,
   doc,
   documentId,
-  endAt,
-  getCountFromServer,
   getDocs,
   limit,
   orderBy,
   query,
   runTransaction,
   startAfter,
-  startAt,
   updateDoc,
   where,
   writeBatch,
@@ -24,10 +22,12 @@ import {
 import { format, getDaysInMonth, parseISO, subMonths } from "date-fns";
 import { z } from "zod";
 
-import { adminAuth, adminDb as db } from "@/lib/firebase-admin";
+import { adminDb as db } from "@/lib/firebase-admin";
 import { getCurrentActor, requireAdmin, requireEditor } from "@/lib/access";
+import { createManagedUser, listManagedUsers, managedRoleSchema, setManagedUserRole, usernameSchema } from "@/lib/local-auth";
 import { getMetricWeight } from "@/lib/data";
 import { calculateTotalAchievement } from "@/lib/utils";
+import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   bonusSnapshotSchema,
   activityEventSchema,
@@ -36,15 +36,18 @@ import {
   performanceDataSchema,
   metricKeySchema,
   monthSchema,
+  newSupervisorSchema,
   shopIdSchema,
   shopSchema,
+  supervisorIdSchema,
+  supervisorSchema,
   targetSchema,
 } from "@/lib/persistence-schemas";
-import { getInitialTargets, getOverviewPerformanceData, getPerformanceShopActuals, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type MetricSettings, type PerformanceData, type PerformanceMetric, type Shop, type Target } from "@/lib/types";
+import { getInitialTargets, getOverviewPerformanceData, getPerformanceShopActuals, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type MetricSettings, type PerformanceData, type PerformanceMetric, type Shop, type Supervisor, type Target } from "@/lib/types";
 
 export type ShopData = {
   shops: Shop[];
-  performanceData: Record<string, PerformanceData[]>;
+  supervisors: Supervisor[];
   monthlyTargets: Record<string, Target>;
 };
 
@@ -174,17 +177,16 @@ export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot)
   }
 }
 
-export async function fetchBonusSnapshots(shopId: string): Promise<Record<string, BonusSnapshot>> {
+export async function fetchBonusSnapshot(shopId: string, month: string): Promise<BonusSnapshot | null> {
   await getCurrentActor();
   const validShopId = shopIdSchema.parse(shopId);
-  const snapshot = await getDocs(collection(db, "shops", validShopId, "bonusSnapshots"));
-
-  return Object.fromEntries(snapshot.docs.flatMap(document => {
-    const result = bonusSnapshotSchema.safeParse(document.data());
-    if (result.success) return [[document.id, result.data as BonusSnapshot] as const];
-    console.error(`Ignoring invalid bonus snapshot ${document.ref.path}:`, result.error.flatten());
-    return [];
-  }));
+  const validMonth = monthSchema.parse(month);
+  const snapshot = await doc(db, "shops", validShopId, "bonusSnapshots", validMonth).get();
+  if (!snapshot.exists) return null;
+  const result = bonusSnapshotSchema.safeParse(snapshot.data());
+  if (result.success) return result.data as BonusSnapshot;
+  console.error(`Ignoring invalid bonus snapshot ${snapshot.ref.path}:`, result.error.flatten());
+  return null;
 }
 
 export async function handleAddShop(shopName: string, description?: string) {
@@ -214,8 +216,13 @@ export async function handleAddShop(shopName: string, description?: string) {
 
 export async function handleUpdateShop(shop: Shop) {
   try {
-    await requireEditor();
-    const validShop = shopSchema.parse(shop) as Shop;
+    const actor = await requireEditor();
+    let validShop = shopSchema.parse(shop) as Shop;
+    if (actor.role !== "admin") {
+      const currentDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShop.id), limit(1)))).docs[0];
+      const currentShop = currentDocument ? parseFirestoreDocument(shopSchema, currentDocument.id, currentDocument.data()) as Shop | null : null;
+      validShop = { ...validShop, supervisorId: currentShop?.supervisorId };
+    }
     const { id, ...shopData } = validShop;
     await updateDoc(doc(db, "shops", id), toFirestoreData(shopData));
     await recordActivity({ action: "shop_edited", summary: `Edited shop ${validShop.name}.`, shopIds: [id], shopNames: [validShop.name] });
@@ -223,6 +230,181 @@ export async function handleUpdateShop(shop: Shop) {
     return { success: true as const, data: validShop };
   } catch (error) {
     return { success: false as const, error: mutationError("update the shop", error) };
+  }
+}
+
+const representativeDeletionSchema = z.object({
+  month: monthSchema,
+  representatives: z.array(z.object({
+    shopId: shopIdSchema,
+    representativeId: shopIdSchema,
+  }).strict()).min(1).max(500),
+}).strict();
+
+export async function handleDeleteRepresentatives(month: string, representatives: Array<{ shopId: string; representativeId: string }>) {
+  try {
+    await requireEditor();
+    const input = representativeDeletionSchema.parse({ month, representatives });
+    const representativeIdsByShop = new Map<string, Set<string>>();
+    input.representatives.forEach(({ shopId, representativeId }) => {
+      const ids = representativeIdsByShop.get(shopId) ?? new Set<string>();
+      ids.add(representativeId);
+      representativeIdsByShop.set(shopId, ids);
+    });
+
+    const snapshot = await getDocs(collection(db, "shops"));
+    const selectedDocuments = snapshot.docs.filter(document => representativeIdsByShop.has(document.id));
+    if (selectedDocuments.length !== representativeIdsByShop.size) throw new Error("SHOP_NOT_FOUND");
+
+    const updatedShops: Shop[] = [];
+    let deletedCount = 0;
+    selectedDocuments.forEach(document => {
+      const shop = parseFirestoreDocument(shopSchema, document.id, document.data()) as Shop | null;
+      if (!shop) return;
+      const selectedIds = representativeIdsByShop.get(shop.id)!;
+      const monthData = shop.monthlyData?.[input.month];
+      const currentRepresentatives = monthData?.representatives ?? shop.salesRepresentatives ?? [];
+      const remainingRepresentatives = currentRepresentatives.filter(representative => !selectedIds.has(representative.id));
+      deletedCount += currentRepresentatives.length - remainingRepresentatives.length;
+
+      if (monthData) {
+        const metrics = getShopMetrics({
+          ...shop,
+          metricSettings: monthData.metricSettings ?? shop.metricSettings,
+          metricOrder: monthData.metricOrder ?? shop.metricOrder,
+        }, monthData.targets);
+        const sharedTargets = getEqualRepresentativeTargets(monthData.targets, metrics, remainingRepresentatives.length);
+        updatedShops.push({
+          ...shop,
+          monthlyData: {
+            ...shop.monthlyData,
+            [input.month]: {
+              ...monthData,
+              representatives: remainingRepresentatives,
+              representativeTargets: Object.fromEntries(remainingRepresentatives.map(representative => [representative.id, sharedTargets])),
+            },
+          },
+        });
+      } else {
+        updatedShops.push({ ...shop, salesRepresentatives: remainingRepresentatives });
+      }
+    });
+
+    if (!deletedCount) throw new Error("REPRESENTATIVES_NOT_FOUND");
+    const batch = writeBatch(db);
+    updatedShops.forEach(shop => {
+      const { id, ...shopData } = shopSchema.parse(shop) as Shop;
+      batch.set(doc(db, "shops", id), toFirestoreData(shopData));
+    });
+    await batch.commit();
+    await recordActivity({
+      action: "representatives_deleted",
+      summary: `Deleted ${deletedCount} representative(s) from ${updatedShops.length} shop(s) for ${input.month}.`,
+      shopIds: updatedShops.map(shop => shop.id),
+      shopNames: updatedShops.map(shop => shop.name),
+      metadata: { month: input.month, representativeCount: deletedCount, shopCount: updatedShops.length },
+    });
+    invalidateShopData();
+    return { success: true as const, count: deletedCount, shops: updatedShops.length };
+  } catch (error) {
+    if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more shops no longer exist." };
+    if (error instanceof Error && error.message === "REPRESENTATIVES_NOT_FOUND") return { success: false as const, error: "The selected representatives no longer exist in this reporting month." };
+    return { success: false as const, error: mutationError("delete the selected representatives", error) };
+  }
+}
+
+async function supervisorNameExists(name: string, excludedId?: string) {
+  const normalizedName = name.toLocaleLowerCase();
+  const snapshot = await getDocs(collection(db, "supervisors"));
+  return snapshot.docs.some(document => document.id !== excludedId && String(document.data().name ?? "").trim().toLocaleLowerCase() === normalizedName);
+}
+
+export async function handleAddSupervisor(name: string) {
+  try {
+    await requireAdmin();
+    const input = newSupervisorSchema.parse({ name });
+    if (await supervisorNameExists(input.name)) throw new Error("DUPLICATE_SUPERVISOR");
+    const document = await addDoc(collection(db, "supervisors"), input);
+    const supervisor = { id: document.id, name: input.name } satisfies Supervisor;
+    await recordActivity({ action: "supervisor_created", summary: `Created supervisor ${supervisor.name}.`, shopIds: [], shopNames: [], metadata: { supervisorId: supervisor.id } });
+    invalidateShopData();
+    return { success: true as const, data: supervisor };
+  } catch (error) {
+    if (error instanceof Error && error.message === "DUPLICATE_SUPERVISOR") return { success: false as const, error: "A supervisor with this name already exists." };
+    return { success: false as const, error: mutationError("add the supervisor", error) };
+  }
+}
+
+export async function handleUpdateSupervisor(supervisor: Supervisor) {
+  try {
+    await requireAdmin();
+    const validSupervisor = supervisorSchema.parse(supervisor) as Supervisor;
+    if (await supervisorNameExists(validSupervisor.name, validSupervisor.id)) throw new Error("DUPLICATE_SUPERVISOR");
+    await updateDoc(doc(db, "supervisors", validSupervisor.id), { name: validSupervisor.name });
+    await recordActivity({ action: "supervisor_edited", summary: `Renamed supervisor to ${validSupervisor.name}.`, shopIds: [], shopNames: [], metadata: { supervisorId: validSupervisor.id } });
+    invalidateShopData();
+    return { success: true as const, data: validSupervisor };
+  } catch (error) {
+    if (error instanceof Error && error.message === "DUPLICATE_SUPERVISOR") return { success: false as const, error: "A supervisor with this name already exists." };
+    return { success: false as const, error: mutationError("update the supervisor", error) };
+  }
+}
+
+export async function handleAssignSupervisor(supervisorId: string, shopIds: string[]) {
+  try {
+    await requireAdmin();
+    const validSupervisorId = supervisorIdSchema.parse(supervisorId);
+    const validShopIds = z.array(shopIdSchema).max(500).parse(shopIds);
+    const [supervisorDocument, shopsSnapshot] = await Promise.all([
+      getDocs(query(collection(db, "supervisors"), where(documentId(), "==", validSupervisorId), limit(1))),
+      getDocs(collection(db, "shops")),
+    ]);
+    if (!supervisorDocument.docs[0]) throw new Error("SUPERVISOR_NOT_FOUND");
+    const selectedIds = new Set(validShopIds);
+    if (shopsSnapshot.docs.filter(document => selectedIds.has(document.id)).length !== selectedIds.size) throw new Error("SHOP_NOT_FOUND");
+    const changedDocuments = shopsSnapshot.docs.filter(document => selectedIds.has(document.id) || document.data().supervisorId === validSupervisorId);
+    for (let start = 0; start < changedDocuments.length; start += 450) {
+      const batch = writeBatch(db);
+      changedDocuments.slice(start, start + 450).forEach(document => batch.update(document.ref, {
+        supervisorId: selectedIds.has(document.id) ? validSupervisorId : deleteField(),
+      }));
+      await batch.commit();
+    }
+    const selectedShops = shopsSnapshot.docs.filter(document => selectedIds.has(document.id));
+    const supervisorName = String(supervisorDocument.docs[0].data().name ?? validSupervisorId);
+    await recordActivity({ action: "supervisor_assignments_changed", summary: `Assigned ${selectedShops.length} shop(s) to ${supervisorName}.`, shopIds: selectedShops.map(document => document.id), shopNames: selectedShops.map(document => String(document.data().name ?? document.id)), metadata: { supervisorId: validSupervisorId, shopCount: selectedShops.length } });
+    invalidateShopData();
+    return { success: true as const, count: selectedShops.length };
+  } catch (error) {
+    if (error instanceof Error && error.message === "SUPERVISOR_NOT_FOUND") return { success: false as const, error: "The supervisor no longer exists." };
+    if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more shops no longer exist." };
+    return { success: false as const, error: mutationError("assign shops to the supervisor", error) };
+  }
+}
+
+export async function handleDeleteSupervisor(supervisorId: string) {
+  try {
+    await requireAdmin();
+    const validSupervisorId = supervisorIdSchema.parse(supervisorId);
+    const [supervisorSnapshot, assignedShops] = await Promise.all([
+      getDocs(query(collection(db, "supervisors"), where(documentId(), "==", validSupervisorId), limit(1))),
+      getDocs(query(collection(db, "shops"), where("supervisorId", "==", validSupervisorId))),
+    ]);
+    const supervisorDocument = supervisorSnapshot.docs[0];
+    if (!supervisorDocument) throw new Error("SUPERVISOR_NOT_FOUND");
+    for (let start = 0; start < assignedShops.docs.length; start += 450) {
+      const batch = writeBatch(db);
+      assignedShops.docs.slice(start, start + 450).forEach(document => batch.update(document.ref, { supervisorId: deleteField() }));
+      await batch.commit();
+    }
+    await supervisorDocument.ref.delete();
+    const supervisorName = String(supervisorDocument.data().name ?? validSupervisorId);
+    await recordActivity({ action: "supervisor_deleted", summary: `Deleted supervisor ${supervisorName} and unassigned ${assignedShops.size} shop(s).`, shopIds: assignedShops.docs.map(document => document.id), shopNames: assignedShops.docs.map(document => String(document.data().name ?? document.id)), metadata: { supervisorId: validSupervisorId, shopCount: assignedShops.size } });
+    invalidateShopData();
+    return { success: true as const };
+  } catch (error) {
+    if (error instanceof Error && error.message === "SUPERVISOR_NOT_FOUND") return { success: false as const, error: "The supervisor no longer exists." };
+    return { success: false as const, error: mutationError("delete the supervisor", error) };
   }
 }
 
@@ -253,8 +435,11 @@ export async function handleDeleteShop(shopId: string) {
 export async function handleClearAllData() {
   try {
     await requireAdmin();
-    const shops = await getDocs(collection(db, "shops"));
-    const references: DocumentReference[] = [];
+    const [shops, supervisors] = await Promise.all([
+      getDocs(collection(db, "shops")),
+      getDocs(collection(db, "supervisors")),
+    ]);
+    const references: DocumentReference[] = supervisors.docs.map(document => document.ref);
     await Promise.all(shops.docs.map(async shop => {
       const [performance, bonusSnapshots] = await Promise.all([
         getDocs(collection(db, "shops", shop.id, "performance")),
@@ -471,6 +656,14 @@ async function loadShops(): Promise<Shop[]> {
   });
 }
 
+async function loadSupervisors(): Promise<Supervisor[]> {
+  const snapshot = await getDocs(collection(db, "supervisors"));
+  return snapshot.docs.flatMap(document => {
+    const supervisor = parseFirestoreDocument(supervisorSchema, document.id, document.data());
+    return supervisor ? [supervisor as Supervisor] : [];
+  }).sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export async function fetchShops(): Promise<Shop[]> {
   await getCurrentActor();
   return loadShops();
@@ -488,25 +681,58 @@ export async function fetchPerformanceData(shopId: string): Promise<PerformanceD
   }).sort((left, right) => left.date.localeCompare(right.date));
 }
 
-const loadShopData = unstable_cache(async (): Promise<ShopData> => {
-  const [shops, performanceSnapshot] = await Promise.all([
-    loadShops(),
-    getDocs(collectionGroup(db, "performance")),
-  ]);
-  const performanceData = Object.fromEntries(shops.map(shop => [shop.id, [] as PerformanceData[]]));
+async function fetchPerformanceDocuments(startDate: string, endDate: string) {
+  try {
+    const snapshot = await getDocs(query(
+      collectionGroup(db, "performance"),
+      where("date", ">=", startDate),
+      where("date", "<=", endDate),
+      orderBy("date", "asc"),
+    ));
+    return snapshot.docs;
+  } catch (error) {
+    console.warn("The optimized performance collection-group query is unavailable; using per-shop queries temporarily.", error);
+    const shops = await getDocs(collection(db, "shops"));
+    const snapshots = await Promise.all(shops.docs.map(shop => getDocs(
+      collection(db, "shops", shop.id, "performance"),
+    )));
+    return snapshots
+      .flatMap(snapshot => snapshot.docs)
+      .filter(document => {
+        const date = String(document.data().date ?? "");
+        return date >= startDate && date <= endDate;
+      })
+      .sort((left, right) => String(left.data().date ?? "").localeCompare(String(right.data().date ?? "")));
+  }
+}
 
-  performanceSnapshot.forEach(document => {
+export async function fetchPerformanceDataForMonth(month: string): Promise<Record<string, PerformanceData[]>> {
+  await getCurrentActor();
+  const validMonth = monthSchema.parse(month);
+  const documents = await fetchPerformanceDocuments(`${validMonth}-01`, `${validMonth}-31`);
+  const performanceData: Record<string, PerformanceData[]> = {};
+  documents.forEach(document => {
     const shopId = document.ref.parent.parent?.id;
-    if (!shopId || !performanceData[shopId]) return;
+    if (!shopId) return;
     const result = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
-    if (result.success) performanceData[shopId].push(result.data as unknown as PerformanceData);
-    else console.error(`Ignoring invalid performance document ${document.ref.path}:`, result.error.flatten());
+    if (!result.success) {
+      console.error(`Ignoring invalid performance document ${document.ref.path}:`, result.error.flatten());
+      return;
+    }
+    (performanceData[shopId] ??= []).push(result.data as unknown as PerformanceData);
   });
-  Object.values(performanceData).forEach(entries => entries.sort((left, right) => left.date.localeCompare(right.date)));
+  return performanceData;
+}
+
+const loadShopData = unstable_cache(async (): Promise<ShopData> => {
+  const [shops, supervisors] = await Promise.all([
+    loadShops(),
+    loadSupervisors(),
+  ]);
 
   return {
     shops,
-    performanceData,
+    supervisors,
     monthlyTargets: Object.fromEntries(
       shops.flatMap(shop => shop.monthlyTargets ? [[shop.id, shop.monthlyTargets] as const] : []),
     ),
@@ -522,43 +748,51 @@ export async function fetchAccessProfile() {
   return getCurrentActor();
 }
 
-const appRoleSchema = z.enum(["admin", "editor", "viewer"]);
-
 export type AuthUser = {
-  uid: string;
-  email: string;
+  id: string;
+  username: string;
   name: string;
-  role: z.infer<typeof appRoleSchema>;
+  role: "admin" | "editor" | "viewer";
   lastSignInAt: string | null;
 };
 
 export async function fetchAuthUsers(): Promise<AuthUser[]> {
   await requireAdmin();
-  const result = await adminAuth.listUsers(1000);
-  return result.users.flatMap(user => user.email ? [{
-    uid: user.uid,
-    email: user.email,
-    name: user.displayName?.trim() || user.email.split("@")[0],
-    role: appRoleSchema.catch("viewer").parse(user.customClaims?.role),
-    lastSignInAt: user.metadata.lastSignInTime ? new Date(user.metadata.lastSignInTime).toISOString() : null,
-  }] : []).sort((left, right) => left.name.localeCompare(right.name));
+  const users = await listManagedUsers();
+  return [
+    { id: "local-admin", username: "admin", name: "Administrator", role: "admin", lastSignInAt: null },
+    ...users.map(user => ({ id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt })),
+  ];
 }
 
-export async function handleSetUserRole(uid: string, role: "admin" | "editor" | "viewer") {
+const createAuthUserSchema = z.object({
+  username: usernameSchema,
+  name: z.string().trim().min(1).max(120),
+  password: z.string().min(2).max(128),
+  role: managedRoleSchema,
+}).strict();
+
+export async function handleCreateAuthUser(input: { username: string; name: string; password: string; role: "editor" | "viewer" }) {
   try {
-    const actor = await requireAdmin();
-    const validUid = z.string().trim().min(1).max(128).parse(uid);
-    const validRole = appRoleSchema.parse(role);
-    if (actor.id === validUid && validRole !== "admin") throw new Error("SELF_DEMOTION");
-    const user = await adminAuth.getUser(validUid);
-    const currentRole = appRoleSchema.catch("viewer").parse(user.customClaims?.role);
-    if (currentRole === validRole) return { success: true as const, role: validRole };
-    await adminAuth.setCustomUserClaims(validUid, { ...user.customClaims, role: validRole });
-    await adminAuth.revokeRefreshTokens(validUid);
-    await recordActivity({ action: "user_role_changed", summary: `Changed ${user.email ?? validUid} to ${validRole}.`, shopIds: [], shopNames: [], metadata: { userId: validUid, role: validRole } });
+    await requireAdmin();
+    const user = await createManagedUser(createAuthUserSchema.parse(input));
+    await recordActivity({ action: "user_created", summary: `Created ${user.role} profile ${user.username}.`, shopIds: [], shopNames: [], metadata: { userId: user.id, role: user.role } });
+    return { success: true as const, user: { id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt } satisfies AuthUser };
+  } catch (error) {
+    if (error instanceof Error && error.message === "USERNAME_TAKEN") return { success: false as const, error: "That username is already in use." };
+    return { success: false as const, error: mutationError("create the user profile", error) };
+  }
+}
+
+export async function handleSetUserRole(userId: string, role: "editor" | "viewer") {
+  try {
+    await requireAdmin();
+    const validUserId = z.string().uuid().parse(userId);
+    const validRole = managedRoleSchema.parse(role);
+    const user = await setManagedUserRole(validUserId, validRole);
+    await recordActivity({ action: "user_role_changed", summary: `Changed ${user.username} to ${validRole}.`, shopIds: [], shopNames: [], metadata: { userId: validUserId, role: validRole } });
     return { success: true as const, role: validRole };
   } catch (error) {
-    if (error instanceof Error && error.message === "SELF_DEMOTION") return { success: false as const, error: "You cannot remove your own administrator role." };
     return { success: false as const, error: mutationError("change the user role", error) };
   }
 }
@@ -584,6 +818,7 @@ export async function fetchActivityPage(cursor?: { occurredAt: string; id: strin
 }
 
 export type DashboardCursor = { name: string; id: string };
+export type DashboardSortKey = "shop" | "achievement" | "forecast" | "revenue";
 export type DashboardRow = {
   shop: Shop;
   revenue: number;
@@ -600,6 +835,7 @@ const dashboardPageSchema = z.object({
   search: z.string().trim().max(120).default(""),
   pageSize: z.number().int().min(5).max(50),
   cursor: z.object({ name: z.string().min(1).max(120), id: shopIdSchema }).nullable().optional(),
+  sortBy: z.enum(["shop", "achievement", "forecast", "revenue"]).default("shop"),
   sortDirection: z.enum(["asc", "desc"]).default("asc"),
 });
 
@@ -643,12 +879,57 @@ export async function handleRegisterImport(importId: string, fileName: string, m
   }
 }
 
-export async function handleUndoLatestImport() {
-  try {
-    await requireEditor();
-    const snapshot = await getDocs(query(collection(db, "imports"), where("status", "==", "active"), orderBy("createdAt", "desc"), limit(1)));
-    const importDocument = snapshot.docs[0];
-    if (!importDocument) throw new Error("NO_IMPORT");
+export type ImportHistoryItem = {
+  id: string;
+  fileName: string;
+  month: string;
+  createdAt: string;
+  actorName: string;
+  status: "active" | "undone" | "removed";
+  recordCount: number;
+  undoneAt?: string;
+};
+
+const importHistoryCursorSchema = z.object({ createdAt: z.string().datetime({ offset: true }), id: shopIdSchema }).optional();
+
+export async function fetchImportHistoryPage(cursor?: { createdAt: string; id: string }) {
+  await getCurrentActor();
+  const validCursor = importHistoryCursorSchema.parse(cursor);
+  const constraints = [orderBy("createdAt", "desc"), orderBy(documentId(), "desc"), ...(validCursor ? [startAfter(validCursor.createdAt, validCursor.id)] : []), limit(21)];
+  const snapshot = await getDocs(query(collection(db, "imports"), ...constraints));
+  const hasMore = snapshot.docs.length > 20;
+  const documents = snapshot.docs.slice(0, 20);
+  const imports = documents.flatMap(document => {
+    const data = document.data();
+    const parsed = z.object({
+      fileName: z.string().trim().min(1).max(255),
+      month: monthSchema,
+      createdAt: z.string().datetime({ offset: true }),
+      actor: z.object({ name: z.string().trim().min(1).max(120) }).passthrough(),
+      status: z.enum(["active", "undone", "removed"]),
+      recordCount: z.number().int().nonnegative(),
+      undoneAt: z.string().datetime({ offset: true }).optional(),
+    }).safeParse(data);
+    if (!parsed.success) return [];
+    return [{
+      id: document.id,
+      fileName: parsed.data.fileName,
+      month: parsed.data.month,
+      createdAt: parsed.data.createdAt,
+      actorName: parsed.data.actor.name,
+      status: parsed.data.status,
+      recordCount: parsed.data.recordCount,
+      undoneAt: parsed.data.undoneAt,
+    } satisfies ImportHistoryItem];
+  });
+  const last = documents.at(-1);
+  return {
+    imports,
+    nextCursor: hasMore && last ? { createdAt: String(last.data().createdAt), id: last.id } : null,
+  };
+}
+
+async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)["docs"][number]) {
     const data = importDocument.data();
     const changeSnapshot = await getDocs(collection(db, "imports", importDocument.id, "changes"));
     const changes = z.array(importChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data())) as Array<z.infer<typeof importChangeSchema>>;
@@ -682,25 +963,83 @@ export async function handleUndoLatestImport() {
       metadata: { importId: importDocument.id, month: String(data.month ?? "") },
     });
     return { success: true as const, fileName: String(data.fileName ?? "Excel import") };
+}
+
+export async function handleUndoImport(importId: string) {
+  try {
+    await requireEditor();
+    const validImportId = shopIdSchema.parse(importId);
+    const snapshot = await getDocs(query(collection(db, "imports"), where("status", "==", "active"), orderBy("createdAt", "desc"), limit(1)));
+    const importDocument = snapshot.docs[0];
+    if (!importDocument) throw new Error("NO_IMPORT");
+    if (importDocument.id !== validImportId) throw new Error("NEWER_IMPORT_EXISTS");
+    return await undoImport(importDocument);
   } catch (error) {
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "There is no active import to undo." };
+    if (error instanceof Error && error.message === "NEWER_IMPORT_EXISTS") return { success: false as const, error: "Undo newer active imports first to preserve import order." };
     if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "The latest import cannot be undone because one or more affected shops changed afterward." };
     return { success: false as const, error: mutationError("undo the latest Excel import", error) };
   }
 }
 
-async function fetchPerformanceMonth(shopId: string, month: string) {
-  const snapshot = await getDocs(query(
-    collection(db, "shops", shopId, "performance"),
-    where("date", ">=", `${month}-01`),
-    where("date", "<=", `${month}-31`),
-    orderBy("date", "desc"),
-    limit(50),
-  ));
-  return snapshot.docs.flatMap(document => {
-    const parsed = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
-    return parsed.success ? [parsed.data as unknown as PerformanceData] : [];
-  });
+export async function handleRemoveImport(importId: string) {
+  try {
+    await requireEditor();
+    const validImportId = shopIdSchema.parse(importId);
+    const importSnapshot = await getDocs(query(collection(db, "imports"), where(documentId(), "==", validImportId), limit(1)));
+    const importDocument = importSnapshot.docs[0];
+    if (!importDocument || importDocument.data().status !== "active") throw new Error("NO_IMPORT");
+    const data = importDocument.data();
+    const month = monthSchema.parse(data.month);
+    const changeSnapshot = await getDocs(collection(db, "imports", importDocument.id, "changes"));
+    const changes = z.array(importChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data())) as Array<z.infer<typeof importChangeSchema>>;
+
+    const currentVersionChecks = await Promise.all(changes.map(async change => {
+      const performance = await getDocs(collection(db, "shops", change.shopId, "performance"));
+      const latest = performance.docs.flatMap(document => {
+        const parsed = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
+        return parsed.success && parsed.data.importId && parsed.data.date.startsWith(month) ? [parsed.data] : [];
+      }).sort((left, right) => (right.importedAt ?? right.date).localeCompare(left.importedAt ?? left.date))[0];
+      return latest?.importId === validImportId;
+    }));
+    const currentVersionCount = currentVersionChecks.filter(Boolean).length;
+
+    if (currentVersionCount === changes.length) return await undoImport(importDocument);
+    if (currentVersionCount > 0) throw new Error("PARTIALLY_CURRENT");
+
+    const batch = writeBatch(db);
+    changes.forEach(change => batch.delete(doc(db, "shops", change.shopId, "performance", change.performanceId)));
+    batch.update(importDocument.ref, { status: "removed", removedAt: new Date().toISOString(), removedBy: await getCurrentActor() });
+    await batch.commit();
+    invalidateShopData();
+    await recordActivity({
+      action: "excel_import_removed",
+      summary: `Removed stored import ${String(data.fileName ?? importDocument.id)}.`,
+      shopIds: changes.map(change => change.shopId),
+      shopNames: changes.map(change => change.shopName),
+      metadata: { importId: importDocument.id, month, recordCount: changes.length },
+    });
+    return { success: true as const, fileName: String(data.fileName ?? "Excel import"), restoredShopData: false };
+  } catch (error) {
+    if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "This import has already been removed or no longer exists." };
+    if (error instanceof Error && error.message === "PARTIALLY_CURRENT") return { success: false as const, error: "This file is current for only some affected shops. Remove newer overlapping imports first." };
+    if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "This import cannot be removed because one or more affected shops were edited afterward." };
+    return { success: false as const, error: mutationError("remove the Excel import", error) };
+  }
+}
+
+export async function handleUndoLatestImport() {
+  try {
+    await requireEditor();
+    const snapshot = await getDocs(query(collection(db, "imports"), where("status", "==", "active"), orderBy("createdAt", "desc"), limit(1)));
+    const importDocument = snapshot.docs[0];
+    if (!importDocument) throw new Error("NO_IMPORT");
+    return await undoImport(importDocument);
+  } catch (error) {
+    if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "There is no active import to undo." };
+    if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "The latest import cannot be undone because one or more affected shops changed afterward." };
+    return { success: false as const, error: mutationError("undo the latest Excel import", error) };
+  }
 }
 
 function performanceSummary(shop: Shop, entries: PerformanceData[]) {
@@ -728,33 +1067,42 @@ export async function fetchDashboardMonths() {
   return [...months].sort().reverse();
 }
 
-export async function fetchDashboardPage(input: { month: string; search?: string; pageSize: number; cursor?: DashboardCursor | null; sortDirection?: "asc" | "desc" }) {
+export async function fetchDashboardPage(input: { month: string; search?: string; pageSize: number; cursor?: DashboardCursor | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
   await getCurrentActor();
   const value = dashboardPageSchema.parse(input);
-  const baseConstraints = [orderBy("name", value.sortDirection), orderBy(documentId(), value.sortDirection)];
-  const searchConstraints = value.search
-    ? value.sortDirection === "desc"
-      ? [startAt(`${value.search}\uf8ff`), endAt(value.search)]
-      : [startAt(value.search), endAt(`${value.search}\uf8ff`)]
-    : [];
-  const pageSearchConstraints = value.search
-    ? value.cursor ? [endAt(value.sortDirection === "desc" ? value.search : `${value.search}\uf8ff`)] : searchConstraints
-    : [];
-  const filteredQuery = query(collection(db, "shops"), ...baseConstraints, ...searchConstraints);
-  const [count, snapshot] = await Promise.all([
-    getCountFromServer(filteredQuery),
-    getDocs(query(collection(db, "shops"), ...baseConstraints, ...(value.cursor ? [startAfter(value.cursor.name, value.cursor.id)] : []), ...pageSearchConstraints, limit(value.pageSize + 1))),
-  ]);
-  const hasMore = snapshot.docs.length > value.pageSize;
-  const documents = snapshot.docs.slice(0, value.pageSize);
   const previousMonth = format(subMonths(parseISO(`${value.month}-01`), 1), "yyyy-MM");
-  const rows = await Promise.all(documents.map(async document => {
+  const [snapshot, supervisors, performanceDocuments] = await Promise.all([
+    getDocs(query(collection(db, "shops"), orderBy("name", "asc"))),
+    loadSupervisors(),
+    fetchPerformanceDocuments(`${previousMonth}-01`, `${value.month}-31`),
+  ]);
+  const performanceByShopAndMonth = new Map<string, PerformanceData[]>();
+  performanceDocuments.forEach(document => {
+    const shopId = document.ref.parent.parent?.id;
+    const parsed = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
+    if (!shopId || !parsed.success) return;
+    const entry = parsed.data as unknown as PerformanceData;
+    const key = `${shopId}:${entry.date.slice(0, 7)}`;
+    const entries = performanceByShopAndMonth.get(key) ?? [];
+    entries.push(entry);
+    performanceByShopAndMonth.set(key, entries);
+  });
+  const normalizedSearch = value.search.toLocaleLowerCase();
+  const matchingSupervisorIds = new Set(supervisors
+    .filter(supervisor => supervisor.name.toLocaleLowerCase().includes(normalizedSearch))
+    .map(supervisor => supervisor.id));
+  const matchingDocuments = normalizedSearch
+    ? snapshot.docs.filter(document => {
+      const data = document.data();
+      return String(data.name ?? "").toLocaleLowerCase().includes(normalizedSearch)
+        || matchingSupervisorIds.has(String(data.supervisorId ?? ""));
+    })
+    : snapshot.docs;
+  const rows = matchingDocuments.map(document => {
     const shop = parseFirestoreDocument(shopSchema, document.id, document.data()) as Shop | null;
     if (!shop) return null;
-    const [currentEntries, previousEntries] = await Promise.all([
-      fetchPerformanceMonth(shop.id, value.month),
-      fetchPerformanceMonth(shop.id, previousMonth),
-    ]);
+    const currentEntries = performanceByShopAndMonth.get(`${shop.id}:${value.month}`) ?? [];
+    const previousEntries = performanceByShopAndMonth.get(`${shop.id}:${previousMonth}`) ?? [];
     const current = performanceSummary(shop, currentEntries);
     const previous = performanceSummary(shop, previousEntries);
     return {
@@ -767,11 +1115,38 @@ export async function fetchDashboardPage(input: { month: string; search?: string
       previousAchievement: previous.achievement,
       previousRevenue: previous.revenue,
     } satisfies DashboardRow;
-  }));
-  const last = documents.at(-1);
+  }).filter((row): row is DashboardRow => Boolean(row));
+
+  const direction = value.sortDirection === "asc" ? 1 : -1;
+  const getSortValue = (row: DashboardRow): string | number | null => {
+    if (value.sortBy === "shop") return row.shop.name;
+    if (!row.hasData) return null;
+    if (value.sortBy === "achievement") return row.totalAchievement;
+    if (value.sortBy === "forecast") return row.forecastAchievement ?? (row.isFinal ? row.totalAchievement : null);
+    return row.revenue;
+  };
+  rows.sort((left, right) => {
+    const leftValue = getSortValue(left);
+    const rightValue = getSortValue(right);
+    if (leftValue === null && rightValue !== null) return 1;
+    if (leftValue !== null && rightValue === null) return -1;
+    if (typeof leftValue === "string" && typeof rightValue === "string") {
+      const comparison = leftValue.localeCompare(rightValue);
+      if (comparison) return comparison * direction;
+    } else if (typeof leftValue === "number" && typeof rightValue === "number" && leftValue !== rightValue) {
+      return (leftValue - rightValue) * direction;
+    }
+    return left.shop.name.localeCompare(right.shop.name) || left.shop.id.localeCompare(right.shop.id);
+  });
+
+  const cursorIndex = value.cursor ? rows.findIndex(row => row.shop.id === value.cursor?.id) : -1;
+  const pageStart = cursorIndex >= 0 ? cursorIndex + 1 : 0;
+  const pageRows = rows.slice(pageStart, pageStart + value.pageSize);
+  const hasMore = pageStart + value.pageSize < rows.length;
+  const last = pageRows.at(-1);
   return {
-    rows: rows.filter((row): row is DashboardRow => Boolean(row)),
-    total: count.data().count,
-    nextCursor: hasMore && last ? { name: String(last.data().name), id: last.id } : null,
+    rows: pageRows,
+    total: rows.length,
+    nextCursor: hasMore && last ? { name: last.shop.name, id: last.shop.id } : null,
   };
 }

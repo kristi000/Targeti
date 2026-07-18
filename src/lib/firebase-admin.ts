@@ -1,8 +1,7 @@
 import "server-only";
 
 import { applicationDefault, getApp, getApps, initializeApp } from "firebase-admin/app";
-import { getAuth } from "firebase-admin/auth";
-import { FieldPath, getFirestore, type DocumentReference } from "firebase-admin/firestore";
+import { FieldPath, FieldValue, getFirestore, type DocumentReference } from "firebase-admin/firestore";
 
 const projectId = process.env.FIREBASE_PROJECT_ID || "perf-tracker-lmp2b";
 
@@ -10,7 +9,6 @@ const app = getApps().length
   ? getApp()
   : initializeApp({ credential: applicationDefault(), projectId });
 
-export const adminAuth = getAuth(app);
 export const adminDb = getFirestore(app);
 export type { DocumentReference };
 
@@ -23,6 +21,7 @@ export const collection = (_database: typeof adminDb, ...segments: string[]) => 
 export const collectionGroup = (_database: typeof adminDb, name: string) => adminDb.collectionGroup(name);
 export const doc = (_database: typeof adminDb, ...segments: string[]) => adminDb.doc(pathFrom(segments));
 export const documentId = () => FieldPath.documentId();
+export const deleteField = () => FieldValue.delete();
 export const addDoc = (reference: FirebaseFirestore.CollectionReference, data: FirebaseFirestore.DocumentData) => reference.add(data);
 export const updateDoc = (reference: DocumentReference, data: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData>) => reference.update(data);
 export const getDocs = (reference: QueryLike) => reference.get();

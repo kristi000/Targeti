@@ -12,6 +12,12 @@ export const metricKeySchema = z.string().refine(
 const finiteNonNegativeNumber = z.number().finite().nonnegative();
 
 export const shopIdSchema = documentIdSchema;
+export const supervisorIdSchema = documentIdSchema;
+export const supervisorSchema = z.object({
+  id: supervisorIdSchema,
+  name: z.string().trim().min(1).max(120),
+}).strict();
+export const newSupervisorSchema = supervisorSchema.omit({ id: true });
 export const targetSchema = z.record(metricKeySchema, finiteNonNegativeNumber);
 
 const representativeSchema = z.object({
@@ -73,6 +79,7 @@ const quarterMetricSettingsSchema = z.object({
 export const shopSchema = z.object({
   id: documentIdSchema,
   name: z.string().trim().min(1).max(120),
+  supervisorId: supervisorIdSchema.optional(),
   description: z.string().trim().max(500).optional(),
   revenue: finiteNonNegativeNumber.optional(),
   salesRepresentatives: z.array(representativeSchema).max(500).optional(),
@@ -118,14 +125,15 @@ export const bonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["excel_imported", "excel_import_undone", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "metric_deleted", "all_data_deleted", "user_role_changed"]),
+  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "metric_deleted", "all_data_deleted", "user_created", "user_role_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),
     name: z.string().trim().min(1).max(120),
-    email: z.string().trim().email().max(255),
+    username: z.string().trim().min(1).max(120).optional(),
+    email: z.string().trim().email().max(255).optional(),
     role: z.enum(["admin", "editor", "viewer"]),
-  }).strict(),
+  }).strict().refine(actor => Boolean(actor.username || actor.email), "An actor username is required."),
   summary: z.string().trim().min(1).max(500),
   shopIds: z.array(documentIdSchema).max(500),
   shopNames: z.array(z.string().trim().min(1).max(120)).max(500),

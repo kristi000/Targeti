@@ -7,7 +7,11 @@ import { useShop } from "@/components/shop-provider";
 
 export default function BonusPage() {
   const { shopId } = useParams<{ shopId: string }>();
-  const { shops, selectedShop, setSelectedShop } = useShop();
-  useEffect(() => { const shop = shops.find(item => item.id === shopId); if (shop && selectedShop?.id !== shop.id) setSelectedShop(shop); }, [shops, shopId, selectedShop, setSelectedShop]);
+  const { shops, selectedShop, setSelectedShop, loadPerformanceForShop } = useShop();
+  useEffect(() => {
+    const shop = shops.find(item => item.id === shopId);
+    if (shop && selectedShop?.id !== shop.id) setSelectedShop(shop);
+    if (shop) void loadPerformanceForShop(shop.id);
+  }, [shops, shopId, selectedShop, setSelectedShop, loadPerformanceForShop]);
   return selectedShop?.id === shopId ? <BonusDashboardClient /> : null;
 }

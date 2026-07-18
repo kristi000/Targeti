@@ -41,9 +41,7 @@ export function SalesRepresentativeRanking() {
       const selectedEntry = performanceData[0];
       if (!selectedEntry) return;
       const latestMonth = selectedEntry.date.slice(0, 7);
-      const representativesById = new Map(getMonthlyRepresentatives(shop, latestMonth).map(rep => [rep.id, rep]));
-      selectedEntry.reps.forEach(rep => representativesById.set(rep.repId, { id: rep.repId, name: rep.repName ?? representativesById.get(rep.repId)?.name ?? rep.repId }));
-      const representatives = [...representativesById.values()].filter(rep => selectedEntry.reps.some(entry => entry.repId === rep.id));
+      const representatives = getMonthlyRepresentatives(shop, latestMonth);
       const monthlyTargets = selectedEntry.targets ?? shop.monthlyData?.[latestMonth]?.targets ?? allMonthlyTargets[shop.id];
       if (!monthlyTargets || representatives.length === 0) return;
 
@@ -53,12 +51,17 @@ export function SalesRepresentativeRanking() {
       const repTargets = getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length);
       const forecastDate = getForecastDate(selectedEntry);
       const dayOfMonth = Math.max(forecastDate.getDate(), 1);
+      const totalsByRepresentative = new Map<string, Record<PerformanceMetric, number>>();
+      performanceData.forEach(entry => entry.reps.forEach(rep => {
+        const totals = totalsByRepresentative.get(rep.repId)
+          ?? Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>;
+        metrics.forEach(metric => { totals[metric] += rep[metric] ?? 0; });
+        totalsByRepresentative.set(rep.repId, totals);
+      }));
 
       representatives.forEach(representative => {
-        const totals = metrics.reduce((result, metric) => {
-          result[metric] = performanceData.reduce((sum, entry) => sum + (entry.reps.find(rep => rep.repId === representative.id)?.[metric] ?? 0), 0);
-          return result;
-        }, {} as Record<PerformanceMetric, number>);
+        const totals = totalsByRepresentative.get(representative.id)
+          ?? Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>;
         const achievement = calculateTotalAchievement(totals, repTargets, metricSettings);
         allReps.push({
           id: representative.id,
@@ -71,7 +74,9 @@ export function SalesRepresentativeRanking() {
       });
     });
 
-    return allReps.sort((left, right) => right.achievement - left.achievement);
+    return allReps
+      .sort((left, right) => right.achievement - left.achievement)
+      .map((representative, index) => ({ ...representative, rank: index + 1 }));
   }, [shops, allPerformanceData, allMonthlyTargets, selectedDatasetId]);
 
   const filteredRepresentatives = useMemo(() => {
@@ -97,10 +102,9 @@ export function SalesRepresentativeRanking() {
       </div>
 
       <div className="divide-y overflow-hidden rounded-lg border">
-        {visibleRepresentatives.map((rep, index) => {
-          const networkRank = rankedSalesReps.findIndex(item => item.id === rep.id && item.shopId === rep.shopId) + 1;
+        {visibleRepresentatives.map(rep => {
           return <Link key={`${rep.shopId}-${rep.id}`} href={`/${locale}/shop/${rep.shopId}#representative-bonuses`} className="group flex items-center justify-between gap-3 p-3 transition-colors hover:bg-muted/50">
-            <div className="flex min-w-0 items-center gap-3"><span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold", networkRank <= 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{networkRank}</span><div className="min-w-0"><p className="truncate font-medium">{rep.name}</p><p className="truncate text-xs text-muted-foreground">{rep.shopName}</p></div></div>
+            <div className="flex min-w-0 items-center gap-3"><span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold", rep.rank <= 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{rep.rank}</span><div className="min-w-0"><p className="truncate font-medium">{rep.name}</p><p className="truncate text-xs text-muted-foreground">{rep.shopName}</p></div></div>
             <div className="flex shrink-0 items-center gap-3 text-right"><div><p className="font-semibold tabular-nums">{rep.achievement.toFixed(1)}%</p><p className="text-xs text-muted-foreground">EOM: {rep.forecastAchievement === null ? "Final" : `${rep.forecastAchievement.toFixed(1)}%`}</p></div><ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" /></div>
           </Link>;
         })}

@@ -24,12 +24,18 @@ export default async function LocaleLayout({
    } catch (error) {
      redirect('/en');
    }
-   let initialShopData;
    let actor;
    try {
-     [initialShopData, actor] = await Promise.all([fetchShopData(), fetchAccessProfile()]);
+     actor = await fetchAccessProfile();
    } catch {
      redirect('/login');
+   }
+   let initialShopData;
+   try {
+     initialShopData = await fetchShopData();
+   } catch (error) {
+     console.error("Could not load application data:", error);
+     redirect('/login?error=database');
    }
 
   return (

@@ -37,8 +37,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { fetchDashboardPage, type DashboardCursor, type DashboardRow } from "@/app/actions";
-import { getOverviewPerformanceData } from "@/lib/types";
+import { fetchDashboardMonths, fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey } from "@/app/actions";
 
 type ShopPerformanceRow = DashboardRow;
 
@@ -50,7 +49,7 @@ const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
 ];
 
 export function DashboardClient() {
-  const { shops, allPerformanceData, loading, setSelectedDatasetId } = useShop();
+  const { shops, supervisors, loading, loadPerformanceMonth, setSelectedDatasetId } = useShop();
   const t = useTranslations("Dashboard");
   const locale = useLocale();
   const router = useRouter();
@@ -58,34 +57,28 @@ export function DashboardClient() {
   const searchParams = useSearchParams();
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
   const [selectedMonth, setSelectedMonth] = useState(searchParams.get("month") ?? "");
-  const [sorting, setSorting] = useState<SortingState>([{ id: "shop", desc: searchParams.get("dir") === "desc" }]);
+  const requestedSort = searchParams.get("sort");
+  const initialSort: DashboardSortKey = requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue" ? requestedSort : "shop";
+  const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: searchParams.get("dir") === "desc" }]);
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: Math.max(Number(searchParams.get("page") ?? 1) - 1, 0), pageSize: [10, 20, 50].includes(Number(searchParams.get("size"))) ? Number(searchParams.get("size")) : 10 });
   const initialCursor = searchParams.get("afterName") && searchParams.get("afterId") ? { name: searchParams.get("afterName")!, id: searchParams.get("afterId")! } : null;
   const [cursor, setCursor] = useState<DashboardCursor | null>(initialCursor);
   const [cursorHistory, setCursorHistory] = useState<Array<DashboardCursor | null>>(() => Array.from({ length: Math.max(Number(searchParams.get("page") ?? 1), 1) }, (_, index) => index === Math.max(Number(searchParams.get("page") ?? 1) - 1, 0) ? initialCursor : null));
   const deferredSearch = useDeferredValue(shopSearch.trim());
 
-  const datasets = useMemo(() => {
-    const byId = new Map<string, { id: string; name: string; date: string; importedAt: string }>();
-    Object.values(allPerformanceData).flatMap(getOverviewPerformanceData).forEach(entry => {
-      const id = entry.date.slice(0, 7);
-      const existing = byId.get(id);
-      const importedAt = entry.importedAt ?? entry.date;
-      if (!existing || importedAt > existing.importedAt) {
-        byId.set(id, { id, name: id, date: entry.date, importedAt });
-      }
-    });
-    return [...byId.values()].sort((left, right) => right.importedAt.localeCompare(left.importedAt));
-  }, [allPerformanceData]);
+  const monthsQuery = useQuery({ queryKey: ["dashboard-months"], queryFn: fetchDashboardMonths, staleTime: 60_000 });
+  const datasets = useMemo(() => (monthsQuery.data ?? []).map(month => ({ id: month, name: month })), [monthsQuery.data]);
   const activeDatasetId = datasets.some(dataset => dataset.id === selectedMonth) ? selectedMonth : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
 
   const pageQuery = useQuery({
-    queryKey: ["firestore-shop-performance-page", activeDatasetId, deferredSearch, pagination.pageSize, cursor, sorting[0]?.desc],
-    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, pageSize: pagination.pageSize, cursor, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+    queryKey: ["firestore-shop-performance-page", activeDatasetId, deferredSearch, pagination.pageSize, cursor, sorting[0]?.id, sorting[0]?.desc],
+    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, pageSize: pagination.pageSize, cursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
     placeholderData: keepPreviousData,
   });
 
   const shopPerformances = pageQuery.data?.rows ?? [];
+  const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
+  const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
 
   const summary = useMemo(() => {
     const reportingEntries = shopPerformances.filter(item => item.hasData);
@@ -126,7 +119,10 @@ export function DashboardClient() {
       setPagination(next);
     },
     onSortingChange: updater => {
-      setSorting(updater);
+      setSorting(current => {
+        const next = typeof updater === "function" ? updater(current) : updater;
+        return next.length ? [next[0]] : [{ id: "shop", desc: false }];
+      });
       setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
     },
   });
@@ -137,16 +133,18 @@ export function DashboardClient() {
   };
 
   useEffect(() => {
+    void loadPerformanceMonth(activeDatasetId);
     const parameters = new URLSearchParams();
     if (activeDatasetId) parameters.set("month", activeDatasetId);
     if (shopSearch.trim()) parameters.set("q", shopSearch.trim());
     if (pagination.pageIndex) parameters.set("page", String(pagination.pageIndex + 1));
     if (pagination.pageSize !== 10) parameters.set("size", String(pagination.pageSize));
+    if (sorting[0]?.id && sorting[0].id !== "shop") parameters.set("sort", sorting[0].id);
     if (sorting[0]?.desc) parameters.set("dir", "desc");
     if (cursor) { parameters.set("afterName", cursor.name); parameters.set("afterId", cursor.id); }
     router.replace(`${pathname}?${parameters.toString()}`, { scroll: false });
     setSelectedDatasetId(activeDatasetId);
-  }, [activeDatasetId, shopSearch, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, setSelectedDatasetId]);
+  }, [activeDatasetId, shopSearch, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, loadPerformanceMonth, setSelectedDatasetId]);
 
   if (loading) {
     return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex flex-1 items-center justify-center text-muted-foreground">Loading dashboard…</div></div>;
@@ -194,9 +192,32 @@ export function DashboardClient() {
                 <span className="rounded bg-emerald-700 p-1.5 text-white"><Store className="h-4 w-4" /></span>
                 <div><h3 className="font-semibold text-slate-900">All shops</h3><p className="text-xs text-slate-500">{resultCount} matching locations</p></div>
               </div>
-              <div className="relative w-full sm:max-w-xs">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input value={shopSearch} onChange={event => updateSearch(event.target.value)} placeholder="Search shops…" aria-label="Search shops" className="h-9 bg-white pl-9" />
+              <div className="flex w-full gap-2 sm:max-w-md">
+                <div className="relative min-w-0 flex-1">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input value={shopSearch} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-white pl-9" />
+                </div>
+                <select
+                  aria-label="Sort shops by"
+                  className="h-9 rounded-md border bg-white px-2 text-sm text-slate-900 md:hidden"
+                  value={sorting[0]?.id ?? "shop"}
+                  onChange={event => table.setSorting([{ id: event.target.value, desc: sorting[0]?.desc ?? false }])}
+                >
+                  <option value="shop">Shop</option>
+                  <option value="achievement">Performance</option>
+                  <option value="forecast">Forecast</option>
+                  <option value="revenue">Revenue</option>
+                </select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 bg-white md:hidden"
+                  onClick={() => table.setSorting([{ id: sorting[0]?.id ?? "shop", desc: !sorting[0]?.desc }])}
+                  aria-label={sorting[0]?.desc ? "Sort ascending" : "Sort descending"}
+                >
+                  {sorting[0]?.desc ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+                </Button>
               </div>
             </div>
 
@@ -205,9 +226,9 @@ export function DashboardClient() {
                 <thead><tr className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
                   <th className="w-12 border-b border-r border-slate-300 px-2 py-2 text-center">#</th>
                   <SortableHeader table={table} columnId="shop" label="Shop" align="left" />
-                  <th className="border-b border-r border-slate-300 px-3 py-2 text-right">Achievement</th>
-                  <th className="border-b border-r border-slate-300 px-3 py-2 text-right">EOM forecast</th>
-                  <th className="border-b border-r border-slate-300 px-3 py-2 text-right">Revenue</th>
+                  <SortableHeader table={table} columnId="achievement" label="Performance" />
+                  <SortableHeader table={table} columnId="forecast" label="EOM forecast" />
+                  <SortableHeader table={table} columnId="revenue" label="Revenue" />
                   <th className="w-64 border-b border-r border-slate-300 px-3 py-2 text-left">Target progress</th>
                   <th className="w-14 border-b border-slate-300 px-2 py-2"><span className="sr-only">Open shop</span></th>
                 </tr></thead>
@@ -215,9 +236,10 @@ export function DashboardClient() {
                   {visibleRows.map((row, rowIndex) => {
                     const item = row.original;
                     const destination = `/${locale}/shop/${item.shop.id}`;
+                    const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                     return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
                       <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-3 text-center font-mono text-xs text-slate-500">{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</td>
-                      <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left font-medium text-slate-900">{item.shop.name}</th>
+                      <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left"><span className="block font-medium text-slate-900">{item.shop.name}</span><span className="mt-0.5 block text-xs font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
                       <td className="border-b border-r border-slate-200 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{item.hasData ? <div>{item.totalAchievement.toFixed(1)}%<TrendIndicator change={item.previousAchievement === null ? null : item.totalAchievement - item.previousAchievement} suffix=" pts" /></div> : "—"}</td>
                       <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
                       <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{item.hasData ? <div>{currency.format(item.revenue)}<TrendIndicator change={item.previousRevenue === null ? null : item.revenue - item.previousRevenue} /></div> : "—"}</td>
@@ -232,8 +254,9 @@ export function DashboardClient() {
             <div className="divide-y md:hidden">
               {visibleRows.map(row => {
                 const item = row.original;
+                const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                 return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}`} className="block space-y-3 p-4 hover:bg-emerald-50/70">
-                  <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{item.shop.name}</p><p className="mt-0.5 text-xs text-slate-500">{item.hasData ? currency.format(item.revenue) : "No imported data"}</p></div><ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /></div>
+                  <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{item.shop.name}</p><p className="mt-0.5 text-xs text-slate-500">Supervisor: {supervisorName}</p><p className="mt-0.5 text-xs text-slate-500">{item.hasData ? currency.format(item.revenue) : "No imported data"}</p></div><ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /></div>
                   {item.hasData && <><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-slate-500">Achievement</p><p className="font-semibold tabular-nums">{item.totalAchievement.toFixed(1)}%</p></div><div><p className="text-xs text-slate-500">EOM forecast</p><p className="font-medium tabular-nums">{item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p></div></div><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 bg-slate-200" /></>}
                 </Link>;
               })}
@@ -256,7 +279,7 @@ function SortableHeader({ table, columnId, label, align = "right" }: { table: Da
   const column = table.getColumn(columnId);
   const direction = column?.getIsSorted();
   const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
-  return <th className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-right")}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-end")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
+  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-right")}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-end")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
 }
 
 function TablePagination({ table, resultCount }: { table: DashboardTable; resultCount: number }) {
