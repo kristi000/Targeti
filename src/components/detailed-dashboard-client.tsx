@@ -119,17 +119,17 @@ export function DetailedDashboardClient() {
   return (
     <div className="flex h-full flex-col">
       <Header title={`${t("title")}: ${selectedShop.name}`} />
-      <div className="flex-1 overflow-y-auto p-3 md:p-4">
-        <div className="space-y-3">
-          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-            <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline" })}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link>
-            <div className="flex flex-wrap items-center gap-2">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-3 md:p-4">
+        <div className="space-y-2 sm:space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "shrink-0 px-2.5 sm:px-3")}><ArrowLeft className="mr-1.5 h-4 w-4" />{t("backToOverview")}</Link>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
               <Select value={selectedMonth} onValueChange={value => { setSelectedMonthValue(value); setSelectedVersionId("active"); }}>
-                <SelectTrigger className="w-44" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 min-w-0 flex-1 sm:w-44 sm:flex-none" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
                 <SelectContent>{availableMonths.map(month => <SelectItem key={month} value={month}>{format(parseISO(`${month}-01`), "MMMM yyyy")}</SelectItem>)}</SelectContent>
               </Select>
               {monthVersions.length > 1 && <Select value={selectedVersion ? selectedVersionId : "active"} onValueChange={setSelectedVersionId}>
-                <SelectTrigger className="w-56" aria-label="Import version"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-9 min-w-0 flex-1 sm:w-56 sm:flex-none" aria-label="Import version"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="active">Latest active import</SelectItem>{monthVersions.map((entry, index) => <SelectItem key={getPerformanceDatasetId(entry)} value={getPerformanceDatasetId(entry)}>{index === 0 ? "Latest" : `Older ${index}`} · {entry.importName ?? entry.date}</SelectItem>)}</SelectContent>
               </Select>}
             </div>
@@ -137,20 +137,20 @@ export function DetailedDashboardClient() {
           <ShopPageNav shopId={selectedShop.id} active="performance" />
           <SidebarActions activeMonth={selectedMonth} />
 
-          <section className="space-y-3" aria-labelledby="performance-insights-heading">
-            <div><h2 id="performance-insights-heading" className="text-lg font-semibold">Performance insights</h2><p className="text-sm text-muted-foreground">The areas that deserve attention in this reporting period.</p></div>
-            <div className="grid gap-3 md:grid-cols-3">
+          <section className="space-y-2 sm:space-y-3" aria-labelledby="performance-insights-heading">
+            <div><h2 id="performance-insights-heading" className="text-base font-semibold sm:text-lg">Performance insights</h2><p className="hidden text-sm text-muted-foreground sm:block">The areas that deserve attention in this reporting period.</p></div>
+            <div className="grid gap-2 sm:gap-3 md:grid-cols-3">
               <InsightCard icon={Lightbulb} label="Priority metrics" value={performanceInsights.focusMetrics.length ? performanceInsights.focusMetrics.join(", ") : "No target metrics"} detail="Lowest achievement against target" />
               <InsightCard icon={TrendingUp} label="Forecast to target" value={hasForecast ? `${performanceInsights.forecastOnTrack} of ${metrics.length}` : isFinal ? "Completed" : "Not available"} detail={hasForecast ? "Metrics projected to reach 100%" : isFinal ? "This reporting month is final" : "More reporting data is required"} />
               <InsightCard icon={UserRoundSearch} label="Needs attention" value={performanceInsights.representativesNeedingAttention.length ? `${performanceInsights.representativesNeedingAttention.length} representatives` : "No one flagged"} detail={performanceInsights.representativesNeedingAttention.slice(0, 3).join(", ") || "Based on achievement below 80%"} />
             </div>
           </section>
 
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid gap-2 sm:gap-3 xl:grid-cols-2">
           <Card className="overflow-hidden">
-            <CardHeader className="flex-row items-center justify-between space-y-0 px-4 py-3"><div><CardTitle className="text-base">{t("totalPerformance")}</CardTitle><CardDescription>{t("overallAchievement")}</CardDescription>{revenue !== undefined && <p className="mt-1 flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Banknote className="h-3.5 w-3.5" />{t("revenueValue")}: {new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(revenue)}{previousRevenue !== null && <MonthChange change={revenue - previousRevenue} />}</p>}</div><div className="flex items-center gap-2"><Trophy className="h-6 w-6 text-primary" /><div className="text-right"><p className="text-2xl font-bold tracking-tight">{monthlyAchievement.toFixed(1)}%</p>{previousAchievement !== null && <MonthChange change={monthlyAchievement - previousAchievement} suffix=" pts" />}</div></div></CardHeader>
-            <CardContent className="space-y-3 px-3 pb-3">
-              <Progress value={monthlyAchievement} className="h-3" />
+            <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5 sm:px-4 sm:py-3"><div><CardTitle className="text-sm sm:text-base">{t("totalPerformance")}</CardTitle><CardDescription className="hidden sm:block">{t("overallAchievement")}</CardDescription>{revenue !== undefined && <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:mt-1 sm:gap-1.5 sm:text-xs"><Banknote className="h-3.5 w-3.5" />{t("revenueValue")}: {new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(revenue)}{previousRevenue !== null && <MonthChange change={revenue - previousRevenue} />}</p>}</div><div className="flex items-center gap-1.5 sm:gap-2"><Trophy className="h-5 w-5 text-primary sm:h-6 sm:w-6" /><div className="text-right"><p className="text-xl font-bold tracking-tight sm:text-2xl">{monthlyAchievement.toFixed(1)}%</p>{previousAchievement !== null && <MonthChange change={monthlyAchievement - previousAchievement} suffix=" pts" />}</div></div></CardHeader>
+            <CardContent className="space-y-2 px-2 pb-2 sm:space-y-3 sm:px-3 sm:pb-3">
+              <Progress value={monthlyAchievement} className="h-2 sm:h-3" />
               <PerformanceTable
                 actuals={monthlyTotals}
                 targets={monthlyTargets}
@@ -166,7 +166,7 @@ export function DetailedDashboardClient() {
             </CardContent>
           </Card>
 
-          {qualityMetrics && <Card className="overflow-hidden"><CardHeader className="px-4 py-3"><CardTitle className="text-base">Quality indicators</CardTitle><CardDescription>Reported separately from weighted target metrics</CardDescription></CardHeader><CardContent className="grid gap-3 px-4 pb-4 sm:grid-cols-3 xl:grid-cols-1 2xl:grid-cols-3">{qualityMetrics.checklistScore !== undefined && <div className="rounded-md border bg-muted/20 p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><ClipboardCheck className="h-3.5 w-3.5" />Checklist</p><p className="mt-1 text-xl font-semibold tabular-nums">{qualityMetrics.checklistScore.toFixed(1)}</p></div>}{qualityMetrics.npsScore !== undefined && <div className="rounded-md border bg-muted/20 p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><MessageSquareText className="h-3.5 w-3.5" />NPS</p><p className="mt-1 text-xl font-semibold tabular-nums">{qualityMetrics.npsScore.toFixed(1)}</p></div>}{qualityMetrics.npsResponses !== undefined && <div className="rounded-md border bg-muted/20 p-3"><p className="flex items-center gap-1.5 text-xs text-muted-foreground"><Users className="h-3.5 w-3.5" />Responses</p><p className="mt-1 text-xl font-semibold tabular-nums">{qualityMetrics.npsResponses}</p></div>}</CardContent></Card>}
+          {qualityMetrics && <Card className="overflow-hidden"><CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3"><CardTitle className="text-sm sm:text-base">Quality indicators</CardTitle><CardDescription className="hidden sm:block">Reported separately from weighted target metrics</CardDescription></CardHeader><CardContent className="grid grid-cols-3 gap-2 px-3 pb-3 sm:gap-3 sm:px-4 sm:pb-4 xl:grid-cols-1 2xl:grid-cols-3">{qualityMetrics.checklistScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><ClipboardCheck className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Checklist</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.checklistScore.toFixed(1)}</p></div>}{qualityMetrics.npsScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><MessageSquareText className="h-3.5 w-3.5 shrink-0" />NPS</p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsScore.toFixed(1)}</p></div>}{qualityMetrics.npsResponses !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><Users className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Responses</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsResponses}</p></div>}</CardContent></Card>}
 
           {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
           </div>
@@ -184,5 +184,5 @@ function MonthChange({ change, suffix = "" }: { change: number; suffix?: string 
 }
 
 function InsightCard({ icon: Icon, label, value, detail }: InsightCardProps) {
-  return <Card><CardContent className="flex gap-3 p-4"><span className="h-fit rounded-lg bg-primary/10 p-2 text-primary"><Icon className="h-4 w-4" /></span><div className="min-w-0"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className="mt-1 line-clamp-2 font-semibold">{value}</p><p className="mt-1 truncate text-xs text-muted-foreground" title={detail}>{detail}</p></div></CardContent></Card>;
+  return <Card className="min-w-0 overflow-hidden"><CardContent className="flex min-w-0 items-center gap-2 p-2.5 sm:items-start sm:gap-3 sm:p-4"><span className="h-fit shrink-0 rounded-md bg-primary/10 p-1.5 text-primary sm:rounded-lg sm:p-2"><Icon className="h-4 w-4" /></span><div className="min-w-0 flex-1"><div className="flex min-w-0 items-baseline justify-between gap-2 sm:block"><p className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">{label}</p><p className="min-w-0 truncate text-sm font-semibold sm:mt-1 sm:line-clamp-2 sm:text-base">{value}</p></div><p className="mt-1 hidden truncate text-xs text-muted-foreground sm:block" title={detail}>{detail}</p></div></CardContent></Card>;
 }

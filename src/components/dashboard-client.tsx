@@ -248,12 +248,25 @@ export function DashboardClient() {
             </div>
 
             <div className="divide-y md:hidden">
-              {visibleRows.map(row => {
+              {visibleRows.map((row, rowIndex) => {
                 const item = row.original;
                 const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
-                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}`} className="block space-y-3 p-4 hover:bg-emerald-50/70">
-                  <div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{item.shop.name}</p><p className="mt-0.5 text-xs text-slate-500">Supervisor: {supervisorName}</p><p className="mt-0.5 text-xs text-slate-500">{item.hasData ? currency.format(item.revenue) : "No imported data"}</p></div><ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" /></div>
-                  {item.hasData && <><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-xs text-slate-500">Achievement</p><p className="font-semibold tabular-nums">{item.totalAchievement.toFixed(1)}%</p></div><div><p className="text-xs text-slate-500">EOM forecast</p><p className="font-medium tabular-nums">{item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p></div></div><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 bg-slate-200" /></>}
+                const rowNumber = pagination.pageIndex * pagination.pageSize + rowIndex + 1;
+                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}`} className="group flex items-center justify-between gap-3 p-3 transition-colors hover:bg-emerald-50/70">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{rowNumber}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900">{item.shop.name}</p>
+                      <p className="truncate text-xs text-slate-500">{supervisorName}</p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-right">
+                    <div>
+                      <p className="font-semibold tabular-nums text-slate-900">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</p>
+                      <p className="text-xs tabular-nums text-slate-500">EOM: {item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p>
+                    </div>
+                    <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
+                  </div>
                 </Link>;
               })}
             </div>
