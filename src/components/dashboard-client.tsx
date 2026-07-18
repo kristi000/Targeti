@@ -37,7 +37,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { fetchDashboardMonths, fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey } from "@/app/actions";
+import { fetchDashboardMonths, fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSummary } from "@/app/actions";
 
 type ShopPerformanceRow = DashboardRow;
 
@@ -80,20 +80,16 @@ export function DashboardClient() {
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
   const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
 
-  const summary = useMemo(() => {
-    const reportingEntries = shopPerformances.filter(item => item.hasData);
-    const average = reportingEntries.length ? reportingEntries.reduce((sum, item) => sum + item.totalAchievement, 0) / reportingEntries.length : 0;
-    const forecastEntries = shopPerformances.filter(item => item.forecastAchievement !== null);
-    const forecast = forecastEntries.length ? forecastEntries.reduce((sum, item) => sum + (item.forecastAchievement ?? 0), 0) / forecastEntries.length : null;
-    return {
-      average,
-      forecast,
-      revenue: shopPerformances.reduce((sum, item) => sum + item.revenue, 0),
-      previousAverage: reportingEntries.some(item => item.previousAchievement !== null) ? reportingEntries.reduce((sum, item) => sum + (item.previousAchievement ?? 0), 0) / reportingEntries.filter(item => item.previousAchievement !== null).length : null,
-      previousRevenue: shopPerformances.some(item => item.previousRevenue !== null) ? shopPerformances.reduce((sum, item) => sum + (item.previousRevenue ?? 0), 0) : null,
-      allFinal: reportingEntries.length > 0 && reportingEntries.every(item => item.isFinal),
-    };
-  }, [shopPerformances]);
+  const summary: DashboardSummary = pageQuery.data?.summary ?? {
+    average: 0,
+    forecast: null,
+    revenue: 0,
+    previousAverage: null,
+    previousRevenue: null,
+    allFinal: false,
+    activeShops: 0,
+    shopsAtTarget: 0,
+  };
 
   const table = useReactTable({
     data: pageQuery.data?.rows ?? [],
@@ -183,7 +179,7 @@ export function DashboardClient() {
             <SummaryCard label="Overall achievement" value={`${summary.average.toFixed(1)}%`} detail="Visible locations" icon={Gauge} trend={summary.previousAverage === null ? undefined : `${formatChange(summary.average - summary.previousAverage, " pts")} vs previous month`} positive={summary.previousAverage !== null && summary.average >= summary.previousAverage} />
             <SummaryCard label="EOM forecast" value={summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`} detail={summary.allFinal ? "Completed month" : "Based on current pace"} icon={ArrowUpRight} trend={summary.forecast === null ? undefined : `${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast !== null && summary.forecast >= summary.average} />
             <SummaryCard label="Total revenue" value={currency.format(summary.revenue)} detail="Visible locations" icon={CircleDollarSign} trend={summary.previousRevenue === null ? undefined : `${formatChange(summary.revenue - summary.previousRevenue, " ALL")} vs previous month`} positive={summary.previousRevenue !== null && summary.revenue >= summary.previousRevenue} />
-            <SummaryCard label="Active shops" value={String(shops.length)} detail="Reporting locations" icon={Building2} trend={`${shopPerformances.filter(item => item.totalAchievement >= 100).length} at or above 100%`} positive />
+            <SummaryCard label="Active shops" value={String(summary.activeShops)} detail="Matching locations" icon={Building2} trend={`${summary.shopsAtTarget} at or above 100%`} positive />
           </section>
 
           <section className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">

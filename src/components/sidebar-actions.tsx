@@ -19,6 +19,10 @@ import {
   UserRoundCog,
   UsersRound,
   FileClock,
+  FileSpreadsheet,
+  History,
+  Menu,
+  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,6 +37,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -116,6 +122,8 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isSupervisorDialogOpen, setIsSupervisorDialogOpen] = useState(false);
     const [isRepresentativeDialogOpen, setIsRepresentativeDialogOpen] = useState(false);
     const [isImportManagementDialogOpen, setIsImportManagementDialogOpen] = useState(false);
+    const [isExcelImportDialogOpen, setIsExcelImportDialogOpen] = useState(false);
+    const [isActivityHistoryDialogOpen, setIsActivityHistoryDialogOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
@@ -377,38 +385,49 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             <div className="flex flex-wrap items-center gap-2">
                 {isDashboard && (
                     <>
-                    {canEdit && <>
-                    <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
-                        <ExcelImportDialog />
-                    </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setIsImportManagementDialogOpen(true)}>
-                        <FileClock className="mr-2 h-4 w-4" />Manage imports
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={handleOpenManageShops}>
-                            <Store className="mr-2 h-4 w-4" />
-                            <span>{t('manageShops')}</span>
-                    </Button>
-                    <Button type="button" variant="outline" size="sm" onClick={() => setIsRepresentativeDialogOpen(true)}>
-                        <UsersRound className="mr-2 h-4 w-4" />Manage representatives
-                    </Button>
-                    </>}
-                    {isAdmin && <Button type="button" variant="outline" size="sm" onClick={() => setIsSupervisorDialogOpen(true)}>
-                        <UserRoundCog className="mr-2 h-4 w-4" />Manage supervisors
-                    </Button>}
-                    <ActivityHistoryDialog />
-                    {isAdmin && <>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                            <Button type="button" variant="outline" size="icon" className="h-9 w-9" aria-label="More data actions">
-                                <MoreHorizontal className="h-4 w-4" />
+                            <Button type="button" size="sm" className="h-9 gap-2 px-3 shadow-sm" aria-label="Open dashboard menu">
+                                <Menu className="h-4 w-4" />
+                                <span>Menu</span>
+                                <ChevronDown className="h-3.5 w-3.5 opacity-70" />
                             </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="w-64">
+                            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Dashboard actions</DropdownMenuLabel>
+                            {canEdit && <>
+                                <DropdownMenuItem onSelect={() => setIsExcelImportDialogOpen(true)}>
+                                    <FileSpreadsheet />Import Excel
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setIsImportManagementDialogOpen(true)}>
+                                    <FileClock />Manage imports
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem onSelect={handleOpenManageShops}>
+                                    <Store />{t('manageShops')}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => setIsRepresentativeDialogOpen(true)}>
+                                    <UsersRound />Manage representatives
+                                </DropdownMenuItem>
+                            </>}
+                            {isAdmin && <DropdownMenuItem onSelect={() => setIsSupervisorDialogOpen(true)}>
+                                <UserRoundCog />Manage supervisors
+                            </DropdownMenuItem>}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => setIsActivityHistoryDialogOpen(true)}>
+                                <History />Activity history
+                            </DropdownMenuItem>
+                            {isAdmin && <>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={isClearingData || !selectedShop} onSelect={() => setIsClearDialogOpen(true)}>
                                 <Trash2 className="mr-2 h-4 w-4" />Clear all data
                             </DropdownMenuItem>
+                            </>}
                         </DropdownMenuContent>
                     </DropdownMenu>
+                    <ExcelImportDialog open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
+                    <ActivityHistoryDialog open={isActivityHistoryDialogOpen} onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />
+                    {isAdmin && <>
                     <AlertDialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
                         <AlertDialogContent>
                             <AlertDialogHeader>

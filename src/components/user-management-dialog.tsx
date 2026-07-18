@@ -12,7 +12,13 @@ import { useToast } from "@/hooks/use-toast";
 
 type ManagedRole = "editor" | "viewer";
 
-export function UserManagementDialog() {
+type UserManagementDialogProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+};
+
+export function UserManagementDialog({ open, onOpenChange, showTrigger = true }: UserManagementDialogProps = {}) {
   const { toast } = useToast();
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -55,8 +61,8 @@ export function UserManagementDialog() {
     setSavingId("");
   };
 
-  return <Dialog onOpenChange={open => { if (open) void loadUsers(); }}>
-    <DialogTrigger asChild><Button type="button" variant="ghost" size="sm" className="px-2"><Users className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Users</span></Button></DialogTrigger>
+  return <Dialog open={open} onOpenChange={nextOpen => { onOpenChange?.(nextOpen); if (nextOpen) void loadUsers(); }}>
+    {showTrigger && <DialogTrigger asChild><Button type="button" variant="ghost" size="sm" className="px-2"><Users className="h-4 w-4 md:mr-2" /><span className="hidden md:inline">Users</span></Button></DialogTrigger>}
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>User access</DialogTitle><DialogDescription>Create local credentials for editors and viewers. The built-in administrator account cannot be changed.</DialogDescription></DialogHeader>
       <form onSubmit={createUser} className="grid gap-4 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2">
         <div className="space-y-2"><Label htmlFor="new-user-name">Display name</Label><Input id="new-user-name" value={name} onChange={event => setName(event.target.value)} maxLength={120} required /></div>

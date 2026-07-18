@@ -829,6 +829,16 @@ export type DashboardRow = {
   previousAchievement: number | null;
   previousRevenue: number | null;
 };
+export type DashboardSummary = {
+  average: number;
+  forecast: number | null;
+  revenue: number;
+  previousAverage: number | null;
+  previousRevenue: number | null;
+  allFinal: boolean;
+  activeShops: number;
+  shopsAtTarget: number;
+};
 
 const dashboardPageSchema = z.object({
   month: monthSchema,
@@ -1139,6 +1149,32 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     return left.shop.name.localeCompare(right.shop.name) || left.shop.id.localeCompare(right.shop.id);
   });
 
+  const reportingRows = rows.filter(row => row.hasData);
+  const previousAchievementRows = reportingRows.filter(row => row.previousAchievement !== null);
+  const previousRevenueRows = rows.filter(row => row.previousRevenue !== null);
+  const forecastValues = reportingRows.flatMap(row => {
+    const value = row.isFinal ? row.totalAchievement : row.forecastAchievement;
+    return value === null ? [] : [value];
+  });
+  const summary: DashboardSummary = {
+    average: reportingRows.length
+      ? reportingRows.reduce((sum, row) => sum + row.totalAchievement, 0) / reportingRows.length
+      : 0,
+    forecast: forecastValues.length
+      ? forecastValues.reduce((sum, forecast) => sum + forecast, 0) / forecastValues.length
+      : null,
+    revenue: rows.reduce((sum, row) => sum + row.revenue, 0),
+    previousAverage: previousAchievementRows.length
+      ? previousAchievementRows.reduce((sum, row) => sum + (row.previousAchievement ?? 0), 0) / previousAchievementRows.length
+      : null,
+    previousRevenue: previousRevenueRows.length
+      ? previousRevenueRows.reduce((sum, row) => sum + (row.previousRevenue ?? 0), 0)
+      : null,
+    allFinal: reportingRows.length > 0 && reportingRows.every(row => row.isFinal),
+    activeShops: rows.length,
+    shopsAtTarget: reportingRows.filter(row => row.totalAchievement >= 100).length,
+  };
+
   const cursorIndex = value.cursor ? rows.findIndex(row => row.shop.id === value.cursor?.id) : -1;
   const pageStart = cursorIndex >= 0 ? cursorIndex + 1 : 0;
   const pageRows = rows.slice(pageStart, pageStart + value.pageSize);
@@ -1148,5 +1184,6 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     rows: pageRows,
     total: rows.length,
     nextCursor: hasMore && last ? { name: last.shop.name, id: last.shop.id } : null,
+    summary,
   };
 }

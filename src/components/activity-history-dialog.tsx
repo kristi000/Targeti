@@ -9,7 +9,13 @@ import type { ActivityEvent } from "@/lib/types";
 
 type Cursor = { occurredAt: string; id: string };
 
-export function ActivityHistoryDialog() {
+type ActivityHistoryDialogProps = {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+};
+
+export function ActivityHistoryDialog({ open, onOpenChange, showTrigger = true }: ActivityHistoryDialogProps = {}) {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [cursor, setCursor] = useState<Cursor | null>(null);
   const [loading, setLoading] = useState(false);
@@ -25,8 +31,8 @@ export function ActivityHistoryDialog() {
     }
   };
 
-  return <Dialog onOpenChange={open => { if (open && !events.length) void load(); }}>
-    <DialogTrigger asChild><Button type="button" variant="outline" size="sm"><History className="mr-2 h-4 w-4" />Activity</Button></DialogTrigger>
+  return <Dialog open={open} onOpenChange={nextOpen => { onOpenChange?.(nextOpen); if (nextOpen && !events.length) void load(); }}>
+    {showTrigger && <DialogTrigger asChild><Button type="button" variant="outline" size="sm"><History className="mr-2 h-4 w-4" />Activity</Button></DialogTrigger>}
     <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader><DialogTitle>Activity history</DialogTitle><DialogDescription>Imports, target changes, shop edits, and administrative deletions.</DialogDescription></DialogHeader>
       <div className="divide-y rounded-md border">

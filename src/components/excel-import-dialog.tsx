@@ -55,11 +55,23 @@ function moveDateToMonth(date: string, month: string) {
   return `${month}-${String(Math.min(requestedDay, lastDay)).padStart(2, "0")}`;
 }
 
-export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrictToSelectedShop?: boolean }) {
+type ExcelImportDialogProps = {
+  restrictToSelectedShop?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  showTrigger?: boolean;
+};
+
+export function ExcelImportDialog({
+  restrictToSelectedShop = false,
+  open: controlledOpen,
+  onOpenChange,
+  showTrigger = true,
+}: ExcelImportDialogProps) {
   const { selectedShop, shops, allMonthlyTargets, allPerformanceData, loadPerformanceMonth, reloadData } = useShop();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
@@ -70,6 +82,14 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
     setFileName("");
     if (inputRef.current) inputRef.current.value = "";
   };
+
+  const setOpen = (nextOpen: boolean) => {
+    if (controlledOpen === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+    if (!nextOpen && !loading) reset();
+  };
+
+  const open = controlledOpen ?? internalOpen;
 
   const readFile = async (file?: File) => {
     if (!file) return;
@@ -323,8 +343,8 @@ export function ExcelImportDialog({ restrictToSelectedShop = false }: { restrict
     }
   };
 
-  return <Dialog open={open} onOpenChange={next => { setOpen(next); if (!next && !loading) reset(); }}>
-    <DialogTrigger asChild><Button variant="outline" className="w-full justify-start gap-2"><FileSpreadsheet className="h-4 w-4" />Import Excel</Button></DialogTrigger>
+  return <Dialog open={open} onOpenChange={setOpen}>
+    {showTrigger && <DialogTrigger asChild><Button variant="outline" className="w-full justify-start gap-2"><FileSpreadsheet className="h-4 w-4" />Import Excel</Button></DialogTrigger>}
     <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
       <DialogHeader>
         <DialogTitle>{restrictToSelectedShop && selectedShop ? `Import Excel for ${selectedShop.name}` : "Import targets and achievements"}</DialogTitle>

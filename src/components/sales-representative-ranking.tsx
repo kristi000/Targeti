@@ -3,13 +3,12 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useLocale, useTranslations } from "next-intl";
-import { getDaysInMonth } from "date-fns";
 import { ArrowRight, ChevronDown, ChevronUp, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
-import { getForecastDate } from "@/lib/forecast";
+import { calculateForecastAchievement, getForecastDate } from "@/lib/forecast";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   getMonthlyRepresentatives,
@@ -48,9 +47,8 @@ export function SalesRepresentativeRanking() {
       const monthData = shop.monthlyData?.[latestMonth];
       const metricSettings = monthData?.metricSettings ?? shop.metricSettings;
       const metrics = getShopMetrics({ ...shop, metricSettings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, monthlyTargets);
-      const repTargets = getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length);
+      const equalRepresentativeTargets = getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length);
       const forecastDate = getForecastDate(selectedEntry);
-      const dayOfMonth = Math.max(forecastDate.getDate(), 1);
       const totalsByRepresentative = new Map<string, Record<PerformanceMetric, number>>();
       performanceData.forEach(entry => entry.reps.forEach(rep => {
         const totals = totalsByRepresentative.get(rep.repId)
@@ -62,14 +60,17 @@ export function SalesRepresentativeRanking() {
       representatives.forEach(representative => {
         const totals = totalsByRepresentative.get(representative.id)
           ?? Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>;
-        const achievement = calculateTotalAchievement(totals, repTargets, metricSettings);
+        const representativeTargets = monthData?.representativeTargets?.[representative.id] ?? equalRepresentativeTargets;
+        const achievement = calculateTotalAchievement(totals, representativeTargets, metricSettings);
         allReps.push({
           id: representative.id,
           name: representative.name,
           shopId: shop.id,
           shopName: shop.name,
           achievement,
-          forecastAchievement: selectedEntry.reportType === "completedMonth" ? null : (achievement / dayOfMonth) * getDaysInMonth(forecastDate),
+          forecastAchievement: selectedEntry.reportType === "completedMonth"
+            ? null
+            : calculateForecastAchievement(totals, representativeTargets, metrics, forecastDate, metricSettings),
         });
       });
     });
