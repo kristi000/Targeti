@@ -56,6 +56,7 @@ import {
   getShopMetrics,
   getMonthlyRepresentatives,
   getActivePerformanceData,
+  getQuarterKey,
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
@@ -64,7 +65,7 @@ import { ManageShopsDialog } from "./manage-shops-dialog";
 import { ManageSupervisorsDialog } from "./manage-supervisors-dialog";
 import { ManageRepresentativesDialog } from "./manage-representatives-dialog";
 import { ManageImportsDialog } from "./manage-imports-dialog";
-import { useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { ScrollArea } from "./ui/scroll-area";
 import { ExcelImportDialog } from "./excel-import-dialog";
@@ -72,6 +73,7 @@ import { ActivityHistoryDialog } from "./activity-history-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleClearAllData } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
+import { formatReportingMonth } from "@/lib/reporting-month";
 import {
     AlertDialog,
     AlertDialogAction,
@@ -84,9 +86,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, isAdmin, actor } = useShop();
+    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, isAdmin, actor } = useShop();
     const { toast } = useToast();
     const pathname = usePathname();
+    const locale = useLocale();
     const t = useTranslations("Sidebar");
     const tDialog = useTranslations("Dialogs");
     const tMetric = useTranslations("Metrics");
@@ -101,10 +104,14 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         () => selectedShop ? getMonthlyRepresentatives(selectedShop, activeMonth) : [],
         [selectedShop, activeMonth]
     );
+    const activeMonthData = selectedShop?.monthlyData?.[activeMonth];
+    const activeQuarterSettings = selectedShop?.quarterSettings?.[getQuarterKey(`${activeMonth}-01`)];
+    const effectiveMetricSettings = activeMonthData?.metricSettings ?? activeQuarterSettings?.metricSettings ?? selectedShop?.metricSettings;
+    const effectiveMetricOrder = activeMonthData?.metricOrder ?? activeQuarterSettings?.metricOrder ?? selectedShop?.metricOrder;
     const monthlyTargets = selectedShop
-        ? selectedShop.monthlyData?.[activeMonth]?.targets ?? allMonthlyTargets[selectedShop.id] ?? getInitialTargets()
+        ? activeMonthData?.targets ?? allMonthlyTargets[selectedShop.id] ?? getInitialTargets()
         : getInitialTargets();
-    const metrics = useMemo(() => getShopMetrics(selectedShop ?? undefined, monthlyTargets), [selectedShop, monthlyTargets]);
+    const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings: effectiveMetricSettings, metricOrder: effectiveMetricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, effectiveMetricSettings, effectiveMetricOrder]);
 
     const [editingTargets, setEditingTargets] = useState<Target>(getInitialTargets);
     const [editingMetricSettings, setEditingMetricSettings] = useState<MetricSettings>({});
@@ -161,7 +168,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         return withoutPrefix.replace(/_/g, " ");
     };
 
-    const getSavedMetricLabel = (metric: PerformanceMetric) => selectedShop?.metricSettings?.[metric]?.label?.trim() || getDefaultMetricLabel(metric);
+    const getSavedMetricLabel = (metric: PerformanceMetric) => effectiveMetricSettings?.[metric]?.label?.trim() || getDefaultMetricLabel(metric);
     const getMetricLabel = (metric: PerformanceMetric) => editingMetricSettings[metric]?.label?.trim() || getSavedMetricLabel(metric);
 
     const handleMetricSettingChange = (metric: PerformanceMetric, field: "label" | "weight", value: string) => {
@@ -208,6 +215,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         setEditingTargets(current => ({ ...current, [metric]: 0 }));
         setEditingMetricSettings(current => ({ ...current, [metric]: { label, weight: 0.1 } }));
         setEditingMetricOrder(current => [...current, metric]);
+        setEditingRepTargets(current => Object.fromEntries(monthlyRepresentatives.map(rep => [rep.id, { ...current[rep.id], [metric]: 0 }])));
         setNewMetricName("");
     };
 
@@ -216,6 +224,10 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         setEditingTargets(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== metric)) as Target);
         setEditingMetricSettings(current => Object.fromEntries(Object.entries(current).filter(([key]) => key !== metric)));
         setEditingMetricOrder(current => current.filter(key => key !== metric));
+        setEditingRepTargets(current => Object.fromEntries(Object.entries(current).map(([repId, values]) => [
+            repId,
+            Object.fromEntries(Object.entries(values).filter(([key]) => key !== metric)),
+        ])) as Record<string, Target>);
         setEditingRepTotals(current => Object.fromEntries(Object.entries(current).map(([repId, values]) => [
             repId,
             Object.fromEntries(Object.entries(values).filter(([key]) => key !== metric)),
@@ -228,12 +240,12 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             metrics.reduce((settings, metric) => {
                 settings[metric] = {
                     label: getSavedMetricLabel(metric),
-                    weight: selectedShop?.metricSettings?.[metric]?.weight ?? METRIC_WEIGHTS[metric],
+                    weight: effectiveMetricSettings?.[metric]?.weight ?? METRIC_WEIGHTS[metric],
                 };
                 return settings;
             }, {} as MetricSettings)
         );
-        setEditingMetricOrder(getMetricOrder(selectedShop?.metricOrder, metrics));
+        setEditingMetricOrder(getMetricOrder(effectiveMetricOrder, metrics));
         const savedRepresentativeTargets = selectedShop?.monthlyData?.[activeMonth]?.representativeTargets;
         setEditingRepTargets(savedRepresentativeTargets
             ? Object.fromEntries(Object.entries(savedRepresentativeTargets).map(([repId, targets]) => [repId, roundRepresentativeTargets(targets)]))
@@ -246,14 +258,14 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const onSaveTargets = async () => {
         if (!selectedShop || !weightsValid) return;
         setIsSaving(true);
-        await updateMonthlyTargets(selectedShop.id, editingTargets);
         const roundedRepresentativeTargets = Object.fromEntries(Object.entries(editingRepTargets).map(([repId, targets]) => [repId, roundRepresentativeTargets(targets)]));
         const disabledMetrics = new Set(selectedShop.disabledMetrics ?? []);
-        const preservedDisabledSettings = Object.fromEntries(Object.entries(selectedShop.metricSettings ?? {}).filter(([metric]) => disabledMetrics.has(metric as PerformanceMetric)));
+        const preservedDisabledSettings = Object.fromEntries(Object.entries(effectiveMetricSettings ?? {}).filter(([metric]) => disabledMetrics.has(metric as PerformanceMetric)));
         const metricSettings = { ...preservedDisabledSettings, ...editingMetricSettings };
-        const preservedDisabledOrder = (selectedShop.metricOrder ?? []).filter(metric => disabledMetrics.has(metric));
+        const preservedDisabledOrder = (effectiveMetricOrder ?? []).filter(metric => disabledMetrics.has(metric));
         const metricOrder = [...editingMetricOrder, ...preservedDisabledOrder.filter(metric => !editingMetricOrder.includes(metric))];
-        await updateShop({ ...selectedShop, metricSettings, metricOrder, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { collection: selectedShop.monthlyData?.[activeMonth]?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representatives: monthlyRepresentatives, representativeTargets: roundedRepresentativeTargets, metricSettings, metricOrder } } });
+        const existingMonth = selectedShop.monthlyData?.[activeMonth];
+        await updateShop({ ...selectedShop, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { ...existingMonth, collection: existingMonth?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representatives: monthlyRepresentatives, representativeTargets: roundedRepresentativeTargets, metricSettings, metricOrder } } });
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
@@ -469,7 +481,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             <DialogHeader>
                                 <DialogTitle>{tDialog('setTargetsTitle', {shopName: selectedShop.name})}</DialogTitle>
                                 <DialogDescription>
-                                    {tDialog('setTargetsDescription')}
+                                    {tDialog('setTargetsDescription', { month: formatReportingMonth(activeMonth, locale) })}
                                 </DialogDescription>
                             </DialogHeader>
                             <div className="flex gap-2">
@@ -540,8 +552,9 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                                         type="number"
                                                         min="0"
                                                         step="0.01"
-                                                        value={editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric]}
-                                                        onChange={(e) => handleMetricSettingChange(metric, "weight", e.target.value)}
+                                                        max="100"
+                                                        value={Number(((editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric]) * 100).toFixed(2))}
+                                                        onChange={(e) => handleMetricSettingChange(metric, "weight", String(Number(e.target.value) / 100))}
                                                     />
                                                 </td>
                                                 <td className="px-3 py-2">

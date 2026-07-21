@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
+import { useQueryClient } from "@tanstack/react-query";
 import { handleAddShop, handleRegisterImport, handleSaveExcelPerformanceData, handleUndoLatestImport, handleUpdateShop } from "@/app/actions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ export function ExcelImportDialog({
   showTrigger = true,
 }: ExcelImportDialogProps) {
   const { selectedShop, shops, allMonthlyTargets, allPerformanceData, loadPerformanceMonth, reloadData } = useShop();
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [internalOpen, setInternalOpen] = useState(false);
@@ -305,6 +307,10 @@ export function ExcelImportDialog({
       if (!registration.success) throw new Error(registration.error);
 
       await reloadData();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["dashboard-periods"] }),
+        queryClient.invalidateQueries({ queryKey: ["firestore-shop-performance-page"] }),
+      ]);
       toast({ title: "Excel data imported", description: `${review.workbook.shops.length} shops and ${representativeCount} representatives were updated. The file was retained as an independent version.` });
       setOpen(false);
       reset();
@@ -335,6 +341,10 @@ export function ExcelImportDialog({
       const result = await handleUndoLatestImport();
       if (!result.success) throw new Error(result.error);
       await reloadData();
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["dashboard-periods"] }),
+        queryClient.invalidateQueries({ queryKey: ["firestore-shop-performance-page"] }),
+      ]);
       toast({ title: "Import undone", description: `${result.fileName} was rolled back safely.` });
     } catch (error) {
       toast({ variant: "destructive", title: "Could not undo import", description: error instanceof Error ? error.message : "Please try again." });

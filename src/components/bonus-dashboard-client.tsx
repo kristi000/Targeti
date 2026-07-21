@@ -20,6 +20,7 @@ import { calculateManagerBonus, MANAGER_PAYOUT_TABLE_VERSION } from "@/lib/manag
 import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } from "@/lib/sales-representative-bonus";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceMetric, type Target } from "@/lib/types";
+import { formatReportingMonth } from "@/lib/reporting-month";
 
 export function BonusDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
@@ -85,7 +86,7 @@ export function BonusDashboardClient() {
       const result = await saveBonusSnapshot(selectedShop.id, nextSnapshot);
       if (!result.success) throw new Error(result.error);
       queryClient.setQueryData(["bonus-snapshot", selectedShop.id, selectedMonth], nextSnapshot);
-      toast({ title: "Month finalized", description: `${selectedMonth} is now locked for payroll.` });
+      toast({ title: "Month finalized", description: `${formatReportingMonth(selectedMonth, locale)} is now locked for payroll.` });
     } catch (error) { toast({ variant: "destructive", title: "Finalization failed", description: error instanceof Error ? error.message : "Could not save the payroll snapshot." }); }
     finally { setFinalizing(false); }
   };

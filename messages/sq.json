@@ -1,7 +1,7 @@
 
 {
   "Metadata": {
-    "title": "Mjeshtri i Objektivave",
+    "title": "Target",
     "description": "Ndiqni objektivat dhe performancën në të gjitha dyqanet."
   },
   "Sidebar": {
@@ -41,7 +41,7 @@
     "notAvailable": "N/A",
     "forecastAsOf": "Parashikimi bazohet në të dhënat e disponueshme deri më {date}.",
     "forecastUnavailable": "Parashikimi nuk disponohet derisa të ketë të dhëna për të paktën dy ditë të muajit aktual.",
-    "reportingPeriod": "Periudha e raportimit",
+    "reportingPeriod": "Data e raportimit në Excel",
     "currentMonth": "Muaji i fundit i importuar",
     "previousMonth": "Muaji para të fundit",
     "customRange": "Interval i personalizuar",
@@ -77,7 +77,7 @@
   },
   "Dialogs": {
     "setTargetsTitle": "Vendos Objektivat Mujore për {shopName}",
-    "setTargetsDescription": "Përcaktoni qëllimet tuaja për çdo metrikë performance.",
+    "setTargetsDescription": "Përcaktoni objektivat e performancës për {month}. Muajt e tjerë nuk do të ndryshohen.",
     "metric": "Metrika",
     "monthlyTarget": "Objektivi mujor",
     "weight": "Pesha",

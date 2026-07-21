@@ -15,7 +15,6 @@ import { useLocale, useTranslations } from "next-intl";
 import {
   ArrowDown,
   ArrowDownRight,
-  ArrowRight,
   ArrowUp,
   ArrowUpDown,
   ArrowUpRight,
@@ -26,6 +25,7 @@ import {
   Gauge,
   Search,
   Store,
+  UserRoundCog,
 } from "lucide-react";
 
 import { Header } from "@/components/header";
@@ -37,7 +37,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { fetchDashboardMonths, fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSummary } from "@/app/actions";
+import { formatReportingExcelDate, formatReportingMonth } from "@/lib/reporting-month";
+import { fetchDashboardPeriods, fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSummary, type DashboardSupervisorRow } from "@/app/actions";
 
 type ShopPerformanceRow = DashboardRow;
 
@@ -58,16 +59,20 @@ export function DashboardClient() {
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
   const [selectedMonth, setSelectedMonth] = useState(searchParams.get("month") ?? "");
   const requestedSort = searchParams.get("sort");
-  const initialSort: DashboardSortKey = requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue" ? requestedSort : "shop";
-  const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: searchParams.get("dir") === "desc" }]);
+  const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
+  const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
+  const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: hasRequestedSort ? searchParams.get("dir") === "desc" : true }]);
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: Math.max(Number(searchParams.get("page") ?? 1) - 1, 0), pageSize: [10, 20, 50].includes(Number(searchParams.get("size"))) ? Number(searchParams.get("size")) : 10 });
   const initialCursor = searchParams.get("afterName") && searchParams.get("afterId") ? { name: searchParams.get("afterName")!, id: searchParams.get("afterId")! } : null;
   const [cursor, setCursor] = useState<DashboardCursor | null>(initialCursor);
   const [cursorHistory, setCursorHistory] = useState<Array<DashboardCursor | null>>(() => Array.from({ length: Math.max(Number(searchParams.get("page") ?? 1), 1) }, (_, index) => index === Math.max(Number(searchParams.get("page") ?? 1) - 1, 0) ? initialCursor : null));
   const deferredSearch = useDeferredValue(shopSearch.trim());
 
-  const monthsQuery = useQuery({ queryKey: ["dashboard-months"], queryFn: fetchDashboardMonths, staleTime: 60_000 });
-  const datasets = useMemo(() => (monthsQuery.data ?? []).map(month => ({ id: month, name: month })), [monthsQuery.data]);
+  const periodsQuery = useQuery({ queryKey: ["dashboard-periods"], queryFn: fetchDashboardPeriods, staleTime: 60_000 });
+  const datasets = useMemo(() => (periodsQuery.data ?? []).map(period => ({
+    id: period.month,
+    name: period.importedAt ? formatReportingExcelDate(period.importedAt, locale) : formatReportingMonth(period.month, locale),
+  })), [periodsQuery.data, locale]);
   const activeDatasetId = datasets.some(dataset => dataset.id === selectedMonth) ? selectedMonth : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
 
   const pageQuery = useQuery({
@@ -117,7 +122,7 @@ export function DashboardClient() {
     onSortingChange: updater => {
       setSorting(current => {
         const next = typeof updater === "function" ? updater(current) : updater;
-        return next.length ? [next[0]] : [{ id: "shop", desc: false }];
+      return next.length ? [next[0]] : [{ id: "achievement", desc: true }];
       });
       setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
     },
@@ -155,10 +160,10 @@ export function DashboardClient() {
   const resultCount = pageQuery.data?.total ?? 0;
 
   return (
-    <div className="flex h-full flex-col bg-muted/20">
+    <div className="flex h-svh flex-col bg-muted/20">
       <Header title={t("title")} />
-      <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
-        <div className="mx-auto max-w-7xl space-y-6">
+      <main className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4 xl:overflow-hidden">
+        <div className="mx-auto flex min-h-full max-w-[1920px] flex-col gap-4 xl:h-full">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div>
               <div className="flex items-center gap-2"><h2 className="text-2xl font-semibold tracking-tight">Network overview</h2><span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Preview</span></div>
@@ -166,7 +171,7 @@ export function DashboardClient() {
             </div>
             <div className="flex flex-wrap items-end gap-2">
               {datasets.length > 0 && <label className="grid gap-1 text-xs text-muted-foreground">
-                Reporting month
+                Reporting Excel date
                 <select className="h-9 max-w-64 rounded-md border bg-background px-3 text-sm text-foreground" value={activeDatasetId} onChange={event => { setSelectedMonth(event.target.value); setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 })); }}>
                   {datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
                 </select>
@@ -175,14 +180,15 @@ export function DashboardClient() {
             </div>
           </div>
 
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryCard label="Overall achievement" value={`${summary.average.toFixed(1)}%`} detail="Visible locations" icon={Gauge} trend={summary.previousAverage === null ? undefined : `${formatChange(summary.average - summary.previousAverage, " pts")} vs previous month`} positive={summary.previousAverage !== null && summary.average >= summary.previousAverage} />
             <SummaryCard label="EOM forecast" value={summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`} detail={summary.allFinal ? "Completed month" : "Based on current pace"} icon={ArrowUpRight} trend={summary.forecast === null ? undefined : `${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast !== null && summary.forecast >= summary.average} />
             <SummaryCard label="Total revenue" value={currency.format(summary.revenue)} detail="Visible locations" icon={CircleDollarSign} trend={summary.previousRevenue === null ? undefined : `${formatChange(summary.revenue - summary.previousRevenue, " ALL")} vs previous month`} positive={summary.previousRevenue !== null && summary.revenue >= summary.previousRevenue} />
             <SummaryCard label="Active shops" value={String(summary.activeShops)} detail="Matching locations" icon={Building2} trend={`${summary.shopsAtTarget} at or above 100%`} positive />
           </section>
 
-          <section className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+          <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0">
             <div className="flex flex-col gap-3 border-b border-slate-300 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <span className="rounded bg-emerald-700 p-1.5 text-white"><Store className="h-4 w-4" /></span>
@@ -217,16 +223,15 @@ export function DashboardClient() {
               </div>
             </div>
 
-            <div className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[780px] border-collapse text-sm">
-                <thead><tr className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            <div className="hidden min-h-0 flex-1 overflow-auto md:block">
+              <table className="w-full min-w-[780px] table-fixed border-collapse text-sm xl:min-w-[440px]">
+                <thead><tr className="sticky top-0 z-[1] bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
                   <th className="w-12 border-b border-r border-slate-300 px-2 py-2 text-center">#</th>
-                  <SortableHeader table={table} columnId="shop" label="Shop" align="left" />
-                  <SortableHeader table={table} columnId="achievement" label="Performance" />
-                  <SortableHeader table={table} columnId="forecast" label="EOM forecast" />
-                  <SortableHeader table={table} columnId="revenue" label="Revenue" />
-                  <th className="w-64 border-b border-r border-slate-300 px-3 py-2 text-left">Target progress</th>
-                  <th className="w-14 border-b border-slate-300 px-2 py-2"><span className="sr-only">Open shop</span></th>
+                  <SortableHeader table={table} columnId="shop" label="Shop" align="left" className="w-[38%]" />
+                  <SortableHeader table={table} columnId="achievement" label="Performance" className="w-20 px-1" />
+                  <SortableHeader table={table} columnId="forecast" label="Forecast" className="w-[4.5rem] px-1" />
+                  <SortableHeader table={table} columnId="revenue" label="Revenue" className="w-24 px-1" />
+                  <th className="w-64 border-b border-r border-slate-300 px-3 py-2 text-left xl:hidden">Target progress</th>
                 </tr></thead>
                 <tbody>
                   {visibleRows.map((row, rowIndex) => {
@@ -234,13 +239,12 @@ export function DashboardClient() {
                     const destination = `/${locale}/shop/${item.shop.id}`;
                     const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                     return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
-                      <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-3 text-center font-mono text-xs text-slate-500">{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</td>
-                      <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left"><span className="block font-medium text-slate-900">{item.shop.name}</span><span className="mt-0.5 block text-xs font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-right font-semibold tabular-nums text-slate-900">{item.hasData ? <div>{item.totalAchievement.toFixed(1)}%<TrendIndicator change={item.previousAchievement === null ? null : item.totalAchievement - item.previousAchievement} suffix=" pts" /></div> : "—"}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700">{item.hasData ? <div>{currency.format(item.revenue)}<TrendIndicator change={item.previousRevenue === null ? null : item.revenue - item.previousRevenue} /></div> : "—"}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3">{item.hasData ? <div className="flex items-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-12 text-right font-mono text-xs font-medium text-slate-600">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-slate-500">Not imported</span>}</td>
-                      <td className="border-b border-slate-200 px-2 py-3 text-center text-slate-400"><ArrowRight className="mx-auto h-4 w-4" /></td>
+                      <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-center font-mono text-xs text-slate-500">{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</td>
+                      <th scope="row" className="border-b border-r border-slate-200 px-2 py-2 text-left"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
+                      <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">{item.hasData ? <div>{item.totalAchievement.toFixed(1)}%<TrendIndicator change={item.previousAchievement === null ? null : item.totalAchievement - item.previousAchievement} suffix=" pts" /></div> : "—"}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs tabular-nums text-slate-700">{item.hasData ? <div>{currency.format(item.revenue)}<TrendIndicator change={item.previousRevenue === null ? null : item.revenue - item.previousRevenue} /></div> : "—"}</td>
+                      <td className="border-b border-r border-slate-200 px-3 py-3 xl:hidden">{item.hasData ? <div className="flex items-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-12 text-right font-mono text-xs font-medium text-slate-600">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-slate-500">Not imported</span>}</td>
                     </tr>;
                   })}
                 </tbody>
@@ -252,7 +256,7 @@ export function DashboardClient() {
                 const item = row.original;
                 const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                 const rowNumber = pagination.pageIndex * pagination.pageSize + rowIndex + 1;
-                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}`} className="group flex items-center justify-between gap-3 p-3 transition-colors hover:bg-emerald-50/70">
+                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{rowNumber}</span>
                     <div className="min-w-0">
@@ -265,7 +269,6 @@ export function DashboardClient() {
                       <p className="font-semibold tabular-nums text-slate-900">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</p>
                       <p className="text-xs tabular-nums text-slate-500">EOM: {item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p>
                     </div>
-                    <ArrowRight className="h-4 w-4 text-slate-400 transition-transform group-hover:translate-x-0.5" />
                   </div>
                 </Link>;
               })}
@@ -275,20 +278,56 @@ export function DashboardClient() {
             <TablePagination table={table} resultCount={resultCount} />
           </section>
 
-          <section className="rounded-xl border bg-background p-5 shadow-sm"><SalesRepresentativeRanking /></section>
+          <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} />
+
+          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0"><SalesRepresentativeRanking /></section>
+          </div>
         </div>
       </main>
     </div>
   );
 }
 
+function SupervisorPerformanceTable({ rows, currency }: { rows: DashboardSupervisorRow[]; currency: Intl.NumberFormat }) {
+  return <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0" aria-labelledby="supervisor-performance-heading">
+    <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-50 px-4 py-3">
+      <span className="rounded bg-indigo-700 p-1.5 text-white"><UserRoundCog className="h-4 w-4" /></span>
+      <div><h3 id="supervisor-performance-heading" className="font-semibold text-slate-900">Supervisor performance</h3><p className="text-xs text-slate-500">All assigned shops in the selected reporting period</p></div>
+    </div>
+    <div className="hidden min-h-0 flex-1 overflow-auto md:block">
+      <table className="w-full min-w-[760px] table-fixed border-collapse text-sm xl:min-w-[360px]">
+        <thead><tr className="sticky top-0 z-[1] bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
+          <th className="w-12 border-b border-r border-slate-300 px-2 py-2 text-center">#</th>
+          <th className="w-[45%] border-b border-r border-slate-300 px-2 py-2 text-left">Supervisor</th>
+          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-right">Performance</th>
+          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-right">Forecast</th>
+          <th className="border-b border-r border-slate-300 px-3 py-2 text-right xl:hidden">Revenue</th>
+        </tr></thead>
+        <tbody>{rows.map((row, index) => <tr key={row.id} className="bg-white even:bg-slate-50/70">
+          <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-center font-mono text-xs text-slate-500">{index + 1}</td>
+          <th scope="row" className="border-b border-r border-slate-200 px-2 py-2 text-left"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{row.name}</span><span className="block text-[11px] font-normal text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></th>
+          <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
+          <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs tabular-nums text-slate-700">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
+          <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700 xl:hidden">{currency.format(row.revenue)}</td>
+        </tr>)}</tbody>
+      </table>
+    </div>
+    <div className="divide-y md:hidden">{rows.map((row, index) => <div key={row.id} className="flex items-center gap-3 p-2">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span>
+      <div className="min-w-0 flex-1"><p className="truncate font-medium text-slate-900">{row.name}</p><p className="text-xs text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</p></div>
+      <div className="shrink-0 text-right"><p className="font-semibold tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</p><p className="text-xs tabular-nums text-slate-500">EOM {row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</p></div>
+    </div>)}</div>
+    {!rows.length && <div className="px-4 py-10 text-center text-sm text-slate-500">No supervisors have assigned shops.</div>}
+  </section>;
+}
+
 type DashboardTable = ReturnType<typeof useReactTable<ShopPerformanceRow>>;
 
-function SortableHeader({ table, columnId, label, align = "right" }: { table: DashboardTable; columnId: string; label: string; align?: "left" | "right" }) {
+function SortableHeader({ table, columnId, label, align = "right", className }: { table: DashboardTable; columnId: string; label: string; align?: "left" | "right"; className?: string }) {
   const column = table.getColumn(columnId);
   const direction = column?.getIsSorted();
   const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
-  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-right")}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-end")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
+  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-right", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-end")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
 }
 
 function TablePagination({ table, resultCount }: { table: DashboardTable; resultCount: number }) {
@@ -323,5 +362,5 @@ function TrendIndicator({ change, suffix = "" }: { change: number | null; suffix
 
 function SummaryCard({ label, value, detail, icon: Icon, trend, positive }: SummaryCardProps) {
   const TrendIcon = positive ? ArrowUpRight : ArrowDownRight;
-  return <Card><CardContent className="p-5"><div className="flex items-start justify-between"><div><p className="text-sm font-medium text-muted-foreground">{label}</p><p className="mt-2 text-2xl font-bold tracking-tight tabular-nums">{value}</p></div><span className="rounded-lg bg-primary/10 p-2 text-primary"><Icon className="h-5 w-5" /></span></div><div className="mt-3 flex items-center gap-1.5 text-xs"><span className="text-muted-foreground">{detail}</span>{trend && <><span className="text-muted-foreground">·</span><span className={positive ? "text-emerald-600" : "text-amber-600"}><TrendIcon className="mr-0.5 inline h-3.5 w-3.5" />{trend}</span></>}</div></CardContent></Card>;
+  return <Card><CardContent className="p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-1 truncate text-xl font-bold tracking-tight tabular-nums">{value}</p></div><span className="rounded-md bg-primary/10 p-1.5 text-primary"><Icon className="h-4 w-4" /></span></div><div className="mt-1.5 flex min-w-0 items-center gap-1 text-[11px]"><span className="shrink-0 text-muted-foreground">{detail}</span>{trend && <><span className="text-muted-foreground">·</span><span className={cn("truncate", positive ? "text-emerald-600" : "text-amber-600")}><TrendIcon className="mr-0.5 inline h-3 w-3" />{trend}</span></>}</div></CardContent></Card>;
 }

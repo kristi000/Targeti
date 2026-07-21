@@ -4,7 +4,7 @@ import React from "react";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Target Master",
+  title: "Target",
   description: "Track your performance and get AI-powered insights.",
 };
 

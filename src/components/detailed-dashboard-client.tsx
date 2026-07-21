@@ -20,6 +20,7 @@ import { getForecastDate } from "@/lib/forecast";
 import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceShopActuals, getShopMetrics, type PerformanceMetric } from "@/lib/types";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
+import { formatReportingExcelDate, formatReportingMonth } from "@/lib/reporting-month";
 
 export function DetailedDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
@@ -39,6 +40,11 @@ export function DetailedDashboardClient() {
     ])).sort().reverse();
     return months.length ? months : [currentMonth];
   }, [allData, selectedShop?.monthlyData, currentMonth]);
+  const latestImportDateByMonth = useMemo(() => new Map(
+    getActivePerformanceData(allData).flatMap(entry => entry.importId && entry.importedAt
+      ? [[entry.date.slice(0, 7), entry.importedAt] as const]
+      : []),
+  ), [allData]);
   const selectedMonth = availableMonths.includes(selectedMonthValue) ? selectedMonthValue : availableMonths[0] ?? format(now, "yyyy-MM");
   const monthVersions = useMemo(() => allData
     .filter(entry => entry.importId && entry.date.startsWith(selectedMonth))
@@ -84,6 +90,9 @@ export function DetailedDashboardClient() {
       return forecast;
     }, {} as Record<PerformanceMetric, number>);
   }, [hasForecast, monthlyTotals, metrics, forecastDate]);
+  const totalPerformanceForecast = forecastData
+    ? calculateTotalAchievement(forecastData, monthlyTargets, metricSettings)
+    : null;
 
   const performanceInsights = useMemo(() => {
     if (!monthlyTargets) return { focusMetrics: [] as string[], forecastOnTrack: 0, representativesNeedingAttention: [] as string[] };
@@ -126,7 +135,10 @@ export function DetailedDashboardClient() {
             <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
               <Select value={selectedMonth} onValueChange={value => { setSelectedMonthValue(value); setSelectedVersionId("active"); }}>
                 <SelectTrigger className="h-9 min-w-0 flex-1 sm:w-44 sm:flex-none" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
-                <SelectContent>{availableMonths.map(month => <SelectItem key={month} value={month}>{format(parseISO(`${month}-01`), "MMMM yyyy")}</SelectItem>)}</SelectContent>
+                <SelectContent>{availableMonths.map(month => {
+                  const importedAt = latestImportDateByMonth.get(month);
+                  return <SelectItem key={month} value={month}>{importedAt ? formatReportingExcelDate(importedAt, locale) : formatReportingMonth(month, locale)}</SelectItem>;
+                })}</SelectContent>
               </Select>
               {monthVersions.length > 1 && <Select value={selectedVersion ? selectedVersionId : "active"} onValueChange={setSelectedVersionId}>
                 <SelectTrigger className="h-9 min-w-0 flex-1 sm:w-56 sm:flex-none" aria-label="Import version"><SelectValue /></SelectTrigger>
@@ -149,6 +161,10 @@ export function DetailedDashboardClient() {
           <div className="grid gap-2 sm:gap-3 xl:grid-cols-2">
           <Card className="overflow-hidden">
             <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5 sm:px-4 sm:py-3"><div><CardTitle className="text-sm sm:text-base">{t("totalPerformance")}</CardTitle><CardDescription className="hidden sm:block">{t("overallAchievement")}</CardDescription>{revenue !== undefined && <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:mt-1 sm:gap-1.5 sm:text-xs"><Banknote className="h-3.5 w-3.5" />{t("revenueValue")}: {new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(revenue)}{previousRevenue !== null && <MonthChange change={revenue - previousRevenue} />}</p>}</div><div className="flex items-center gap-1.5 sm:gap-2"><Trophy className="h-5 w-5 text-primary sm:h-6 sm:w-6" /><div className="text-right"><p className="text-xl font-bold tracking-tight sm:text-2xl">{monthlyAchievement.toFixed(1)}%</p>{previousAchievement !== null && <MonthChange change={monthlyAchievement - previousAchievement} suffix=" pts" />}</div></div></CardHeader>
+            <div className="mx-3 mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm sm:mx-4 sm:mb-3">
+              <span className="flex items-center gap-2 font-medium text-muted-foreground"><TrendingUp className="h-4 w-4 text-primary" />{t("eomForecast")}</span>
+              <span className="font-semibold tabular-nums">{isFinal ? "Final" : totalPerformanceForecast === null ? t("notAvailable") : `${totalPerformanceForecast.toFixed(1)}%`}</span>
+            </div>
             <CardContent className="space-y-2 px-2 pb-2 sm:space-y-3 sm:px-3 sm:pb-3">
               <Progress value={monthlyAchievement} className="h-2 sm:h-3" />
               <PerformanceTable

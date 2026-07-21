@@ -3,7 +3,7 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
 import { type Shop, type Supervisor, type PerformanceData, type Target, getInitialTargets } from '@/lib/types';
-import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSaveTargets, handleSavePerformanceData, fetchPerformanceData, fetchPerformanceDataForMonth, fetchShopData, type ShopData } from '@/app/actions';
+import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSavePerformanceData, fetchPerformanceData, fetchPerformanceDataForMonth, fetchShopData, type ShopData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 import type { AppActor } from '@/lib/access';
@@ -21,7 +21,6 @@ type ShopContextType = {
   allPerformanceData: Record<string, PerformanceData[]>;
   allMonthlyTargets: Record<string, Target>;
   updatePerformanceData: (shopId: string, data: PerformanceData[]) => void;
-  updateMonthlyTargets: (shopId: string, targets: Target) => void;
   loading: boolean;
   refreshDataForShop: (shopId: string) => Promise<void>;
   refreshShopDirectory: () => Promise<void>;
@@ -219,14 +218,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       }
   }, []);
 
-  const updateMonthlyTargets = useCallback(async (shopId: string, targets: Target) => {
-      const result = await handleSaveTargets(shopId, targets);
-      if(result.success && result.data) {
-        setAllMonthlyTargets(prev => ({...prev, [shopId]: result.data!}));
-        setShops(prev => prev.map(s => s.id === shopId ? {...s, monthlyTargets: result.data} : s));
-      }
-  }, []);
-
   const contextValue = useMemo(() => ({
     actor,
     isAdmin: actor.role === "admin",
@@ -240,7 +231,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     allPerformanceData,
     allMonthlyTargets,
     updatePerformanceData,
-    updateMonthlyTargets,
     loading,
     refreshDataForShop,
     refreshShopDirectory,
@@ -249,7 +239,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     reloadData: loadInitialData,
     selectedDatasetId,
     setSelectedDatasetId,
-  }), [actor, shops, supervisors, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateMonthlyTargets, loading, refreshDataForShop, refreshShopDirectory, loadPerformanceForShop, loadPerformanceMonth, loadInitialData, selectedDatasetId]);
+  }), [actor, shops, supervisors, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, loading, refreshDataForShop, refreshShopDirectory, loadPerformanceForShop, loadPerformanceMonth, loadInitialData, selectedDatasetId]);
   
   return (
     <ShopContext.Provider value={contextValue}>

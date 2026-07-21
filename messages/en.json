@@ -1,7 +1,7 @@
 
 {
   "Metadata": {
-    "title": "Target Master",
+    "title": "Target",
     "description": "Track targets and performance across your shops."
   },
   "Sidebar": {
@@ -41,7 +41,7 @@
     "notAvailable": "N/A",
     "forecastAsOf": "Forecast based on data available as of {date}.",
     "forecastUnavailable": "Forecast unavailable until at least two days of current-month data are available.",
-    "reportingPeriod": "Reporting period",
+    "reportingPeriod": "Reporting Excel date",
     "currentMonth": "Latest imported month",
     "previousMonth": "Month before latest",
     "customRange": "Custom range",
@@ -77,7 +77,7 @@
   },
   "Dialogs": {
     "setTargetsTitle": "Set Monthly Targets for {shopName}",
-    "setTargetsDescription": "Define your goals for each performance metric.",
+    "setTargetsDescription": "Define performance targets for {month}. Other months will not be changed.",
     "metric": "Metric",
     "monthlyTarget": "Monthly target",
     "weight": "Weight",

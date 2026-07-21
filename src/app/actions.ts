@@ -104,21 +104,6 @@ function stableValue(value: unknown): unknown {
   return value;
 }
 
-export async function handleSaveTargets(shopId: string, targets: Target) {
-  try {
-    await requireEditor();
-    const validShopId = shopIdSchema.parse(shopId);
-    const validTargets = targetSchema.parse(targets) as Target;
-    await updateDoc(doc(db, "shops", validShopId), { monthlyTargets: validTargets });
-    const shop = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShopId), limit(1)))).docs[0];
-    await recordActivity({ action: "targets_changed", summary: `Changed targets for ${shop?.data().name ?? validShopId}.`, shopIds: [validShopId], shopNames: [shop?.data().name ?? validShopId] });
-    invalidateShopData();
-    return { success: true as const, data: validTargets };
-  } catch (error) {
-    return { success: false as const, error: mutationError("save targets", error) };
-  }
-}
-
 async function savePerformanceData(shopId: string, data: PerformanceData[], useImportId: boolean) {
   const validShopId = shopIdSchema.parse(shopId);
   // Zod's catch-all output cannot express the mixed repId/metric index signature,
@@ -829,6 +814,16 @@ export type DashboardRow = {
   previousAchievement: number | null;
   previousRevenue: number | null;
 };
+export type DashboardSupervisorRow = {
+  id: string;
+  name: string;
+  shopCount: number;
+  activeShops: number;
+  shopsAtTarget: number;
+  averageAchievement: number;
+  forecastAchievement: number | null;
+  revenue: number;
+};
 export type DashboardSummary = {
   average: number;
   forecast: number | null;
@@ -1068,13 +1063,29 @@ function performanceSummary(shop: Shop, entries: PerformanceData[]) {
   return { achievement, revenue: report.revenue ?? monthData?.collection ?? 0, forecast, isFinal };
 }
 
-export async function fetchDashboardMonths() {
+export type DashboardPeriod = { month: string; importedAt: string | null };
+
+export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
   await getCurrentActor();
-  const shops = await getDocs(collection(db, "shops"));
-  const months = new Set<string>();
-  shops.docs.forEach(document => Object.keys(document.data().monthlyData ?? {}).forEach(month => months.add(month)));
-  if (!months.size) months.add(format(new Date(), "yyyy-MM"));
-  return [...months].sort().reverse();
+  const [shops, imports] = await Promise.all([
+    getDocs(collection(db, "shops")),
+    getDocs(query(collection(db, "imports"), where("status", "==", "active"), orderBy("createdAt", "desc"))),
+  ]);
+  const periods = new Map<string, string | null>();
+  shops.docs.forEach(document => Object.keys(document.data().monthlyData ?? {}).forEach(month => periods.set(month, null)));
+  imports.docs.forEach(document => {
+    const parsed = z.object({ month: monthSchema, createdAt: z.string().datetime({ offset: true }) }).passthrough().safeParse(document.data());
+    if (parsed.success && !periods.get(parsed.data.month)) periods.set(parsed.data.month, parsed.data.createdAt);
+  });
+  if (!periods.size) periods.set(format(new Date(), "yyyy-MM"), null);
+  return [...periods]
+    .map(([month, importedAt]) => ({ month, importedAt }))
+    .sort((left, right) => {
+      if (left.importedAt && right.importedAt) return right.importedAt.localeCompare(left.importedAt) || right.month.localeCompare(left.month);
+      if (left.importedAt) return -1;
+      if (right.importedAt) return 1;
+      return right.month.localeCompare(left.month);
+    });
 }
 
 export async function fetchDashboardPage(input: { month: string; search?: string; pageSize: number; cursor?: DashboardCursor | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
@@ -1108,7 +1119,7 @@ export async function fetchDashboardPage(input: { month: string; search?: string
         || matchingSupervisorIds.has(String(data.supervisorId ?? ""));
     })
     : snapshot.docs;
-  const rows = matchingDocuments.map(document => {
+  const buildRow = (document: (typeof snapshot.docs)[number]) => {
     const shop = parseFirestoreDocument(shopSchema, document.id, document.data()) as Shop | null;
     if (!shop) return null;
     const currentEntries = performanceByShopAndMonth.get(`${shop.id}:${value.month}`) ?? [];
@@ -1125,7 +1136,33 @@ export async function fetchDashboardPage(input: { month: string; search?: string
       previousAchievement: previous.achievement,
       previousRevenue: previous.revenue,
     } satisfies DashboardRow;
-  }).filter((row): row is DashboardRow => Boolean(row));
+  };
+  const allRows = snapshot.docs.map(buildRow).filter((row): row is DashboardRow => Boolean(row));
+  const rows = matchingDocuments.map(buildRow).filter((row): row is DashboardRow => Boolean(row));
+
+  const supervisorRows = supervisors.flatMap(supervisor => {
+    const assignedRows = allRows.filter(row => row.shop.supervisorId === supervisor.id);
+    if (!assignedRows.length) return [];
+    const reportingRows = assignedRows.filter(row => row.hasData);
+    const forecastValues = reportingRows.flatMap(row => {
+      const forecast = row.isFinal ? row.totalAchievement : row.forecastAchievement;
+      return forecast === null ? [] : [forecast];
+    });
+    return [{
+      id: supervisor.id,
+      name: supervisor.name,
+      shopCount: assignedRows.length,
+      activeShops: reportingRows.length,
+      shopsAtTarget: reportingRows.filter(row => row.totalAchievement >= 100).length,
+      averageAchievement: reportingRows.length
+        ? reportingRows.reduce((sum, row) => sum + row.totalAchievement, 0) / reportingRows.length
+        : 0,
+      forecastAchievement: forecastValues.length
+        ? forecastValues.reduce((sum, forecast) => sum + forecast, 0) / forecastValues.length
+        : null,
+      revenue: reportingRows.reduce((sum, row) => sum + row.revenue, 0),
+    } satisfies DashboardSupervisorRow];
+  }).sort((left, right) => right.averageAchievement - left.averageAchievement || left.name.localeCompare(right.name));
 
   const direction = value.sortDirection === "asc" ? 1 : -1;
   const getSortValue = (row: DashboardRow): string | number | null => {
@@ -1185,5 +1222,6 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     total: rows.length,
     nextCursor: hasMore && last ? { name: last.shop.name, id: last.shop.id } : null,
     summary,
+    supervisorRows,
   };
 }

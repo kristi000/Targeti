@@ -1,6 +1,6 @@
-# Targeti
+# Target
 
-Targeti is a Next.js performance and bonus dashboard backed by Cloud Firestore.
+Target is a Next.js performance and bonus dashboard backed by Cloud Firestore.
 
 ## Local development
 
