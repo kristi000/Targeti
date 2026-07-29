@@ -73,7 +73,14 @@
     "performancePage": "Performance",
     "bonusPage": "Bonuses",
     "monthlyBonuses": "Monthly bonuses",
-    "bonusMonthDescription": "Bonus calculations for {month}, based on the latest imported shop results."
+    "bonusMonthDescription": "Bonus calculations for {month}, based on the latest imported shop results.",
+    "userChangedAchievements": "Achievements changed by a user",
+    "userChangedAchievementsDescription": "These values override the imported Excel data. Last changed {date}.",
+    "revertToImported": "Revert to imported",
+    "achievementsReverted": "Imported achievements restored",
+    "achievementsRevertedDescription": "The user changes were removed and the original Excel values are active again.",
+    "achievementRevertFailed": "Could not revert achievements",
+    "tryAgain": "Please try again."
   },
   "Dialogs": {
     "setTargetsTitle": "Set Monthly Targets for {shopName}",
@@ -93,6 +100,11 @@
     "editAchievementsTitle": "Edit Monthly Achievements for {shopName}",
     "editAchievementsDescription": "Manually set the total achieved for each metric for the month.",
     "saveChanges": "Save Changes",
+    "userChangedFrom": "User changed · imported value: {value}",
+    "achievementsSaved": "Achievements saved",
+    "achievementsSavedOverride": "The changes now override the imported Excel values and can be reverted.",
+    "achievementsSavedManual": "The monthly achievement values were saved.",
+    "achievementSaveFailed": "Could not save achievements",
     "manageShopsTitle": "Manage Shops",
     "manageShopsDescription": "Add, edit, or remove your shop locations and their sales representatives.",
     "editShopTitle": "Edit {shopName}",

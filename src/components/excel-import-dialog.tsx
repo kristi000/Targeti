@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { handleAddShop, handleRegisterImport, handleSaveExcelPerformanceData, handleUndoLatestImport, handleUpdateShop } from "@/app/actions";
+import { handleAddShop, handlePrepareRepresentativeImport, handleRegisterImport, handleSaveExcelPerformanceData, handleUndoLatestImport, handleUpdateShop } from "@/app/actions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -17,9 +17,12 @@ import { EXCEL_METRIC_LABELS, getCustomMetricLabel } from "@/lib/metric-definiti
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   getQuarterKey,
+  getMonthlyRepresentatives,
+  getOverviewPerformanceData,
   type MetricSettings,
   type PerformanceData,
   type PerformanceMetric,
+  type Shop,
   type Target,
 } from "@/lib/types";
 import { useShop } from "./shop-provider";
@@ -41,8 +44,52 @@ const normalizeName = (value: string) => value.trim().toLocaleLowerCase();
 const isValidNumber = (value: number) => Number.isFinite(value) && value >= 0;
 const representativeKey = (shopIndex: number, representativeId: string) => `${shopIndex}:${representativeId}`;
 
+function hiddenRepresentativesForImport(shop: Shop, month: string, performanceData: PerformanceData[]) {
+  const visibleRepresentatives = getMonthlyRepresentatives(shop, month);
+  const visibleIds = new Set(visibleRepresentatives.map(representative => representative.id));
+  const visibleNames = new Set(visibleRepresentatives.map(representative => normalizeName(representative.name)));
+  const hiddenById = new Map((shop.hiddenSalesRepresentatives ?? []).map(representative => [representative.id, representative]));
+
+  getOverviewPerformanceData(performanceData)
+    .filter(entry => entry.date.startsWith(month))
+    .flatMap(entry => entry.reps)
+    .forEach(representative => {
+      if (
+        representative.repName
+        && !visibleIds.has(representative.repId)
+        && !visibleNames.has(normalizeName(representative.repName))
+        && !hiddenById.has(representative.repId)
+      ) {
+        hiddenById.set(representative.repId, { id: representative.repId, name: representative.repName });
+      }
+    });
+
+  return Array.from(hiddenById.values());
+}
+
 function metricRecord(record: Partial<Record<PerformanceMetric, number>>, metrics: readonly PerformanceMetric[]) {
   return Object.fromEntries(metrics.map(metric => [metric, Number(record[metric] ?? 0)])) as Target;
+}
+
+function getImportMetricSettings(
+  shop: Shop,
+  month: string,
+  quarter: string,
+  metrics: readonly PerformanceMetric[],
+  reviewedSettings: MetricSettings,
+) {
+  const savedSettings = shop.quarterSettings?.[quarter]?.metricSettings
+    ?? shop.monthlyData?.[month]?.metricSettings
+    ?? shop.metricSettings;
+
+  return Object.fromEntries(metrics.map(metric => [metric, {
+    label: reviewedSettings[metric]?.label?.trim(),
+    weight: savedSettings?.[metric]?.weight ?? reviewedSettings[metric]?.weight ?? 0,
+  }])) as MetricSettings;
+}
+
+function metricWeightTotal(settings: MetricSettings, metrics: readonly PerformanceMetric[]) {
+  return metrics.reduce((total, metric) => total + Number(settings[metric]?.weight ?? 0), 0);
 }
 
 function monthEnd(month: string) {
@@ -223,38 +270,73 @@ export function ExcelImportDialog({
     setLoading(true);
     try {
       let representativeCount = 0;
+      let hiddenRepresentativeCount = 0;
       const importedAt = new Date().toISOString();
       const importId = `excel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const reportDate = review.reportType === "completedMonth" ? monthEnd(review.reportMonth) : review.asOfDate;
       const quarterKey = getQuarterKey(reportDate);
       const keptMetrics = review.metricOrder.filter(metric => review.keptMetrics[metric]);
-      const metricSettings = keptMetrics.reduce((settings, metric) => {
+      const reviewedMetricSettings = keptMetrics.reduce((settings, metric) => {
         settings[metric] = {
           label: review.metricSettings[metric]?.label?.trim(),
           weight: Number(review.metricSettings[metric]?.weight ?? 0),
         };
         return settings;
       }, {} as MetricSettings);
+      const savedMetricSettingsByShopId = new Map<string, MetricSettings>();
+      review.workbook.shops.forEach(imported => {
+        const shop = restrictToSelectedShop && selectedShop
+          ? selectedShop
+          : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
+        if (!shop) return;
+        const settings = getImportMetricSettings(
+          shop,
+          review.reportMonth,
+          quarterKey,
+          keptMetrics,
+          reviewedMetricSettings,
+        );
+        if (Math.abs(metricWeightTotal(settings, keptMetrics) - 1) > 0.00001) {
+          throw new Error(`${shop.name}: the saved metric weights do not total 100%. Review this shop's metric configuration before importing.`);
+        }
+        savedMetricSettingsByShopId.set(shop.id, settings);
+      });
       const importChanges: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: import("@/lib/types").Shop | null; importedShop: import("@/lib/types").Shop }> = [];
 
       for (const [shopIndex, imported] of review.workbook.shops.entries()) {
         let shop = restrictToSelectedShop && selectedShop
           ? selectedShop
           : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
-        const previousShop = shop ? structuredClone(shop) : null;
+        const existedBeforeImport = Boolean(shop);
         if (!shop) {
           const created = await handleAddShop(imported.shopName, "Imported from Excel report");
           if (!created.success || !created.data) throw new Error(`Could not create ${imported.shopName}.`);
           shop = created.data;
         }
+        const preparation = await handlePrepareRepresentativeImport(shop.id);
+        if (!preparation.success) throw new Error(preparation.error);
+        shop = { ...shop, hiddenSalesRepresentatives: preparation.hiddenSalesRepresentatives };
+        const previousShop = existedBeforeImport ? structuredClone(shop) : null;
+        const metricSettings = savedMetricSettingsByShopId.get(shop.id) ?? reviewedMetricSettings;
 
         const targets = metricRecord(imported.targets, keptMetrics);
         const achievements = metricRecord(imported.achievements, keptMetrics);
-        const reps = imported.representatives.map(({ id, name }) => ({ id, name }));
+        const hiddenSalesRepresentatives = hiddenRepresentativesForImport(
+          shop,
+          review.reportMonth,
+          allPerformanceData[shop.id] ?? [],
+        );
+        const hiddenIds = new Set(hiddenSalesRepresentatives.map(representative => representative.id));
+        const hiddenNames = new Set(hiddenSalesRepresentatives.map(representative => normalizeName(representative.name)));
+        const visibleImportedRepresentatives = imported.representatives.filter(representative =>
+          !hiddenIds.has(representative.id) && !hiddenNames.has(normalizeName(representative.name)),
+        );
+        const reps = visibleImportedRepresentatives.map(({ id, name }) => ({ id, name }));
         representativeCount += reps.length;
-        const targetedRepresentatives = imported.representatives.filter(rep => review.targetedRepresentatives[representativeKey(shopIndex, rep.id)]);
+        hiddenRepresentativeCount += imported.representatives.length - visibleImportedRepresentatives.length;
+        const targetedRepresentatives = visibleImportedRepresentatives.filter(rep => review.targetedRepresentatives[representativeKey(shopIndex, rep.id)]);
         const sharedTargets = getEqualRepresentativeTargets(targets, keptMetrics, targetedRepresentatives.length);
-        const representativeTargets = Object.fromEntries(imported.representatives.map(rep => [
+        const representativeTargets = Object.fromEntries(visibleImportedRepresentatives.map(rep => [
           rep.id,
           review.targetedRepresentatives[representativeKey(shopIndex, rep.id)] ? sharedTargets : metricRecord({}, keptMetrics),
         ])) as Record<string, Target>;
@@ -264,6 +346,7 @@ export function ExcelImportDialog({
           revenue: collection,
           monthlyTargets: targets,
           salesRepresentatives: reps,
+          hiddenSalesRepresentatives,
           monthlyData: {
             ...shop.monthlyData,
             [review.reportMonth]: {
@@ -293,7 +376,7 @@ export function ExcelImportDialog({
           targets,
           revenue: collection,
           shopActuals: achievements,
-          reps: imported.representatives.map(rep => ({ repId: rep.id, repName: rep.name, ...metricRecord(rep.achievements, keptMetrics) })),
+          reps: visibleImportedRepresentatives.map(rep => ({ repId: rep.id, repName: rep.name, ...metricRecord(rep.achievements, keptMetrics) })),
         }];
         const results = await Promise.all([
           handleUpdateShop(updatedShop),
@@ -311,7 +394,10 @@ export function ExcelImportDialog({
         queryClient.invalidateQueries({ queryKey: ["dashboard-periods"] }),
         queryClient.invalidateQueries({ queryKey: ["firestore-shop-performance-page"] }),
       ]);
-      toast({ title: "Excel data imported", description: `${review.workbook.shops.length} shops and ${representativeCount} representatives were updated. The file was retained as an independent version.` });
+      toast({
+        title: "Excel data imported",
+        description: `${review.workbook.shops.length} shops and ${representativeCount} visible representatives were updated.${hiddenRepresentativeCount ? ` ${hiddenRepresentativeCount} hidden representative${hiddenRepresentativeCount === 1 ? " was" : "s were"} skipped.` : ""} The file was retained as an independent version.`,
+      });
       setOpen(false);
       reset();
     } catch (error) {

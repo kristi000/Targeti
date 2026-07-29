@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowDownRight, ArrowLeft, ArrowUpRight, Banknote, ClipboardCheck, Lightbulb, MessageSquareText, TrendingUp, Trophy, UserRoundSearch, Users } from "lucide-react";
+import { ArrowDownRight, ArrowLeft, ArrowUpRight, Banknote, ClipboardCheck, Lightbulb, Loader2, MessageSquareText, RotateCcw, TrendingUp, Trophy, UserRoundSearch, Users } from "lucide-react";
 import { format, getDaysInMonth, isSameMonth, parseISO, subMonths } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
@@ -11,7 +11,7 @@ import { WorkerPerformanceList } from "@/components/worker-performance-list";
 import { SidebarActions } from "@/components/sidebar-actions";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
-import { buttonVariants } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,14 +21,18 @@ import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceData
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
 import { formatReportingExcelDate, formatReportingMonth } from "@/lib/reporting-month";
+import { handleRevertAchievementOverrides } from "@/app/actions";
+import { useToast } from "@/hooks/use-toast";
 
 export function DetailedDashboardClient() {
-  const { selectedShop, allPerformanceData, allMonthlyTargets } = useShop();
+  const { selectedShop, allPerformanceData, allMonthlyTargets, refreshDataForShop, actor } = useShop();
   const t = useTranslations("DetailedDashboard");
   const tMetric = useTranslations("Metrics");
   const locale = useLocale();
   const [selectedMonthValue, setSelectedMonthValue] = useState("");
   const [selectedVersionId, setSelectedVersionId] = useState("active");
+  const [isRevertingAchievements, setIsRevertingAchievements] = useState(false);
+  const { toast } = useToast();
 
   const allData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
   const now = new Date();
@@ -94,6 +98,25 @@ export function DetailedDashboardClient() {
     ? calculateTotalAchievement(forecastData, monthlyTargets, metricSettings)
     : null;
 
+  const revertAchievements = async () => {
+    if (!selectedShop || !excelReport?.achievementOverride) return;
+    setIsRevertingAchievements(true);
+    try {
+      const result = await handleRevertAchievementOverrides(selectedShop.id, getPerformanceDatasetId(excelReport));
+      if (!result.success) throw new Error(result.error);
+      await refreshDataForShop(selectedShop.id);
+      toast({ title: t("achievementsReverted"), description: t("achievementsRevertedDescription") });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: t("achievementRevertFailed"),
+        description: error instanceof Error ? error.message : t("tryAgain"),
+      });
+    } finally {
+      setIsRevertingAchievements(false);
+    }
+  };
+
   const performanceInsights = useMemo(() => {
     if (!monthlyTargets) return { focusMetrics: [] as string[], forecastOnTrack: 0, representativesNeedingAttention: [] as string[] };
     const metricLabel = (metric: PerformanceMetric) => metric.startsWith("custom_")
@@ -148,6 +171,24 @@ export function DetailedDashboardClient() {
           </div>
           <ShopPageNav shopId={selectedShop.id} active="performance" />
           <SidebarActions activeMonth={selectedMonth} />
+          {excelReport?.achievementOverride && (
+            <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-medium">{t("userChangedAchievements")}</p>
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  {t("userChangedAchievementsDescription", {
+                    date: new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(new Date(excelReport.achievementOverride.updatedAt)),
+                  })}
+                </p>
+              </div>
+              {actor.role !== "viewer" && (
+                <Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-400 bg-background/80" onClick={() => void revertAchievements()} disabled={isRevertingAchievements}>
+                  {isRevertingAchievements ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
+                  {t("revertToImported")}
+                </Button>
+              )}
+            </div>
+          )}
 
           <section className="space-y-2 sm:space-y-3" aria-labelledby="performance-insights-heading">
             <div><h2 id="performance-insights-heading" className="text-base font-semibold sm:text-lg">Performance insights</h2><p className="hidden text-sm text-muted-foreground sm:block">The areas that deserve attention in this reporting period.</p></div>

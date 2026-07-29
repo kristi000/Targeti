@@ -43,7 +43,7 @@ import {
   supervisorSchema,
   targetSchema,
 } from "@/lib/persistence-schemas";
-import { getInitialTargets, getOverviewPerformanceData, getPerformanceShopActuals, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type MetricSettings, type PerformanceData, type PerformanceMetric, type Shop, type Supervisor, type Target } from "@/lib/types";
+import { getInitialTargets, getOverviewPerformanceData, getPerformanceShopActuals, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type MetricSettings, type PerformanceData, type PerformanceMetric, type RepPerformanceData, type Shop, type Supervisor, type Target } from "@/lib/types";
 
 export type ShopData = {
   shops: Shop[];
@@ -141,6 +141,129 @@ export async function handleSaveExcelPerformanceData(shopId: string, data: Perfo
   }
 }
 
+const achievementEditSchema = z.object({
+  shopId: shopIdSchema,
+  month: monthSchema,
+  reps: z.array(z.object({
+    repId: shopIdSchema,
+    repName: z.string().trim().min(1).max(120).optional(),
+  }).catchall(z.number().finite().nonnegative())).max(500),
+}).strict();
+
+function sumRepresentativeAchievements(reps: RepPerformanceData[]): Partial<Record<PerformanceMetric, number>> {
+  return reps.reduce((totals, representative) => {
+    Object.entries(representative).forEach(([key, value]) => {
+      if (key === "repId" || key === "repName" || typeof value !== "number") return;
+      const metric = metricKeySchema.parse(key) as PerformanceMetric;
+      totals[metric] = (totals[metric] ?? 0) + value;
+    });
+    return totals;
+  }, {} as Partial<Record<PerformanceMetric, number>>);
+}
+
+export async function handleSaveAchievementOverrides(shopId: string, month: string, reps: RepPerformanceData[]) {
+  try {
+    await requireEditor();
+    const input = achievementEditSchema.parse({ shopId, month, reps }) as unknown as {
+      shopId: string;
+      month: string;
+      reps: RepPerformanceData[];
+    };
+    const performanceSnapshot = await getDocs(collection(db, "shops", input.shopId, "performance"));
+    const reports = performanceSnapshot.docs.flatMap(document => {
+      const parsed = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
+      return parsed.success && parsed.data.date.startsWith(input.month)
+        ? [{ reference: document.ref, data: parsed.data as unknown as PerformanceData }]
+        : [];
+    });
+    const importedReport = reports
+      .filter(report => report.data.importId)
+      .sort((left, right) =>
+        (right.data.importedAt ?? right.data.date).localeCompare(left.data.importedAt ?? left.data.date),
+      )[0];
+    const now = new Date().toISOString();
+
+    if (importedReport) {
+      const original = importedReport.data.achievementOverride;
+      const nextReport: PerformanceData = {
+        ...importedReport.data,
+        reps: input.reps,
+        shopActuals: sumRepresentativeAchievements(input.reps),
+        achievementOverride: {
+          updatedAt: now,
+          originalReps: original?.originalReps ?? importedReport.data.reps,
+          originalShopActuals: original?.originalShopActuals ?? importedReport.data.shopActuals,
+        },
+      };
+      const { id: _id, ...documentData } = performanceDataSchema.parse(nextReport) as unknown as PerformanceData;
+      await importedReport.reference.set(toFirestoreData(documentData));
+    } else {
+      const manualReport: PerformanceData = {
+        id: `${input.month}-01`,
+        date: `${input.month}-01`,
+        reps: input.reps,
+        shopActuals: sumRepresentativeAchievements(input.reps),
+      };
+      const { id: _id, ...documentData } = performanceDataSchema.parse(manualReport) as unknown as PerformanceData;
+      await doc(db, "shops", input.shopId, "performance", manualReport.id!).set(toFirestoreData(documentData));
+    }
+
+    const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", input.shopId), limit(1)))).docs[0];
+    const shopName = String(shopDocument?.data().name ?? input.shopId);
+    await recordActivity({
+      action: "achievements_changed",
+      summary: `Manually changed achievements for ${shopName} in ${input.month}.`,
+      shopIds: [input.shopId],
+      shopNames: [shopName],
+      metadata: { month: input.month, importedOverride: Boolean(importedReport) },
+    });
+    invalidateShopData();
+    return { success: true as const };
+  } catch (error) {
+    return { success: false as const, error: mutationError("save achievement changes", error) };
+  }
+}
+
+export async function handleRevertAchievementOverrides(shopId: string, performanceId: string) {
+  try {
+    await requireEditor();
+    const validShopId = shopIdSchema.parse(shopId);
+    const validPerformanceId = shopIdSchema.parse(performanceId);
+    const reference = doc(db, "shops", validShopId, "performance", validPerformanceId);
+    const snapshot = await reference.get();
+    const parsed = snapshot.exists
+      ? performanceDataSchema.safeParse({ id: snapshot.id, ...snapshot.data() })
+      : null;
+    if (!parsed?.success || !parsed.data.achievementOverride) throw new Error("OVERRIDE_NOT_FOUND");
+    const report = parsed.data as unknown as PerformanceData;
+    const original = report.achievementOverride!;
+    await reference.update({
+      reps: toFirestoreData(original.originalReps),
+      shopActuals: original.originalShopActuals
+        ? toFirestoreData(original.originalShopActuals)
+        : deleteField(),
+      achievementOverride: deleteField(),
+    });
+
+    const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShopId), limit(1)))).docs[0];
+    const shopName = String(shopDocument?.data().name ?? validShopId);
+    await recordActivity({
+      action: "achievements_reverted",
+      summary: `Reverted achievement changes for ${shopName} in ${report.date.slice(0, 7)}.`,
+      shopIds: [validShopId],
+      shopNames: [shopName],
+      metadata: { month: report.date.slice(0, 7), performanceId: validPerformanceId },
+    });
+    invalidateShopData();
+    return { success: true as const };
+  } catch (error) {
+    if (error instanceof Error && error.message === "OVERRIDE_NOT_FOUND") {
+      return { success: false as const, error: "These achievements are already using the imported data." };
+    }
+    return { success: false as const, error: mutationError("revert achievement changes", error) };
+  }
+}
+
 export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot) {
   try {
     await requireEditor();
@@ -218,18 +341,69 @@ export async function handleUpdateShop(shop: Shop) {
   }
 }
 
-const representativeDeletionSchema = z.object({
+export async function handlePrepareRepresentativeImport(shopId: string) {
+  try {
+    await requireEditor();
+    const validShopId = shopIdSchema.parse(shopId);
+    const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShopId), limit(1)))).docs[0];
+    const shop = shopDocument
+      ? parseFirestoreDocument(shopSchema, shopDocument.id, shopDocument.data()) as Shop | null
+      : null;
+    if (!shop) throw new Error("SHOP_NOT_FOUND");
+
+    const performanceSnapshot = await getDocs(collection(db, "shops", validShopId, "performance"));
+    const performanceData = performanceSnapshot.docs.flatMap(document => {
+      const parsed = parseFirestoreDocument(performanceDataSchema, document.id, document.data()) as PerformanceData | null;
+      return parsed ? [parsed] : [];
+    });
+    const latestReport = getOverviewPerformanceData(performanceData)
+      .sort((left, right) =>
+        right.date.localeCompare(left.date)
+        || (right.importedAt ?? right.date).localeCompare(left.importedAt ?? left.date),
+      )[0];
+    const latestMonth = latestReport?.date.slice(0, 7);
+    const visibleRepresentatives = latestMonth
+      ? shop.monthlyData?.[latestMonth]?.representatives ?? shop.salesRepresentatives ?? []
+      : shop.salesRepresentatives ?? [];
+    const visibleIds = new Set(visibleRepresentatives.map(representative => representative.id));
+    const visibleNames = new Set(visibleRepresentatives.map(representative => representative.name.trim().toLocaleLowerCase()));
+    const hiddenById = new Map((shop.hiddenSalesRepresentatives ?? []).map(representative => [representative.id, representative]));
+
+    latestReport?.reps.forEach(representative => {
+      if (
+        representative.repName
+        && !visibleIds.has(representative.repId)
+        && !visibleNames.has(representative.repName.trim().toLocaleLowerCase())
+      ) {
+        hiddenById.set(representative.repId, { id: representative.repId, name: representative.repName });
+      }
+    });
+
+    const hiddenSalesRepresentatives = Array.from(hiddenById.values());
+    if (hiddenSalesRepresentatives.length !== (shop.hiddenSalesRepresentatives ?? []).length) {
+      await updateDoc(doc(db, "shops", validShopId), { hiddenSalesRepresentatives: toFirestoreData(hiddenSalesRepresentatives) });
+      invalidateShopData();
+    }
+    return { success: true as const, hiddenSalesRepresentatives };
+  } catch (error) {
+    if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "The shop no longer exists." };
+    return { success: false as const, error: mutationError("prepare hidden representatives for import", error) };
+  }
+}
+
+const representativeSelectionSchema = z.object({
   month: monthSchema,
   representatives: z.array(z.object({
     shopId: shopIdSchema,
     representativeId: shopIdSchema,
+    representativeName: z.string().trim().min(1).max(120).optional(),
   }).strict()).min(1).max(500),
 }).strict();
 
-export async function handleDeleteRepresentatives(month: string, representatives: Array<{ shopId: string; representativeId: string }>) {
+export async function handleHideRepresentatives(month: string, representatives: Array<{ shopId: string; representativeId: string }>) {
   try {
     await requireEditor();
-    const input = representativeDeletionSchema.parse({ month, representatives });
+    const input = representativeSelectionSchema.parse({ month, representatives });
     const representativeIdsByShop = new Map<string, Set<string>>();
     input.representatives.forEach(({ shopId, representativeId }) => {
       const ids = representativeIdsByShop.get(shopId) ?? new Set<string>();
@@ -242,15 +416,25 @@ export async function handleDeleteRepresentatives(month: string, representatives
     if (selectedDocuments.length !== representativeIdsByShop.size) throw new Error("SHOP_NOT_FOUND");
 
     const updatedShops: Shop[] = [];
-    let deletedCount = 0;
+    let hiddenCount = 0;
     selectedDocuments.forEach(document => {
       const shop = parseFirestoreDocument(shopSchema, document.id, document.data()) as Shop | null;
       if (!shop) return;
       const selectedIds = representativeIdsByShop.get(shop.id)!;
       const monthData = shop.monthlyData?.[input.month];
       const currentRepresentatives = monthData?.representatives ?? shop.salesRepresentatives ?? [];
+      const newlyHidden = currentRepresentatives.filter(representative => selectedIds.has(representative.id));
       const remainingRepresentatives = currentRepresentatives.filter(representative => !selectedIds.has(representative.id));
-      deletedCount += currentRepresentatives.length - remainingRepresentatives.length;
+      hiddenCount += newlyHidden.length;
+      const hiddenById = new Map(
+        (shop.hiddenSalesRepresentatives ?? []).map(representative => [representative.id, representative]),
+      );
+      newlyHidden.forEach(representative => hiddenById.set(representative.id, representative));
+      const baseShop: Shop = {
+        ...shop,
+        salesRepresentatives: (shop.salesRepresentatives ?? []).filter(representative => !selectedIds.has(representative.id)),
+        hiddenSalesRepresentatives: Array.from(hiddenById.values()),
+      };
 
       if (monthData) {
         const metrics = getShopMetrics({
@@ -260,9 +444,9 @@ export async function handleDeleteRepresentatives(month: string, representatives
         }, monthData.targets);
         const sharedTargets = getEqualRepresentativeTargets(monthData.targets, metrics, remainingRepresentatives.length);
         updatedShops.push({
-          ...shop,
+          ...baseShop,
           monthlyData: {
-            ...shop.monthlyData,
+            ...baseShop.monthlyData,
             [input.month]: {
               ...monthData,
               representatives: remainingRepresentatives,
@@ -271,11 +455,11 @@ export async function handleDeleteRepresentatives(month: string, representatives
           },
         });
       } else {
-        updatedShops.push({ ...shop, salesRepresentatives: remainingRepresentatives });
+        updatedShops.push({ ...baseShop, salesRepresentatives: remainingRepresentatives });
       }
     });
 
-    if (!deletedCount) throw new Error("REPRESENTATIVES_NOT_FOUND");
+    if (!hiddenCount) throw new Error("REPRESENTATIVES_NOT_FOUND");
     const batch = writeBatch(db);
     updatedShops.forEach(shop => {
       const { id, ...shopData } = shopSchema.parse(shop) as Shop;
@@ -283,18 +467,111 @@ export async function handleDeleteRepresentatives(month: string, representatives
     });
     await batch.commit();
     await recordActivity({
-      action: "representatives_deleted",
-      summary: `Deleted ${deletedCount} representative(s) from ${updatedShops.length} shop(s) for ${input.month}.`,
+      action: "representatives_hidden",
+      summary: `Hid ${hiddenCount} representative(s) in ${updatedShops.length} shop(s) for ${input.month}.`,
       shopIds: updatedShops.map(shop => shop.id),
       shopNames: updatedShops.map(shop => shop.name),
-      metadata: { month: input.month, representativeCount: deletedCount, shopCount: updatedShops.length },
+      metadata: { month: input.month, representativeCount: hiddenCount, shopCount: updatedShops.length },
     });
     invalidateShopData();
-    return { success: true as const, count: deletedCount, shops: updatedShops.length };
+    return { success: true as const, count: hiddenCount, shops: updatedShops.length };
   } catch (error) {
     if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more shops no longer exist." };
     if (error instanceof Error && error.message === "REPRESENTATIVES_NOT_FOUND") return { success: false as const, error: "The selected representatives no longer exist in this reporting month." };
-    return { success: false as const, error: mutationError("delete the selected representatives", error) };
+    return { success: false as const, error: mutationError("hide the selected representatives", error) };
+  }
+}
+
+export async function handleUnhideRepresentatives(month: string, representatives: Array<{ shopId: string; representativeId: string; representativeName: string }>) {
+  try {
+    await requireEditor();
+    const input = representativeSelectionSchema.parse({ month, representatives });
+    const representativesByShop = new Map<string, Array<{ id: string; name: string }>>();
+    input.representatives.forEach(({ shopId, representativeId, representativeName }) => {
+      if (!representativeName) return;
+      const values = representativesByShop.get(shopId) ?? [];
+      if (!values.some(representative => representative.id === representativeId)) {
+        values.push({ id: representativeId, name: representativeName });
+      }
+      representativesByShop.set(shopId, values);
+    });
+
+    const snapshot = await getDocs(collection(db, "shops"));
+    const selectedDocuments = snapshot.docs.filter(document => representativesByShop.has(document.id));
+    if (selectedDocuments.length !== representativesByShop.size) throw new Error("SHOP_NOT_FOUND");
+
+    const updatedShops: Shop[] = [];
+    let unhiddenCount = 0;
+    selectedDocuments.forEach(document => {
+      const shop = parseFirestoreDocument(shopSchema, document.id, document.data()) as Shop | null;
+      if (!shop) return;
+      const restored = representativesByShop.get(shop.id) ?? [];
+      const restoredIds = new Set(restored.map(representative => representative.id));
+      const restoredNames = new Set(restored.map(representative => representative.name.trim().toLocaleLowerCase()));
+      const monthData = shop.monthlyData?.[input.month];
+      const currentRepresentatives = monthData?.representatives ?? shop.salesRepresentatives ?? [];
+      const nextRepresentatives = [
+        ...currentRepresentatives,
+        ...restored.filter(representative => !currentRepresentatives.some(current => current.id === representative.id)),
+      ];
+      const nextSalesRepresentatives = [
+        ...(shop.salesRepresentatives ?? []),
+        ...restored.filter(representative => !(shop.salesRepresentatives ?? []).some(current => current.id === representative.id)),
+      ];
+      const baseShop: Shop = {
+        ...shop,
+        salesRepresentatives: nextSalesRepresentatives,
+        hiddenSalesRepresentatives: (shop.hiddenSalesRepresentatives ?? [])
+          .filter(representative =>
+            !restoredIds.has(representative.id)
+            && !restoredNames.has(representative.name.trim().toLocaleLowerCase()),
+          ),
+      };
+
+      if (monthData) {
+        const metrics = getShopMetrics({
+          ...shop,
+          metricSettings: monthData.metricSettings ?? shop.metricSettings,
+          metricOrder: monthData.metricOrder ?? shop.metricOrder,
+        }, monthData.targets);
+        const sharedTargets = getEqualRepresentativeTargets(monthData.targets, metrics, nextRepresentatives.length);
+        updatedShops.push({
+          ...baseShop,
+          monthlyData: {
+            ...baseShop.monthlyData,
+            [input.month]: {
+              ...monthData,
+              representatives: nextRepresentatives,
+              representativeTargets: Object.fromEntries(nextRepresentatives.map(representative => [representative.id, sharedTargets])),
+            },
+          },
+        });
+      } else {
+        updatedShops.push(baseShop);
+      }
+      unhiddenCount += restored.length;
+    });
+
+    if (!unhiddenCount) throw new Error("REPRESENTATIVES_NOT_FOUND");
+    const batch = writeBatch(db);
+    updatedShops.forEach(shop => {
+      const { id, ...shopData } = shopSchema.parse(shop) as Shop;
+      batch.set(doc(db, "shops", id), toFirestoreData(shopData));
+    });
+    await batch.commit();
+    await recordActivity({
+      action: "representatives_unhidden",
+      summary: `Unhid ${unhiddenCount} representative(s) in ${updatedShops.length} shop(s) for ${input.month}.`,
+      shopIds: updatedShops.map(shop => shop.id),
+      shopNames: updatedShops.map(shop => shop.name),
+      metadata: { month: input.month, representativeCount: unhiddenCount, shopCount: updatedShops.length },
+    });
+    invalidateShopData();
+    return { success: true as const, count: unhiddenCount, shops: updatedShops.length };
+  } catch (error) {
+    if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more shops no longer exist." };
+    if (error instanceof Error && error.message === "REPRESENTATIVES_NOT_FOUND") return { success: false as const, error: "The selected hidden representatives no longer exist." };
+    return { success: false as const, error: mutationError("unhide the selected representatives", error) };
   }
 }
 

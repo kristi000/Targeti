@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   ArrowLeft,
   AlertTriangle,
+  EyeOff,
   Layers3,
   Loader2,
   Pencil,
@@ -152,10 +153,18 @@ export function ManageShopsDialog({
   };
 
   const handleRemoveRepresentative = (index: number) => {
-    updateEditingShop(shop => ({
-      ...shop,
-      salesRepresentatives: (shop.salesRepresentatives ?? []).filter((_, repIndex) => repIndex !== index),
-    }));
+    updateEditingShop(shop => {
+      const representative = shop.salesRepresentatives?.[index];
+      if (!representative) return shop;
+      const hiddenSalesRepresentatives = shop.hiddenSalesRepresentatives ?? [];
+      return {
+        ...shop,
+        salesRepresentatives: (shop.salesRepresentatives ?? []).filter((_, repIndex) => repIndex !== index),
+        hiddenSalesRepresentatives: hiddenSalesRepresentatives.some(hidden => hidden.id === representative.id)
+          ? hiddenSalesRepresentatives
+          : [...hiddenSalesRepresentatives, representative],
+      };
+    });
   };
 
   const handleMetricWeightChange = (metric: PerformanceMetric, percentage: number) => {
@@ -465,7 +474,7 @@ function ShopEditor({ shop, representativeMonth, saving, nameExists, hasInvalidR
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold">{t("salesReps")}</h3><p className="text-sm text-muted-foreground">{t("representativeCount", { count: representatives.length })}</p></div><Button type="button" variant="outline" size="sm" onClick={onAddRepresentative}><Plus className="mr-2 h-4 w-4" />{t("add")}</Button></div>
           <div className="overflow-hidden rounded-md border">
-            {representatives.length ? <table className="w-full text-sm"><thead className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="w-14 border-r border-slate-300 px-3 py-2 text-center">#</th><th className="px-3 py-2 text-left">{t("salesReps")}</th><th className="w-16 px-3 py-2"><span className="sr-only">{t("actions")}</span></th></tr></thead><tbody>{representatives.map((representative, index) => <tr key={representative.id} className="border-t"><td className="border-r bg-slate-50 px-3 py-2 text-center font-mono text-xs text-slate-500">{index + 1}</td><td className="px-3 py-2"><Input aria-label={`${t("salesReps")} ${index + 1}`} value={representative.name} onChange={event => onRepresentativeChange(index, event.target.value)} placeholder={`${t("salesReps")} ${index + 1}`} /></td><td className="px-3 py-2 text-right"><Button type="button" variant="ghost" size="icon" aria-label={`${t("delete")} ${representative.name || index + 1}`} onClick={() => onRemoveRepresentative(index)}><Trash2 className="h-4 w-4 text-destructive" /></Button></td></tr>)}</tbody></table> : <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><Users className="h-6 w-6 text-slate-300" />{t("noSalesReps")}</div>}
+            {representatives.length ? <table className="w-full text-sm"><thead className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="w-14 border-r border-slate-300 px-3 py-2 text-center">#</th><th className="px-3 py-2 text-left">{t("salesReps")}</th><th className="w-16 px-3 py-2"><span className="sr-only">{t("actions")}</span></th></tr></thead><tbody>{representatives.map((representative, index) => <tr key={representative.id} className="border-t"><td className="border-r bg-slate-50 px-3 py-2 text-center font-mono text-xs text-slate-500">{index + 1}</td><td className="px-3 py-2"><Input aria-label={`${t("salesReps")} ${index + 1}`} value={representative.name} onChange={event => onRepresentativeChange(index, event.target.value)} placeholder={`${t("salesReps")} ${index + 1}`} /></td><td className="px-3 py-2 text-right"><Button type="button" variant="ghost" size="icon" aria-label={`Hide ${representative.name || index + 1}`} onClick={() => onRemoveRepresentative(index)}><EyeOff className="h-4 w-4 text-destructive" /></Button></td></tr>)}</tbody></table> : <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><Users className="h-6 w-6 text-slate-300" />{t("noSalesReps")}</div>}
           </div>
           {hasInvalidRepresentatives && <p className="text-xs font-medium text-destructive">{t("invalidRepresentatives")}</p>}
         </section>

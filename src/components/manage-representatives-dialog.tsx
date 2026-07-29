@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Search, Trash2, UserRoundCog, Users } from "lucide-react";
+import { Eye, EyeOff, Loader2, Search, UserRoundCog, Users } from "lucide-react";
 
-import { handleDeleteRepresentatives } from "@/app/actions";
+import { handleHideRepresentatives, handleUnhideRepresentatives } from "@/app/actions";
 import { useShop } from "@/components/shop-provider";
 import {
   AlertDialog,
@@ -38,6 +38,7 @@ type RepresentativeRow = {
   shopId: string;
   shopName: string;
   achievement: number | null;
+  hidden: boolean;
 };
 
 export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props) {
@@ -45,9 +46,10 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "performance-desc" | "performance-asc">("name");
+  const [view, setView] = useState<"visible" | "hidden">("visible");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
     if (open) void loadPerformanceMonth(month);
@@ -56,7 +58,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
   const representatives = useMemo<RepresentativeRow[]>(() => shops.flatMap(shop => {
     const monthlyRepresentatives = getMonthlyRepresentatives(shop, month);
     const performanceData = getOverviewPerformanceData(allPerformanceData[shop.id] ?? []).filter(entry => entry.date.startsWith(month));
-    const report = performanceData[0];
+    const report = performanceData.at(-1);
     const monthData = shop.monthlyData?.[month];
     const monthlyTargets = report?.targets ?? monthData?.targets ?? allMonthlyTargets[shop.id];
     const metricSettings = monthData?.metricSettings ?? shop.metricSettings;
@@ -67,7 +69,21 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
       ? getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length)
       : undefined;
 
-    return monthlyRepresentatives.map(representative => {
+    const visibleIds = new Set(monthlyRepresentatives.map(representative => representative.id));
+    const hiddenById = new Map((shop.hiddenSalesRepresentatives ?? []).map(representative => [representative.id, representative]));
+    performanceData.flatMap(entry => entry.reps).forEach(representative => {
+      if (!visibleIds.has(representative.repId) && !hiddenById.has(representative.repId) && representative.repName) {
+        hiddenById.set(representative.repId, { id: representative.repId, name: representative.repName });
+      }
+    });
+    const roster = [
+      ...monthlyRepresentatives.map(representative => ({ ...representative, hidden: false })),
+      ...Array.from(hiddenById.values())
+        .filter(representative => !visibleIds.has(representative.id))
+        .map(representative => ({ ...representative, hidden: true })),
+    ];
+
+    return roster.map(representative => {
       const totals = metrics.reduce((result, metric) => {
         result[metric] = performanceData.reduce((sum, entry) => sum + (entry.reps.find(rep => rep.repId === representative.id)?.[metric] ?? 0), 0);
         return result;
@@ -79,14 +95,16 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         shopId: shop.id,
         shopName: shop.name,
         achievement: representativeTargets ? calculateTotalAchievement(totals, representativeTargets, metricSettings) : null,
+        hidden: representative.hidden,
       };
     });
   }), [shops, month, allPerformanceData, allMonthlyTargets]);
 
   const filteredRepresentatives = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    return representatives.filter(representative => !normalizedQuery
-      || `${representative.name} ${representative.shopName}`.toLocaleLowerCase().includes(normalizedQuery))
+    return representatives.filter(representative => representative.hidden === (view === "hidden"))
+      .filter(representative => !normalizedQuery
+        || `${representative.name} ${representative.shopName}`.toLocaleLowerCase().includes(normalizedQuery))
       .sort((left, right) => {
         if (sortBy === "name") return left.name.localeCompare(right.name) || left.shopName.localeCompare(right.shopName);
         if (left.achievement === null && right.achievement !== null) return 1;
@@ -95,21 +113,27 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         if (difference) return sortBy === "performance-desc" ? -difference : difference;
         return left.name.localeCompare(right.name) || left.shopName.localeCompare(right.shopName);
       });
-  }, [query, representatives, sortBy]);
+  }, [query, representatives, sortBy, view]);
 
   const selectedKeySet = useMemo(() => new Set(selectedKeys), [selectedKeys]);
-  const selectedRepresentatives = representatives.filter(representative => selectedKeySet.has(representative.key));
+  const selectedRepresentatives = filteredRepresentatives.filter(representative => selectedKeySet.has(representative.key));
   const allFilteredSelected = filteredRepresentatives.length > 0
     && filteredRepresentatives.every(representative => selectedKeySet.has(representative.key));
 
   const handleDialogChange = (nextOpen: boolean) => {
-    if (!nextOpen && !deleting) {
+    if (!nextOpen && !processing) {
       setQuery("");
       setSortBy("name");
+      setView("visible");
       setSelectedKeys([]);
       setConfirming(false);
     }
     onOpenChange(nextOpen);
+  };
+
+  const changeView = (nextView: typeof view) => {
+    setView(nextView);
+    setSelectedKeys([]);
   };
 
   const toggleFiltered = (checked: boolean) => {
@@ -119,33 +143,61 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
       : current.filter(key => !filteredKeys.has(key)));
   };
 
-  const deleteSelected = async () => {
+  const hideSelected = async () => {
     if (!selectedRepresentatives.length) return;
-    setDeleting(true);
+    setProcessing(true);
     try {
-      const result = await handleDeleteRepresentatives(month, selectedRepresentatives.map(representative => ({
+      const result = await handleHideRepresentatives(month, selectedRepresentatives.map(representative => ({
         shopId: representative.shopId,
         representativeId: representative.id,
       })));
       if (!result.success) throw new Error(result.error);
       await reloadData();
       toast({
-        title: "Representatives deleted",
-        description: `${result.count} representative${result.count === 1 ? "" : "s"} removed from ${result.shops} shop${result.shops === 1 ? "" : "s"} for ${month}.`,
+        title: "Representatives hidden",
+        description: `${result.count} representative${result.count === 1 ? "" : "s"} hidden in ${result.shops} shop${result.shops === 1 ? "" : "s"}. Future Excel imports will keep them hidden.`,
       });
       setConfirming(false);
       setQuery("");
       setSortBy("name");
       setSelectedKeys([]);
-      onOpenChange(false);
     } catch (error) {
       toast({
         variant: "destructive",
-        title: "Deletion failed",
-        description: error instanceof Error ? error.message : "The selected representatives could not be deleted.",
+        title: "Could not hide representatives",
+        description: error instanceof Error ? error.message : "The selected representatives could not be hidden.",
       });
     } finally {
-      setDeleting(false);
+      setProcessing(false);
+    }
+  };
+
+  const unhideSelected = async () => {
+    if (!selectedRepresentatives.length) return;
+    setProcessing(true);
+    try {
+      const result = await handleUnhideRepresentatives(month, selectedRepresentatives.map(representative => ({
+        shopId: representative.shopId,
+        representativeId: representative.id,
+        representativeName: representative.name,
+      })));
+      if (!result.success) throw new Error(result.error);
+      await reloadData();
+      toast({
+        title: "Representatives unhidden",
+        description: `${result.count} representative${result.count === 1 ? "" : "s"} restored. Future Excel imports may update them normally.`,
+      });
+      setQuery("");
+      setSortBy("name");
+      setSelectedKeys([]);
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Could not unhide representatives",
+        description: error instanceof Error ? error.message : "The selected representatives could not be unhidden.",
+      });
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -155,9 +207,18 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         <DialogHeader className="border-b bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
           <div className="flex items-center gap-3">
             <span className="rounded-md bg-emerald-700 p-2 text-white"><UserRoundCog className="h-5 w-5" /></span>
-            <div><DialogTitle>Manage representatives</DialogTitle><DialogDescription>Search and remove representatives from the {month} reporting roster.</DialogDescription></div>
+            <div><DialogTitle>Manage representatives</DialogTitle><DialogDescription>Hide representatives persistently or restore them for {month}.</DialogDescription></div>
           </div>
         </DialogHeader>
+
+        <div className="flex gap-2 border-b bg-slate-50 px-5 py-3 sm:px-6">
+          <Button type="button" size="sm" variant={view === "visible" ? "default" : "outline"} onClick={() => changeView("visible")} disabled={processing}>
+            <Eye className="mr-2 h-4 w-4" />Visible ({representatives.filter(representative => !representative.hidden).length})
+          </Button>
+          <Button type="button" size="sm" variant={view === "hidden" ? "default" : "outline"} onClick={() => changeView("hidden")} disabled={processing}>
+            <EyeOff className="mr-2 h-4 w-4" />Hidden ({representatives.filter(representative => representative.hidden).length})
+          </Button>
+        </div>
 
         <div className="flex flex-col gap-3 border-b px-5 py-3 sm:flex-row sm:items-center sm:px-6">
           <div className="relative min-w-0 flex-1">
@@ -195,16 +256,18 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         </ScrollArea>
 
         <DialogFooter className="border-t bg-slate-50 px-5 py-4 sm:px-6">
-          <Button type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={deleting}>Cancel</Button>
-          <Button type="button" variant="destructive" onClick={() => setConfirming(true)} disabled={!selectedKeys.length || deleting}><Trash2 className="mr-2 h-4 w-4" />Delete selected ({selectedKeys.length})</Button>
+          <Button type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={processing}>Close</Button>
+          {view === "visible"
+            ? <Button type="button" variant="destructive" onClick={() => setConfirming(true)} disabled={!selectedKeys.length || processing}><EyeOff className="mr-2 h-4 w-4" />Hide selected ({selectedKeys.length})</Button>
+            : <Button type="button" onClick={() => void unhideSelected()} disabled={!selectedKeys.length || processing}>{processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Unhide selected ({selectedKeys.length})</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
     <AlertDialog open={confirming} onOpenChange={setConfirming}>
       <AlertDialogContent>
-        <AlertDialogHeader><AlertDialogTitle>Delete {selectedKeys.length} representatives?</AlertDialogTitle><AlertDialogDescription>This removes them from the {month} reporting roster. Existing imported sales history remains unchanged, and each shop’s targets will be shared equally by its remaining representatives.</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={event => { event.preventDefault(); void deleteSelected(); }}>{deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}Delete representatives</AlertDialogAction></AlertDialogFooter>
+        <AlertDialogHeader><AlertDialogTitle>Hide {selectedKeys.length} representatives?</AlertDialogTitle><AlertDialogDescription>They will be removed from the {month} roster and remain hidden even when their names appear in future Excel imports. Their existing sales history is preserved, and you can unhide them here later.</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel disabled={processing}>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={processing} onClick={event => { event.preventDefault(); void hideSelected(); }}>{processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <EyeOff className="mr-2 h-4 w-4" />}Hide representatives</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>;

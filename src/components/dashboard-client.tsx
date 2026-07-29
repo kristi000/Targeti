@@ -11,7 +11,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale } from "next-intl";
 import {
   ArrowDown,
   ArrowDownRight,
@@ -28,7 +28,6 @@ import {
   UserRoundCog,
 } from "lucide-react";
 
-import { Header } from "@/components/header";
 import { SidebarActions } from "@/components/sidebar-actions";
 import { useShop } from "@/components/shop-provider";
 import { SalesRepresentativeRanking } from "./sales-representative-ranking";
@@ -51,7 +50,6 @@ const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
 
 export function DashboardClient() {
   const { shops, supervisors, loading, loadPerformanceMonth, setSelectedDatasetId } = useShop();
-  const t = useTranslations("Dashboard");
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
@@ -148,11 +146,11 @@ export function DashboardClient() {
   }, [activeDatasetId, shopSearch, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, loadPerformanceMonth, setSelectedDatasetId]);
 
   if (loading) {
-    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex flex-1 items-center justify-center text-muted-foreground">Loading dashboard…</div></div>;
+    return <div className="flex h-full items-center justify-center text-muted-foreground">Loading dashboard…</div>;
   }
 
   if (shops.length === 0) {
-    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex flex-1 flex-col items-center justify-center gap-3"><p className="text-muted-foreground">Add a shop to start tracking performance.</p><SidebarActions /></div></div>;
+    return <div className="flex h-full flex-col items-center justify-center gap-3"><p className="text-muted-foreground">Add a shop to start tracking performance.</p><SidebarActions /></div>;
   }
 
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
@@ -161,31 +159,29 @@ export function DashboardClient() {
 
   return (
     <div className="flex h-svh flex-col bg-muted/20">
-      <Header title={t("title")} />
       <main className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4 xl:overflow-hidden">
         <div className="mx-auto flex min-h-full max-w-[1920px] flex-col gap-4 xl:h-full">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <div className="flex items-center gap-2"><h2 className="text-2xl font-semibold tracking-tight">Network overview</h2><span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Preview</span></div>
-              <p className="mt-1 text-sm text-muted-foreground">Performance across all locations</p>
-            </div>
-            <div className="flex flex-wrap items-end gap-2">
-              {datasets.length > 0 && <label className="grid gap-1 text-xs text-muted-foreground">
-                Reporting Excel date
-                <select className="h-9 max-w-64 rounded-md border bg-background px-3 text-sm text-foreground" value={activeDatasetId} onChange={event => { setSelectedMonth(event.target.value); setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 })); }}>
-                  {datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
-                </select>
-              </label>}
+          <div className="flex items-end gap-2">
+            {datasets.length > 0 && <label className="grid shrink-0 gap-1 text-xs text-muted-foreground">
+              <span className="hidden lg:block">Reporting Excel date</span>
+              <select aria-label="Reporting Excel date" className="h-9 w-32 rounded-md border bg-background px-2 text-sm text-foreground lg:w-auto lg:max-w-64 lg:px-3" value={activeDatasetId} onChange={event => { setSelectedMonth(event.target.value); setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 })); }}>
+                {datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
+              </select>
+            </label>}
+
+            <section className="min-w-0 flex-1 overflow-x-auto">
+              <div className="grid min-w-[560px] grid-cols-4 gap-2">
+                <SummaryCard label="Overall achievement" value={`${summary.average.toFixed(1)}%`} detail="Visible locations" icon={Gauge} trend={summary.previousAverage === null ? undefined : `${formatChange(summary.average - summary.previousAverage, " pts")} vs previous month`} positive={summary.previousAverage !== null && summary.average >= summary.previousAverage} />
+                <SummaryCard label="EOM forecast" value={summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`} detail={summary.allFinal ? "Completed month" : "Based on current pace"} icon={ArrowUpRight} trend={summary.forecast === null ? undefined : `${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast !== null && summary.forecast >= summary.average} />
+                <SummaryCard label="Total revenue" value={currency.format(summary.revenue)} detail="Visible locations" icon={CircleDollarSign} trend={summary.previousRevenue === null ? undefined : `${formatChange(summary.revenue - summary.previousRevenue, " ALL")} vs previous month`} positive={summary.previousRevenue !== null && summary.revenue >= summary.previousRevenue} />
+                <SummaryCard label="Active shops" value={String(summary.activeShops)} detail="Matching locations" icon={Building2} trend={`${summary.shopsAtTarget} at or above 100%`} positive />
+              </div>
+            </section>
+
+            <div className="shrink-0">
               <SidebarActions />
             </div>
           </div>
-
-          <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <SummaryCard label="Overall achievement" value={`${summary.average.toFixed(1)}%`} detail="Visible locations" icon={Gauge} trend={summary.previousAverage === null ? undefined : `${formatChange(summary.average - summary.previousAverage, " pts")} vs previous month`} positive={summary.previousAverage !== null && summary.average >= summary.previousAverage} />
-            <SummaryCard label="EOM forecast" value={summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`} detail={summary.allFinal ? "Completed month" : "Based on current pace"} icon={ArrowUpRight} trend={summary.forecast === null ? undefined : `${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast !== null && summary.forecast >= summary.average} />
-            <SummaryCard label="Total revenue" value={currency.format(summary.revenue)} detail="Visible locations" icon={CircleDollarSign} trend={summary.previousRevenue === null ? undefined : `${formatChange(summary.revenue - summary.previousRevenue, " ALL")} vs previous month`} positive={summary.previousRevenue !== null && summary.revenue >= summary.previousRevenue} />
-            <SummaryCard label="Active shops" value={String(summary.activeShops)} detail="Matching locations" icon={Building2} trend={`${summary.shopsAtTarget} at or above 100%`} positive />
-          </section>
 
           <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0">
@@ -362,5 +358,5 @@ function TrendIndicator({ change, suffix = "" }: { change: number | null; suffix
 
 function SummaryCard({ label, value, detail, icon: Icon, trend, positive }: SummaryCardProps) {
   const TrendIcon = positive ? ArrowUpRight : ArrowDownRight;
-  return <Card><CardContent className="p-3"><div className="flex items-start justify-between gap-2"><div className="min-w-0"><p className="text-xs font-medium text-muted-foreground">{label}</p><p className="mt-1 truncate text-xl font-bold tracking-tight tabular-nums">{value}</p></div><span className="rounded-md bg-primary/10 p-1.5 text-primary"><Icon className="h-4 w-4" /></span></div><div className="mt-1.5 flex min-w-0 items-center gap-1 text-[11px]"><span className="shrink-0 text-muted-foreground">{detail}</span>{trend && <><span className="text-muted-foreground">·</span><span className={cn("truncate", positive ? "text-emerald-600" : "text-amber-600")}><TrendIcon className="mr-0.5 inline h-3 w-3" />{trend}</span></>}</div></CardContent></Card>;
+  return <Card className="min-w-0"><CardContent className="flex min-h-16 items-center gap-2 p-2.5"><span className="rounded-md bg-primary/10 p-1.5 text-primary"><Icon className="h-3.5 w-3.5" /></span><div className="min-w-0 flex-1"><div className="flex items-baseline justify-between gap-2"><p className="truncate text-[11px] font-medium text-muted-foreground">{label}</p><p className="shrink-0 text-base font-bold tracking-tight tabular-nums">{value}</p></div><div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px]"><span className="shrink-0 text-muted-foreground">{detail}</span>{trend && <><span className="text-muted-foreground">·</span><span className={cn("truncate", positive ? "text-emerald-600" : "text-amber-600")}><TrendIcon className="mr-0.5 inline h-2.5 w-2.5" />{trend}</span></>}</div></div></CardContent></Card>;
 }

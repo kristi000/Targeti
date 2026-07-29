@@ -43,11 +43,18 @@ const representativePerformanceSchema = z.object({
   repName: z.string().trim().min(1).max(120).optional(),
 }).catchall(finiteNonNegativeNumber);
 
+const achievementOverrideSchema = z.object({
+  updatedAt: z.string().datetime({ offset: true }),
+  originalReps: z.array(representativePerformanceSchema).max(500),
+  originalShopActuals: z.record(metricKeySchema, finiteNonNegativeNumber).optional(),
+}).strict();
+
 export const performanceDataSchema = z.object({
   id: documentIdSchema.optional(),
   date: isoDateSchema,
   reps: z.array(representativePerformanceSchema).max(500),
   shopActuals: z.record(metricKeySchema, finiteNonNegativeNumber).optional(),
+  achievementOverride: achievementOverrideSchema.optional(),
   importId: documentIdSchema.optional(),
   importName: z.string().trim().min(1).max(255).optional(),
   importedAt: z.string().datetime({ offset: true }).optional(),
@@ -83,6 +90,7 @@ export const shopSchema = z.object({
   description: z.string().trim().max(500).optional(),
   revenue: finiteNonNegativeNumber.optional(),
   salesRepresentatives: z.array(representativeSchema).max(500).optional(),
+  hiddenSalesRepresentatives: z.array(representativeSchema).max(500).optional(),
   monthlyTargets: targetSchema.optional(),
   metricSettings: metricSettingsSchema.optional(),
   metricOrder: metricOrderSchema.optional(),
@@ -125,7 +133,7 @@ export const bonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "metric_deleted", "all_data_deleted", "user_created", "user_role_changed"]),
+  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "all_data_deleted", "user_created", "user_role_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),

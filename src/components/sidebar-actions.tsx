@@ -23,6 +23,10 @@ import {
   History,
   Menu,
   ChevronDown,
+  LogOut,
+  ShieldCheck,
+  UserRound,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +48,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  type PerformanceData,
   type Target,
   type PerformanceMetric,
   performanceMetrics,
@@ -60,7 +63,7 @@ import {
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ManageShopsDialog } from "./manage-shops-dialog";
 import { ManageSupervisorsDialog } from "./manage-supervisors-dialog";
 import { ManageRepresentativesDialog } from "./manage-representatives-dialog";
@@ -70,8 +73,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./
 import { ScrollArea } from "./ui/scroll-area";
 import { ExcelImportDialog } from "./excel-import-dialog";
 import { ActivityHistoryDialog } from "./activity-history-dialog";
+import { UserManagementDialog } from "./user-management-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { handleClearAllData } from "@/app/actions";
+import { handleClearAllData, handleSaveAchievementOverrides } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
 import { formatReportingMonth } from "@/lib/reporting-month";
 import {
@@ -86,9 +90,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, isAdmin, actor } = useShop();
+    const { selectedShop, allPerformanceData, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, isAdmin, actor } = useShop();
     const { toast } = useToast();
     const pathname = usePathname();
+    const router = useRouter();
     const locale = useLocale();
     const t = useTranslations("Sidebar");
     const tDialog = useTranslations("Dialogs");
@@ -112,6 +117,10 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         ? activeMonthData?.targets ?? allMonthlyTargets[selectedShop.id] ?? getInitialTargets()
         : getInitialTargets();
     const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings: effectiveMetricSettings, metricOrder: effectiveMetricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, effectiveMetricSettings, effectiveMetricOrder]);
+    const activeImportedReport = useMemo(
+        () => getActivePerformanceData(performanceData).find(day => day.importId && day.date.startsWith(activeMonth)),
+        [performanceData, activeMonth],
+    );
 
     const [editingTargets, setEditingTargets] = useState<Target>(getInitialTargets);
     const [editingMetricSettings, setEditingMetricSettings] = useState<MetricSettings>({});
@@ -131,9 +140,16 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isImportManagementDialogOpen, setIsImportManagementDialogOpen] = useState(false);
     const [isExcelImportDialogOpen, setIsExcelImportDialogOpen] = useState(false);
     const [isActivityHistoryDialogOpen, setIsActivityHistoryDialogOpen] = useState(false);
+    const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
+
+    const logout = async () => {
+        await fetch("/api/auth/session", { method: "DELETE" });
+        router.replace("/login");
+        router.refresh();
+    };
 
     const initialRepTotals = useMemo(() => {
         const totals: Record<string, Record<PerformanceMetric, number>> = {};
@@ -157,6 +173,14 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     }, [performanceData, monthlyRepresentatives, metrics, activeMonth]);
 
     const [editingRepTotals, setEditingRepTotals] = useState<Record<string, Record<PerformanceMetric, number>>>({});
+    const importedRepTotals = useMemo(() => {
+        const originalReps = activeImportedReport?.achievementOverride?.originalReps;
+        if (!originalReps) return {};
+        return Object.fromEntries(originalReps.map(representative => [
+            representative.repId,
+            Object.fromEntries(metrics.map(metric => [metric, representative[metric] ?? 0])),
+        ])) as Record<string, Record<PerformanceMetric, number>>;
+    }, [activeImportedReport?.achievementOverride?.originalReps, metrics]);
 
     const handleTargetChange = (metric: PerformanceMetric, value: string) => {
         setEditingTargets((prev) => ({ ...prev, [metric]: Number(value) }));
@@ -289,58 +313,69 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const onSaveAchievements = async () => {
         if (!editingRepTotals || !selectedShop) return;
         setIsSaving(true);
-        
-        const repsData: RepPerformanceData[] = Object.entries(editingRepTotals).map(([repId, metrics]) => ({
-            repId,
-            ...metrics
-        }));
+        try {
+            const namesById = new Map(monthlyRepresentatives.map(representative => [representative.id, representative.name]));
+            const repsData: RepPerformanceData[] = Object.entries(editingRepTotals).map(([repId, values]) => ({
+                repId,
+                repName: namesById.get(repId),
+                ...values,
+            }));
 
-        const newPerformanceDataEntry: PerformanceData = {
-            date: `${activeMonth}-01`,
-            reps: repsData
-        };
-
-        const newPerformanceData = [newPerformanceDataEntry];
-
-        if (!selectedShop.monthlyData?.[activeMonth]?.representatives) {
-            const existingMonth = selectedShop.monthlyData?.[activeMonth];
-            const representativeTargets = existingMonth?.representativeTargets ?? Object.fromEntries(monthlyRepresentatives.map(rep => [
-                rep.id,
-                getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length),
-            ]));
-            await updateShop({
-                ...selectedShop,
-                monthlyData: {
-                    ...selectedShop.monthlyData,
-                    [activeMonth]: {
-                        collection: existingMonth?.collection ?? selectedShop.revenue ?? 0,
-                        targets: existingMonth?.targets ?? monthlyTargets,
-                        representatives: monthlyRepresentatives,
-                        representativeTargets,
-                        metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
-                        metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
+            if (!selectedShop.monthlyData?.[activeMonth]?.representatives) {
+                const existingMonth = selectedShop.monthlyData?.[activeMonth];
+                const representativeTargets = existingMonth?.representativeTargets ?? Object.fromEntries(monthlyRepresentatives.map(rep => [
+                    rep.id,
+                    getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length),
+                ]));
+                await updateShop({
+                    ...selectedShop,
+                    monthlyData: {
+                        ...selectedShop.monthlyData,
+                        [activeMonth]: {
+                            collection: existingMonth?.collection ?? selectedShop.revenue ?? 0,
+                            targets: existingMonth?.targets ?? monthlyTargets,
+                            representatives: monthlyRepresentatives,
+                            representativeTargets,
+                            metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
+                            metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
+                        },
                     },
-                },
-            });
-        }
+                });
+            }
 
-        await updatePerformanceData(selectedShop.id, newPerformanceData);
-        await refreshDataForShop(selectedShop.id);
-        setIsSaving(false);
-        setIsAchievementDialogOpen(false);
+            const result = await handleSaveAchievementOverrides(selectedShop.id, activeMonth, repsData);
+            if (!result.success) throw new Error(result.error);
+            await refreshDataForShop(selectedShop.id);
+            toast({
+                title: tDialog("achievementsSaved"),
+                description: activeImportedReport
+                    ? tDialog("achievementsSavedOverride")
+                    : tDialog("achievementsSavedManual"),
+            });
+            setIsAchievementDialogOpen(false);
+        } catch (error) {
+            toast({
+                variant: "destructive",
+                title: tDialog("achievementSaveFailed"),
+                description: error instanceof Error ? error.message : tDialog("tryAgain"),
+            });
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleSaveShop = async (shop: Shop) => {
         if (activeMonthOverride && selectedShop?.id === shop.id) {
             const existingMonth = selectedShop.monthlyData?.[activeMonth];
             const representatives = shop.salesRepresentatives ?? [];
+            const hiddenRepresentativeIds = new Set((shop.hiddenSalesRepresentatives ?? []).map(representative => representative.id));
             const representativeTargets = Object.fromEntries(representatives.map(rep => [
                 rep.id,
                 existingMonth?.representativeTargets[rep.id] ?? getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length),
             ]));
             await updateShop({
                 ...shop,
-                salesRepresentatives: selectedShop.salesRepresentatives,
+                salesRepresentatives: (selectedShop.salesRepresentatives ?? []).filter(representative => !hiddenRepresentativeIds.has(representative.id)),
                 monthlyData: {
                     ...selectedShop.monthlyData,
                     [activeMonth]: {
@@ -406,6 +441,23 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-64">
+                            <DropdownMenuLabel className="flex items-center gap-3">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                                    <UserRound className="h-4 w-4" />
+                                </span>
+                                <span className="min-w-0">
+                                    <span className="block truncate">{actor.name}</span>
+                                    <span className="block truncate text-xs font-normal text-muted-foreground">@{actor.username}</span>
+                                </span>
+                            </DropdownMenuLabel>
+                            <DropdownMenuItem disabled>
+                                <ShieldCheck className="mr-2 h-4 w-4" />
+                                <span className="capitalize">{actor.role}</span>
+                            </DropdownMenuItem>
+                            {isAdmin && <DropdownMenuItem onSelect={() => setIsUserManagementOpen(true)}>
+                                <Users className="mr-2 h-4 w-4" />Manage users
+                            </DropdownMenuItem>}
+                            <DropdownMenuSeparator />
                             <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Dashboard actions</DropdownMenuLabel>
                             {canEdit && <>
                                 <DropdownMenuItem onSelect={() => setIsExcelImportDialogOpen(true)}>
@@ -435,10 +487,15 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                 <Trash2 className="mr-2 h-4 w-4" />Clear all data
                             </DropdownMenuItem>
                             </>}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => void logout()} className="text-destructive focus:text-destructive">
+                                <LogOut className="mr-2 h-4 w-4" />Sign out
+                            </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
                     <ExcelImportDialog open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
                     <ActivityHistoryDialog open={isActivityHistoryDialogOpen} onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />
+                    {isAdmin && <UserManagementDialog open={isUserManagementOpen} onOpenChange={setIsUserManagementOpen} showTrigger={false} />}
                     {isAdmin && <>
                     <AlertDialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
                         <AlertDialogContent>
@@ -641,14 +698,21 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                                     <tbody className="divide-y">
                                                         {initialRepTotals[rep.id] && getMetricOrder(selectedShop.metricOrder, metrics).map((metric) => (
                                                             <tr key={metric} className="hover:bg-muted/40">
-                                                            <th scope="row" className="px-3 py-2 text-left font-medium">{getSavedMetricLabel(metric)}</th>
+                                                            <th scope="row" className="px-3 py-2 text-left font-medium">
+                                                                <span>{getSavedMetricLabel(metric)}</span>
+                                                                {importedRepTotals[rep.id]?.[metric] !== undefined
+                                                                    && initialRepTotals[rep.id]?.[metric] !== importedRepTotals[rep.id][metric]
+                                                                    && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">
+                                                                        {tDialog("userChangedFrom", { value: importedRepTotals[rep.id][metric] })}
+                                                                    </span>}
+                                                            </th>
                                                                 <td className="px-3 py-2">
                                                                     <Input
                                                                         id={`achievement-${rep.id}-${metric}`}
                                                                         aria-label={getSavedMetricLabel(metric)}
                                                                         className="ml-auto max-w-40 text-right tabular-nums"
                                                                         type="number"
-                                                                        value={editingRepTotals[rep.id]?.[metric] || ''}
+                                                                        value={editingRepTotals[rep.id]?.[metric] ?? ''}
                                                                         onChange={(e) => handleAchievementChange(rep.id, metric, e.target.value)}
                                                                     />
                                                                 </td>

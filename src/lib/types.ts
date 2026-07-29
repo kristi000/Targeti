@@ -57,6 +57,11 @@ export type PerformanceData = {
   date: string; // YYYY-MM-DD
   reps: RepPerformanceData[];
   shopActuals?: Partial<Record<PerformanceMetric, number>>;
+  achievementOverride?: {
+    updatedAt: string;
+    originalReps: RepPerformanceData[];
+    originalShopActuals?: Partial<Record<PerformanceMetric, number>>;
+  };
   importId?: string;
   importName?: string;
   importedAt?: string;
@@ -157,6 +162,7 @@ export type Shop = {
   description?: string;
   revenue?: number;
   salesRepresentatives?: SalesRepresentative[];
+  hiddenSalesRepresentatives?: SalesRepresentative[];
   monthlyTargets?: Target;
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
@@ -211,6 +217,8 @@ export type ActivityAction =
   | "excel_imported"
   | "excel_import_undone"
   | "excel_import_removed"
+  | "achievements_changed"
+  | "achievements_reverted"
   | "targets_changed"
   | "shop_created"
   | "shop_edited"
@@ -220,6 +228,8 @@ export type ActivityAction =
   | "supervisor_deleted"
   | "supervisor_assignments_changed"
   | "representatives_deleted"
+  | "representatives_hidden"
+  | "representatives_unhidden"
   | "metric_deleted"
   | "all_data_deleted"
   | "user_created"

@@ -73,7 +73,14 @@
     "performancePage": "Performanca",
     "bonusPage": "Bonuset",
     "monthlyBonuses": "Bonuset mujore",
-    "bonusMonthDescription": "Llogaritjet e bonusit për {month}, bazuar në rezultatet më të fundit të importuara."
+    "bonusMonthDescription": "Llogaritjet e bonusit për {month}, bazuar në rezultatet më të fundit të importuara.",
+    "userChangedAchievements": "Arritjet u ndryshuan nga një përdorues",
+    "userChangedAchievementsDescription": "Këto vlera zëvendësojnë të dhënat e importuara nga Excel. Ndryshimi i fundit: {date}.",
+    "revertToImported": "Rikthe te të importuarat",
+    "achievementsReverted": "Arritjet e importuara u rikthyen",
+    "achievementsRevertedDescription": "Ndryshimet e përdoruesit u hoqën dhe vlerat origjinale të Excel-it janë sërish aktive.",
+    "achievementRevertFailed": "Arritjet nuk mund të riktheheshin",
+    "tryAgain": "Ju lutemi provoni përsëri."
   },
   "Dialogs": {
     "setTargetsTitle": "Vendos Objektivat Mujore për {shopName}",
@@ -93,6 +100,11 @@
     "editAchievementsTitle": "Modifiko Arritjet Mujore për {shopName}",
     "editAchievementsDescription": "Vendosni manualisht totalin e arritur për çdo metrikë për muajin.",
     "saveChanges": "Ruaj Ndryshimet",
+    "userChangedFrom": "Ndryshuar nga përdoruesi · vlera e importuar: {value}",
+    "achievementsSaved": "Arritjet u ruajtën",
+    "achievementsSavedOverride": "Ndryshimet tani zëvendësojnë vlerat e importuara nga Excel dhe mund të rikthehen.",
+    "achievementsSavedManual": "Vlerat mujore të arritjeve u ruajtën.",
+    "achievementSaveFailed": "Arritjet nuk mund të ruheshin",
     "manageShopsTitle": "Menaxho Dyqanet",
     "manageShopsDescription": "Shtoni, modifikoni ose hiqni vendndodhjet e dyqaneve tuaja dhe përfaqësuesit e tyre të shitjeve.",
     "editShopTitle": "Modifiko {shopName}",
