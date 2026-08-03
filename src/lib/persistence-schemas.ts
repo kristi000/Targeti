@@ -10,6 +10,7 @@ export const metricKeySchema = z.string().refine(
   "Invalid performance metric",
 );
 const finiteNonNegativeNumber = z.number().finite().nonnegative();
+const finiteMoney = z.number().finite().nonnegative().max(1_000_000_000);
 
 export const shopIdSchema = documentIdSchema;
 export const supervisorIdSchema = documentIdSchema;
@@ -67,6 +68,58 @@ export const performanceDataSchema = z.object({
 }).strict();
 
 export const performanceDataListSchema = z.array(performanceDataSchema).max(450);
+
+const dailyClosingDebtSchema = z.object({
+  id: documentIdSchema,
+  description: z.string().trim().min(1).max(200),
+  amount: finiteMoney,
+}).strict();
+
+const dailyClosingUnsubscribeEntrySchema = z.object({
+  id: documentIdSchema,
+  invoice: z.string().trim().min(1).max(100),
+  msisdn: z.string().trim().min(1).max(40),
+  amount: finiteMoney,
+}).strict();
+
+const dailyClosingAdjustmentsSchema = z.object({
+  boss: finiteMoney,
+  invoice: finiteMoney,
+  unsubscribe: finiteMoney,
+}).strict();
+
+export const dailyClosingInputSchema = z.object({
+  shopId: shopIdSchema,
+  date: isoDateSchema,
+  cashCounts: z.record(z.string().trim().min(1).max(40), z.number().int().nonnegative().max(1_000_000)),
+  exchangeRate: z.number().finite().positive().max(1_000_000),
+  adjustments: dailyClosingAdjustmentsSchema,
+  debts: z.array(dailyClosingDebtSchema).max(100),
+  unsubscribeEntries: z.array(dailyClosingUnsubscribeEntrySchema).max(100).default([]),
+  activities: z.record(metricKeySchema, finiteNonNegativeNumber),
+}).strict();
+
+const dailyClosingTotalsSchema = z.object({
+  countedCash: z.number().finite(),
+  debtTotal: z.number().finite(),
+  expectedCash: z.number().finite(),
+  difference: z.number().finite(),
+  performanceScore: z.number().finite(),
+  rating: z.enum(["veryWeak", "weak", "good", "veryGood", "super"]).optional(),
+  activityContributions: z.record(metricKeySchema, z.number().finite()),
+}).strict();
+
+export const dailyClosingSchema = dailyClosingInputSchema.omit({ shopId: true }).extend({
+  id: documentIdSchema.optional(),
+  status: z.enum(["draft", "finalized"]),
+  metricWeights: z.record(metricKeySchema, finiteNonNegativeNumber),
+  metricTargets: z.record(metricKeySchema, finiteNonNegativeNumber).optional(),
+  totals: dailyClosingTotalsSchema,
+  createdAt: z.string().datetime({ offset: true }),
+  updatedAt: z.string().datetime({ offset: true }),
+  finalizedAt: z.string().datetime({ offset: true }).optional(),
+  finalizedBy: z.string().trim().min(1).max(255).optional(),
+}).strict();
 
 const monthlyShopDataSchema = z.object({
   collection: finiteNonNegativeNumber,
@@ -133,7 +186,7 @@ export const bonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "all_data_deleted", "user_created", "user_role_changed"]),
+  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),

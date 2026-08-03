@@ -37,6 +37,16 @@ export function getShopMetrics(shop?: Pick<Shop, "metricSettings" | "metricOrder
   return getMetricOrder(shop?.metricOrder, available);
 }
 
+export function getShopTargetMetrics(
+  shop?: Pick<Shop, "metricSettings" | "metricOrder" | "monthlyTargets" | "disabledMetrics">,
+  targets?: Target,
+): PerformanceMetric[] {
+  const metrics = getShopMetrics(shop, targets);
+  if (!targets) return metrics;
+  const targetMetrics = new Set(Object.keys(targets) as PerformanceMetric[]);
+  return metrics.filter(metric => targetMetrics.has(metric));
+}
+
 export type SalesRepresentative = {
   id: string;
   name: string;
@@ -255,6 +265,9 @@ export type ActivityAction =
   | "representatives_hidden"
   | "representatives_unhidden"
   | "metric_deleted"
+  | "daily_closing_saved"
+  | "daily_closing_finalized"
+  | "daily_closing_reopened"
   | "all_data_deleted"
   | "user_created"
   | "user_role_changed";
@@ -268,4 +281,52 @@ export type ActivityEvent = {
   shopIds: string[];
   shopNames: string[];
   metadata?: Record<string, string | number | boolean>;
+};
+
+export type DailyClosingStatus = "draft" | "finalized";
+
+export type DailyClosingDebt = {
+  id: string;
+  description: string;
+  amount: number;
+};
+
+export type DailyClosingUnsubscribeEntry = {
+  id: string;
+  invoice: string;
+  msisdn: string;
+  amount: number;
+};
+
+export type DailyClosingTotals = {
+  countedCash: number;
+  debtTotal: number;
+  expectedCash: number;
+  difference: number;
+  performanceScore: number;
+  rating?: "veryWeak" | "weak" | "good" | "veryGood" | "super";
+  activityContributions: Partial<Record<PerformanceMetric, number>>;
+};
+
+export type DailyClosing = {
+  id?: string;
+  date: string;
+  status: DailyClosingStatus;
+  cashCounts: Record<string, number>;
+  exchangeRate: number;
+  adjustments: {
+    boss: number;
+    invoice: number;
+    unsubscribe: number;
+  };
+  debts: DailyClosingDebt[];
+  unsubscribeEntries: DailyClosingUnsubscribeEntry[];
+  activities: Partial<Record<PerformanceMetric, number>>;
+  metricWeights: Partial<Record<PerformanceMetric, number>>;
+  metricTargets?: Partial<Record<PerformanceMetric, number>>;
+  totals: DailyClosingTotals;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt?: string;
+  finalizedBy?: string;
 };

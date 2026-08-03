@@ -17,7 +17,7 @@ import {
   type Shop,
   getInitialTargets,
 } from "@/lib/types";
-import { EXCEL_METRIC_LABELS } from "@/lib/metric-definitions";
+import { CONSOLIDATED_EXCEL_METRIC_WEIGHTS, EXCEL_METRIC_LABELS } from "@/lib/metric-definitions";
 
 export const SHOPS: Shop[] = [
   { 
@@ -45,16 +45,7 @@ export const METRIC_CONFIG: PerformanceMetricConfig = {
   device: { label: EXCEL_METRIC_LABELS.device, icon: Laptop },
 };
 
-export const METRIC_WEIGHTS: Record<PerformanceMetric, number> = {
-  newSim: 0.1,
-  newLine: 0.2,
-  migrations: 0.2,
-  fixContractRenewal: 0.05,
-  mobileContractRenewal: 0.05,
-  newTv: 0.00,
-  newPostpaid: 0.1,
-  device: 0.05,
-};
+export const METRIC_WEIGHTS: Record<PerformanceMetric, number> = CONSOLIDATED_EXCEL_METRIC_WEIGHTS;
 
 export function getMetricWeight(metric: PerformanceMetric, metricSettings?: MetricSettings) {
   return metricSettings?.[metric]?.weight ?? (metric in METRIC_WEIGHTS ? METRIC_WEIGHTS[metric as keyof typeof METRIC_WEIGHTS] : 0.1);

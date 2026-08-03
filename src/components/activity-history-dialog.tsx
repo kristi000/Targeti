@@ -28,7 +28,7 @@ export function ActivityHistoryDialog({ open, onOpenChange, showTrigger = true }
   return <Dialog open={open} onOpenChange={onOpenChange}>
     {showTrigger && <DialogTrigger asChild><Button type="button" variant="outline" size="sm"><History className="mr-2 h-4 w-4" />Activity</Button></DialogTrigger>}
     <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-      <DialogHeader><DialogTitle>Activity history</DialogTitle><DialogDescription>Imports, target changes, shop edits, and administrative deletions.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Activity history</DialogTitle><DialogDescription>Daily closings, imports, target changes, shop edits, and administrative deletions.</DialogDescription></DialogHeader>
       <div className="divide-y rounded-md border">
         {events.map(event => <article key={event.id} className="space-y-1 p-3">
           <div className="flex items-start justify-between gap-4"><p className="font-medium">{event.summary}</p><time className="shrink-0 text-xs text-muted-foreground" dateTime={event.occurredAt}>{formatDate(event.occurredAt)}</time></div>
