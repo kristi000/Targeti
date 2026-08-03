@@ -100,6 +100,30 @@ export function getActivePerformanceData(data: PerformanceData[]): PerformanceDa
   return [...effectiveManualEntries, ...latestExcelByMonth.values()].sort((left, right) => left.date.localeCompare(right.date));
 }
 
+export function getPerformanceMonthsByImportRecency(data: PerformanceData[], additionalMonths: string[] = []): string[] {
+  const latestImportByMonth = new Map<string, string>();
+  const months = new Set(additionalMonths);
+
+  data.forEach(entry => {
+    const month = entry.date.slice(0, 7);
+    months.add(month);
+    if (!entry.importId) return;
+
+    const importedAt = entry.importedAt ?? entry.date;
+    const current = latestImportByMonth.get(month);
+    if (!current || importedAt > current) latestImportByMonth.set(month, importedAt);
+  });
+
+  return [...months].sort((left, right) => {
+    const leftImport = latestImportByMonth.get(left);
+    const rightImport = latestImportByMonth.get(right);
+    if (leftImport && rightImport) return rightImport.localeCompare(leftImport) || right.localeCompare(left);
+    if (leftImport) return -1;
+    if (rightImport) return 1;
+    return right.localeCompare(left);
+  });
+}
+
 export function getOverviewPerformanceData(data: PerformanceData[]): PerformanceData[] {
   return getActivePerformanceData(data).filter(entry => entry.includeInOverview !== false);
 }

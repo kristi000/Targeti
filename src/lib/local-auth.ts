@@ -99,7 +99,7 @@ export async function findUserByUsername(username: string): Promise<StoredUser |
 export async function authenticate(username: string, password: string): Promise<LocalActor | null> {
   const normalizedUsername = normalizeUsername(username);
   if (normalizedUsername === ADMIN_USERNAME) {
-    return matchesAdminPassword(password) ? { id: ADMIN_ID, username: ADMIN_USERNAME, name: "Administrator", role: "admin" } : null;
+    return matchesAdminPassword(password) ? { id: ADMIN_ID, username: ADMIN_USERNAME, name: "@Kristi", role: "admin" } : null;
   }
 
   const user = await findUserByUsername(normalizedUsername);
@@ -130,7 +130,7 @@ export async function getActorForSession(token: string): Promise<LocalActor | nu
   catch { return null; }
   const session = sessionSchema.safeParse(decoded);
   if (!session.success || Date.parse(session.data.expiresAt) <= Date.now()) return null;
-  if (session.data.userId === ADMIN_ID) return { id: ADMIN_ID, username: ADMIN_USERNAME, name: "Administrator", role: "admin" };
+  if (session.data.userId === ADMIN_ID) return { id: ADMIN_ID, username: ADMIN_USERNAME, name: "@Kristi", role: "admin" };
 
   const userDocument = await adminDb.collection("authUsers").doc(session.data.userId).get();
   const user = storedUserSchema.safeParse(userDocument.data());

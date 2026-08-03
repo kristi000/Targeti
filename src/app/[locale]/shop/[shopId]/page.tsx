@@ -25,6 +25,19 @@ export default function DetailedDashboardPage() {
     if (shopFromParams) void loadPerformanceForShop(shopFromParams.id);
   }, [shops, shopId, selectedShop, setSelectedShop, loadPerformanceForShop]);
 
+  useEffect(() => {
+    const refreshPerformance = () => void loadPerformanceForShop(shopId);
+    const refreshVisiblePerformance = () => {
+      if (document.visibilityState === "visible") refreshPerformance();
+    };
+    window.addEventListener("focus", refreshPerformance);
+    document.addEventListener("visibilitychange", refreshVisiblePerformance);
+    return () => {
+      window.removeEventListener("focus", refreshPerformance);
+      document.removeEventListener("visibilitychange", refreshVisiblePerformance);
+    };
+  }, [shopId, loadPerformanceForShop]);
+
   if (!selectedShop || selectedShop.id !== shopId) {
     // This can show a loading state or null while the correct shop is being set.
     return (

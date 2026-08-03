@@ -15,7 +15,6 @@ import {
   CirclePlus,
   Trash2,
   AlertTriangle,
-  MoreHorizontal,
   UserRoundCog,
   UsersRound,
   FileClock,
@@ -518,21 +517,24 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 )}
                 {selectedShop && !isDashboard && canEdit && (
                     <>
-                        <div className="w-auto [&_button]:h-9 [&_button]:w-auto">
-                            <ExcelImportDialog restrictToSelectedShop />
-                        </div>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                                <Button type="button" variant="outline" size="sm">
-                                    <Settings className="mr-2 h-4 w-4" />Manage shop<MoreHorizontal className="ml-2 h-4 w-4" />
+                                <Button type="button" variant="outline" size="sm" className="h-9 gap-2" aria-label="Open shop actions menu">
+                                    <Menu className="h-4 w-4" />
+                                    <span>Menu</span>
+                                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
                                 </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="start">
+                            <DropdownMenuContent align="end" className="w-56">
+                                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Shop actions</DropdownMenuLabel>
+                                <DropdownMenuItem onSelect={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet className="mr-2 h-4 w-4" />Import Excel</DropdownMenuItem>
+                                <DropdownMenuSeparator />
                                 <DropdownMenuItem onSelect={onOpenTargetDialog}><Settings className="mr-2 h-4 w-4" />{t('setMonthlyTargets')}</DropdownMenuItem>
                                 <DropdownMenuItem onSelect={onOpenAchievementDialog}><Pencil className="mr-2 h-4 w-4" />{t('editAchievements')}</DropdownMenuItem>
                                 <DropdownMenuItem onSelect={handleOpenEditShop}><Edit className="mr-2 h-4 w-4" />{t('editShop')}</DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
+                        <ExcelImportDialog restrictToSelectedShop open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogContent className="sm:max-w-2xl">
                             <DialogHeader>

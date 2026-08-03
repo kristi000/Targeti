@@ -235,12 +235,12 @@ export function DashboardClient() {
                     const destination = `/${locale}/shop/${item.shop.id}`;
                     const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                     return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
-                      <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-center font-mono text-xs text-slate-500">{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</td>
-                      <th scope="row" className="border-b border-r border-slate-200 px-2 py-2 text-left"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
-                      <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">{item.hasData ? <div>{item.totalAchievement.toFixed(1)}%<TrendIndicator change={item.previousAchievement === null ? null : item.totalAchievement - item.previousAchievement} suffix=" pts" /></div> : "—"}</td>
-                      <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
-                      <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs tabular-nums text-slate-700">{item.hasData ? <div>{currency.format(item.revenue)}<TrendIndicator change={item.previousRevenue === null ? null : item.revenue - item.previousRevenue} /></div> : "—"}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-3 xl:hidden">{item.hasData ? <div className="flex items-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-12 text-right font-mono text-xs font-medium text-slate-600">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-slate-500">Not imported</span>}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", pagination.pageIndex * pagination.pageSize + rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</span></td>
+                      <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{item.hasData ? <div>{item.totalAchievement.toFixed(1)}%<TrendIndicator change={item.previousAchievement === null ? null : item.totalAchievement - item.previousAchievement} suffix=" pts" /></div> : "—"}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.hasData ? <div>{currency.format(item.revenue)}<TrendIndicator change={item.previousRevenue === null ? null : item.revenue - item.previousRevenue} /></div> : "—"}</td>
+                      <td className="border-b border-r border-slate-200 px-3 py-1 text-center xl:hidden">{item.hasData ? <div className="flex items-center justify-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-12 text-center font-mono text-xs font-medium text-slate-600">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-slate-500">Not imported</span>}</td>
                     </tr>;
                   })}
                 </tbody>
@@ -295,16 +295,16 @@ function SupervisorPerformanceTable({ rows, currency }: { rows: DashboardSupervi
         <thead><tr className="sticky top-0 z-[1] bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
           <th className="w-12 border-b border-r border-slate-300 px-2 py-2 text-center">#</th>
           <th className="w-[45%] border-b border-r border-slate-300 px-2 py-2 text-left">Supervisor</th>
-          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-right">Performance</th>
-          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-right">Forecast</th>
-          <th className="border-b border-r border-slate-300 px-3 py-2 text-right xl:hidden">Revenue</th>
+          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-center">Performance</th>
+          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-center">Forecast</th>
+          <th className="border-b border-r border-slate-300 px-3 py-2 text-center xl:hidden">Revenue</th>
         </tr></thead>
         <tbody>{rows.map((row, index) => <tr key={row.id} className="bg-white even:bg-slate-50/70">
-          <td className="border-b border-r border-slate-200 bg-slate-100 px-2 py-2 text-center font-mono text-xs text-slate-500">{index + 1}</td>
-          <th scope="row" className="border-b border-r border-slate-200 px-2 py-2 text-left"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{row.name}</span><span className="block text-[11px] font-normal text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></th>
-          <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs font-semibold tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
-          <td className="border-b border-r border-slate-200 px-1 py-2 text-right text-xs tabular-nums text-slate-700">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
-          <td className="border-b border-r border-slate-200 px-3 py-3 text-right tabular-nums text-slate-700 xl:hidden">{currency.format(row.revenue)}</td>
+          <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", index < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{index + 1}</span></td>
+          <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{row.name}</span><span className="block text-[11px] font-normal text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></th>
+          <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
+          <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
+          <td className="border-b border-r border-slate-200 px-3 py-0.5 text-center leading-tight tabular-nums text-slate-700 xl:hidden">{currency.format(row.revenue)}</td>
         </tr>)}</tbody>
       </table>
     </div>
@@ -319,11 +319,11 @@ function SupervisorPerformanceTable({ rows, currency }: { rows: DashboardSupervi
 
 type DashboardTable = ReturnType<typeof useReactTable<ShopPerformanceRow>>;
 
-function SortableHeader({ table, columnId, label, align = "right", className }: { table: DashboardTable; columnId: string; label: string; align?: "left" | "right"; className?: string }) {
+function SortableHeader({ table, columnId, label, align = "center", className }: { table: DashboardTable; columnId: string; label: string; align?: "left" | "center"; className?: string }) {
   const column = table.getColumn(columnId);
   const direction = column?.getIsSorted();
   const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
-  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-right", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-end")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
+  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-center", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-center")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
 }
 
 function TablePagination({ table, resultCount }: { table: DashboardTable; resultCount: number }) {
@@ -353,7 +353,7 @@ function formatChange(change: number, suffix = "") {
 function TrendIndicator({ change, suffix = "" }: { change: number | null; suffix?: string }) {
   if (change === null) return <span className="mt-0.5 block text-[10px] font-normal text-slate-400">No prior month</span>;
   const Icon = change >= 0 ? ArrowUpRight : ArrowDownRight;
-  return <span className={cn("mt-0.5 flex items-center justify-end gap-0.5 text-[10px] font-medium", change >= 0 ? "text-emerald-700" : "text-rose-700")}><Icon className="h-3 w-3" />{formatChange(change, suffix)}</span>;
+  return <span className={cn("mt-0.5 flex items-center justify-center gap-0.5 text-[10px] font-medium", change >= 0 ? "text-emerald-700" : "text-rose-700")}><Icon className="h-3 w-3" />{formatChange(change, suffix)}</span>;
 }
 
 function SummaryCard({ label, value, detail, icon: Icon, trend, positive }: SummaryCardProps) {

@@ -41,7 +41,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   const [allMonthlyTargets, setAllMonthlyTargets] = useState<Record<string, Target>>(initialData.monthlyTargets);
   const [loading, setLoading] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
-  const loadedShopIds = useRef(new Set<string>());
   const loadedMonths = useRef(new Set<string>());
   const shopRequests = useRef(new Map<string, Promise<PerformanceData[]>>());
   const monthRequests = useRef(new Map<string, Promise<Record<string, PerformanceData[]>>>());
@@ -57,7 +56,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
         setSupervisors(data.supervisors);
         setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
         setAllMonthlyTargets(data.monthlyTargets);
-        loadedShopIds.current.add(shopId);
         if (shop) setSelectedShop(shop);
     } catch (error) {
         console.error(`Failed to refresh data for shop ${shopId}:`, error);
@@ -70,12 +68,10 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   }, [toast, t]);
 
   const loadPerformanceForShop = useCallback(async (shopId: string) => {
-    if (loadedShopIds.current.has(shopId)) return;
     const request = shopRequests.current.get(shopId) ?? fetchPerformanceData(shopId);
     shopRequests.current.set(shopId, request);
     try {
       const performanceData = await request;
-      loadedShopIds.current.add(shopId);
       setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
     } finally {
       shopRequests.current.delete(shopId);
@@ -114,7 +110,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       setAllMonthlyTargets(monthlyTargets);
       
       setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
-      loadedShopIds.current.clear();
       loadedMonths.current.clear();
       if (selectedShop?.id) await loadPerformanceForShop(selectedShop.id);
       if (selectedDatasetId) await loadPerformanceMonth(selectedDatasetId);
@@ -207,9 +202,9 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     }
   }, [selectedShop?.id, toast, t]);
 
-  const handleSetSelectedShop = (shop: Shop | null) => {
+  const handleSetSelectedShop = useCallback((shop: Shop | null) => {
     setSelectedShop(shop);
-  };
+  }, []);
   
   const updatePerformanceData = useCallback(async (shopId: string, data: PerformanceData[]) => {
       const result = await handleSavePerformanceData(shopId, data);

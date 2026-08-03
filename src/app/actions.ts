@@ -1022,7 +1022,7 @@ export async function fetchAuthUsers(): Promise<AuthUser[]> {
   await requireAdmin();
   const users = await listManagedUsers();
   return [
-    { id: "local-admin", username: "admin", name: "Administrator", role: "admin", lastSignInAt: null },
+    { id: "local-admin", username: "admin", name: "@Kristi", role: "admin", lastSignInAt: null },
     ...users.map(user => ({ id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt })),
   ];
 }
