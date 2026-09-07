@@ -27,7 +27,7 @@ import { getCurrentActor, requireAdmin, requireEditor } from "@/lib/access";
 import { createManagedUser, listManagedUsers, managedRoleSchema, setManagedUserRole, usernameSchema } from "@/lib/local-auth";
 import { getMetricWeight } from "@/lib/data";
 import { calculateDailyClosing, getDailyClosingMetricConfig } from "@/lib/daily-closing";
-import { closingMonthSchema, monthlyDebtsInputSchema, type MonthlyClosingSummary, type MonthlyDebtsPage } from "@/lib/monthly-closing";
+import { closingMonthSchema, monthlyDebtsInputSchema, monthlyUnsubscribesInputSchema, type MonthlyCellSummary, type MonthlyClosingSummary, type MonthlyDebtsPage, type MonthlyUnsubscribesPage } from "@/lib/monthly-closing";
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
@@ -201,11 +201,16 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
     const existing = existingSnapshot.exists ? parseDailyClosingDocument(existingSnapshot.id, existingSnapshot.data()) : null;
     if (existing?.status === "finalized") throw new Error("CLOSING_FINALIZED");
     if ((existing?.updatedAt ?? null) !== value.expectedUpdatedAt) throw new Error("CLOSING_CONFLICT");
+    const existingCell = existing?.cell ?? { amount: 0, note: "" };
+    if (actor.role !== "admin" && (value.cell.amount !== existingCell.amount || value.cell.note !== existingCell.note)) {
+      throw new Error("ADMIN_REQUIRED");
+    }
     closing = dailyClosingSchema.parse({
       date: value.date,
       status,
       cashCounts: value.cashCounts,
       exchangeRate: value.exchangeRate,
+      cell: value.cell,
       adjustments,
       debts: value.debts.map(({ paidAt: _paidAt, ...debt }) => {
         const paidAt = existing?.debts.find(entry => entry.id === debt.id)?.paidAt;
@@ -277,9 +282,26 @@ export async function fetchMonthlyDebts(shopId: string, input: z.infer<typeof mo
   const filtered = debts.filter(debt => debt.description.toLowerCase().includes(search)
     && (value.status === "all" || (value.status === "paid" ? !!debt.paidAt : !debt.paidAt)));
   const start = value.pageIndex * value.pageSize;
+  const grouped = new Map<string, MonthlyDebtsPage["groupRows"][number]>();
+  for (const debt of debts) {
+    const description = debt.description.trim().replace(/\s+/g, " ");
+    const id = description.toLowerCase();
+    const existing = grouped.get(id) ?? { id, description, count: 0, totalAmount: 0, unpaidAmount: 0, paidAmount: 0 };
+    existing.count += 1;
+    existing.totalAmount += debt.amount;
+    if (debt.paidAt) existing.paidAmount += debt.amount;
+    else existing.unpaidAmount += debt.amount;
+    grouped.set(id, existing);
+  }
+  const matchingGroups = [...grouped.values()]
+    .filter(group => group.description.toLowerCase().includes(search))
+    .sort((left, right) => right.unpaidAmount - left.unpaidAmount || right.totalAmount - left.totalAmount || left.description.localeCompare(right.description));
+  const groupStart = value.groupPageIndex * value.pageSize;
   return { success: true, data: {
     rows: filtered.slice(start, start + value.pageSize),
     rowCount: filtered.length,
+    groupRows: matchingGroups.slice(groupStart, groupStart + value.pageSize),
+    groupRowCount: matchingGroups.length,
     totalCount: debts.length,
     totalAmount: debts.reduce((sum, debt) => sum + debt.amount, 0),
     unpaidAmount: debts.reduce((sum, debt) => sum + (debt.paidAt ? 0 : debt.amount), 0),
@@ -288,6 +310,55 @@ export async function fetchMonthlyDebts(shopId: string, input: z.infer<typeof mo
     if (error instanceof Error && error.message === "UNAUTHENTICATED") return { success: false, error: "sessionExpired" };
     if (error instanceof z.ZodError) return { success: false, error: "invalidRequest" };
     console.error("Failed to load monthly debts:", error);
+    return { success: false, error: "loadFailed" };
+  }
+}
+
+export async function fetchMonthlyUnsubscribes(shopId: string, input: z.infer<typeof monthlyUnsubscribesInputSchema>): Promise<
+  | { success: true; data: MonthlyUnsubscribesPage }
+  | { success: false; error: "invalidData" | "invalidRequest" | "sessionExpired" | "loadFailed"; date?: string }
+> {
+  try {
+    await getCurrentActor();
+    const value = monthlyUnsubscribesInputSchema.parse(input);
+    const closings = await loadMonthlyClosings(shopId, value.month);
+    const unsubscribes: MonthlyUnsubscribesPage["rows"] = [];
+
+    for (const { date, data } of closings) {
+      // Include the legacy aggregate when a report predates detailed unsubscribe entries.
+      const result = dailyClosingSchema.pick({ adjustments: true, unsubscribeEntries: true }).strip().safeParse(data);
+      if (!result.success) {
+        console.error("Invalid monthly unsubscribe data", { date, issues: result.error.issues.map(issue => ({ path: issue.path, code: issue.code })) });
+        return { success: false, error: "invalidData", date };
+      }
+      const entries = result.data.unsubscribeEntries.length
+        ? result.data.unsubscribeEntries
+        : result.data.adjustments.unsubscribe > 0
+          ? [{ id: "legacy-unsubscribe", invoice: "Legacy entry", msisdn: "-", amount: result.data.adjustments.unsubscribe }]
+          : [];
+      unsubscribes.push(...entries.map(entry => ({
+        id: `${date}:${entry.id}`,
+        date,
+        invoice: entry.invoice,
+        msisdn: entry.msisdn,
+        amount: entry.amount,
+      })));
+    }
+
+    const search = value.search.toLowerCase();
+    const filtered = unsubscribes.filter(entry => [entry.date, entry.invoice, entry.msisdn]
+      .some(field => field.toLowerCase().includes(search)));
+    const start = value.pageIndex * value.pageSize;
+    return { success: true, data: {
+      rows: filtered.slice(start, start + value.pageSize),
+      rowCount: filtered.length,
+      totalCount: unsubscribes.length,
+      totalAmount: unsubscribes.reduce((sum, entry) => sum + entry.amount, 0),
+    } };
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED") return { success: false, error: "sessionExpired" };
+    if (error instanceof z.ZodError) return { success: false, error: "invalidRequest" };
+    console.error("Failed to load monthly unsubscribes:", error);
     return { success: false, error: "loadFailed" };
   }
 }
@@ -357,6 +428,19 @@ export async function fetchMonthlyClosingSummary(shopId: string, month: string):
     net: sum.net + row.net,
   }), { boss: 0, invoice: 0, unsubscribe: 0, debt: 0, net: 0 });
   return { rows, totals };
+}
+
+export async function fetchMonthlyCellSummary(shopId: string, month: string): Promise<MonthlyCellSummary> {
+  await getCurrentActor();
+  const closings = await loadMonthlyClosings(shopId, month);
+  const rows = closings.map(({ date, data }) => {
+    const closing = dailyClosingSchema.pick({ cell: true }).strip().parse(data);
+    return { date, amount: closing.cell.amount, note: closing.cell.note };
+  });
+  return {
+    rows,
+    totalAmount: rows.reduce((total, row) => total + row.amount, 0),
+  };
 }
 
 export async function handleSaveDailyClosing(input: DailyClosingInput) {

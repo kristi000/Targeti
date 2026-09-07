@@ -313,6 +313,11 @@ export type DailyClosingUnsubscribeEntry = {
   amount: number;
 };
 
+export type DailyClosingCell = {
+  amount: number;
+  note: string;
+};
+
 export type DailyClosingTotals = {
   countedCash: number;
   debtTotal: number;
@@ -329,6 +334,7 @@ export type DailyClosing = {
   status: DailyClosingStatus;
   cashCounts: Record<string, number>;
   exchangeRate: number;
+  cell: DailyClosingCell;
   adjustments: {
     boss: number;
     invoice: number;

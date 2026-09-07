@@ -136,11 +136,17 @@ const dailyClosingAdjustmentsSchema = z.object({
   unsubscribe: finiteMoney,
 }).strict();
 
+const dailyClosingCellSchema = z.object({
+  amount: finiteMoney,
+  note: z.string().trim().max(500),
+}).strict();
+
 export const dailyClosingInputSchema = z.object({
   shopId: shopIdSchema,
   date: isoDateSchema,
   cashCounts: z.record(z.string().trim().min(1).max(40), z.number().int().nonnegative().max(1_000_000)),
   exchangeRate: z.number().finite().positive().max(1_000_000),
+  cell: dailyClosingCellSchema.default({ amount: 0, note: "" }),
   adjustments: dailyClosingAdjustmentsSchema,
   debts: z.array(dailyClosingDebtSchema).max(100),
   unsubscribeEntries: z.array(dailyClosingUnsubscribeEntrySchema).max(100).default([]),

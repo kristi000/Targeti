@@ -19,15 +19,19 @@ import {
   RotateCcw,
   Save,
   Scale,
+  Smartphone,
   Trash2,
+  UserMinus,
   Wallet,
 } from "lucide-react";
 
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions";
 import { Header } from "@/components/header";
 import { MonthlyClosingSummary } from "@/components/monthly-closing-summary";
+import { MonthlyCellSummary } from "@/components/monthly-cell-summary";
 import { MonthlyDebts } from "@/components/monthly-debts";
-import { closingMonthSchema, monthlyClosingQueryKey, monthlyDebtsQueryKey } from "@/lib/monthly-closing";
+import { MonthlyUnsubscribes } from "@/components/monthly-unsubscribes";
+import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -55,8 +59,10 @@ export function DailyClosingClient() {
   const locale = useLocale();
   const monthlyTranslations = useTranslations("MonthlyClosing");
   const debtTranslations = useTranslations("MonthlyDebts");
+  const unsubscribeTranslations = useTranslations("MonthlyUnsubscribes");
+  const cellTranslations = useTranslations("MonthlyCell");
   const queryClient = useQueryClient();
-  const [view, setView] = useState<"daily" | "monthly" | "debts">("daily");
+  const [view, setView] = useState<"daily" | "monthly" | "debts" | "unsubscribes" | "cell">("daily");
   const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const t = useTranslations("DailyClosing");
   const metricTranslations = useTranslations("Metrics");
@@ -67,6 +73,7 @@ export function DailyClosingClient() {
   const [closing, setClosing] = useState<DailyClosing | null>(null);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(() => createEmptyCashCounts());
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_EXCHANGE_RATE);
+  const [cell, setCell] = useState({ amount: 0, note: "" });
   const [adjustments, setAdjustments] = useState<Adjustments>(EMPTY_ADJUSTMENTS);
   const [debts, setDebts] = useState<DailyClosingDebt[]>([]);
   const [unsubscribeEntries, setUnsubscribeEntries] = useState<DailyClosingUnsubscribeEntry[]>([]);
@@ -108,6 +115,7 @@ export function DailyClosingClient() {
       setClosing(data);
       setCashCounts(data?.cashCounts ?? createEmptyCashCounts());
       setExchangeRate(data?.exchangeRate ?? DEFAULT_EXCHANGE_RATE);
+      setCell(data?.cell ?? { amount: 0, note: "" });
       setAdjustments(data?.adjustments ?? EMPTY_ADJUSTMENTS);
       setDebts(data?.debts ?? []);
       setUnsubscribeEntries(data?.unsubscribeEntries?.length
@@ -129,6 +137,7 @@ export function DailyClosingClient() {
 
   const isFinalized = closing?.status === "finalized";
   const isReadOnly = isFinalized || actor.role === "viewer";
+  const isCellReadOnly = isFinalized || actor.role !== "admin";
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   const percentFormatter = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
   const payload = () => ({
@@ -137,6 +146,7 @@ export function DailyClosingClient() {
     expectedUpdatedAt: closing?.updatedAt ?? null,
     cashCounts,
     exchangeRate,
+    cell,
     adjustments: effectiveAdjustments,
     debts: debts.filter(debt => debt.description.trim() || debt.amount > 0),
     unsubscribeEntries: unsubscribeEntries.filter(entry => entry.invoice.trim() || entry.msisdn.trim() || entry.amount > 0),
@@ -146,9 +156,12 @@ export function DailyClosingClient() {
   const applySavedClosing = (data: DailyClosing) => {
     void queryClient.invalidateQueries({ queryKey: monthlyClosingQueryKey(selectedShop.id, data.date.slice(0, 7)) });
     void queryClient.invalidateQueries({ queryKey: monthlyDebtsQueryKey(selectedShop.id, data.date.slice(0, 7)) });
+    void queryClient.invalidateQueries({ queryKey: monthlyUnsubscribesQueryKey(selectedShop.id, data.date.slice(0, 7)) });
+    void queryClient.invalidateQueries({ queryKey: monthlyCellQueryKey(selectedShop.id, data.date.slice(0, 7)) });
     setClosing(data);
     setCashCounts(data.cashCounts);
     setExchangeRate(data.exchangeRate);
+    setCell(data.cell);
     setAdjustments(data.adjustments);
     setDebts(data.debts);
     setUnsubscribeEntries(data.unsubscribeEntries ?? []);
@@ -186,15 +199,21 @@ export function DailyClosingClient() {
     ? getCustomMetricLabel(metric, metricSettings)
     : metricTranslations(metric as Parameters<typeof metricTranslations>[0]);
 
+  const differenceColor = calculation.totals.difference > 0
+    ? "border-emerald-500/60 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+    : calculation.totals.difference < 0
+      ? "border-red-500/60 bg-red-500/10 text-red-700 dark:text-red-300"
+      : "";
+
   const summaryCards = [
     { label: t("countedCash"), value: `${formatter.format(calculation.totals.countedCash)} Lek`, icon: Banknote },
     { label: t("expectedCash"), value: `${formatter.format(calculation.totals.expectedCash)} Lek`, icon: HandCoins },
-    { label: t("difference"), value: `${formatter.format(calculation.totals.difference)} Lek`, icon: Scale, alert: calculation.totals.difference !== 0 },
+    { label: t("difference"), value: `${formatter.format(calculation.totals.difference)} Lek`, icon: Scale, className: differenceColor },
     { label: t("dailyIncrease"), value: percentFormatter.format(calculation.totals.performanceScore), icon: CircleGauge },
   ];
 
   return <div className="flex h-full flex-col">
-    <Header title={`${view === "daily" ? t("pageTitle") : view === "debts" ? debtTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={<>
+    <Header title={`${view === "daily" ? t("pageTitle") : view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={<>
       <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline", size: "sm" })}><ArrowLeft className="mr-1.5 h-4 w-4" />{t("back")}</Link>
       <ShopPageNav shopId={selectedShop.id} active="closing" />
       {view === "daily"
@@ -207,9 +226,13 @@ export function DailyClosingClient() {
           <Button size="sm" variant={view === "daily" ? "default" : "outline"} aria-pressed={view === "daily"} onClick={() => setView("daily")}><CalendarDays className="mr-1.5 h-4 w-4" />{monthlyTranslations("daily")}</Button>
           <Button size="sm" variant={view === "monthly" ? "default" : "outline"} aria-pressed={view === "monthly"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("monthly"); }}><CalendarRange className="mr-1.5 h-4 w-4" />{monthlyTranslations("monthly")}</Button>
           <Button size="sm" variant={view === "debts" ? "default" : "outline"} aria-pressed={view === "debts"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("debts"); }}><Wallet className="mr-1.5 h-4 w-4" />{debtTranslations("title")}</Button>
+          <Button size="sm" variant={view === "unsubscribes" ? "default" : "outline"} aria-pressed={view === "unsubscribes"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("unsubscribes"); }}><UserMinus className="mr-1.5 h-4 w-4" />{unsubscribeTranslations("title")}</Button>
+          <Button size="sm" variant={view === "cell" ? "default" : "outline"} aria-pressed={view === "cell"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("cell"); }}><Smartphone className="mr-1.5 h-4 w-4" />{cellTranslations("tab")}</Button>
         </div>
         {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} />}
         {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
+        {view === "unsubscribes" && <MonthlyUnsubscribes key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
+        {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
         <div hidden={view !== "daily"} className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div><h2 className="text-lg font-semibold leading-tight md:text-xl">{t("heading")}</h2><p className="text-xs text-muted-foreground">{t("description")}</p></div>
@@ -222,6 +245,7 @@ export function DailyClosingClient() {
           <div className="grid items-start gap-2.5 xl:grid-cols-[minmax(0,1.5fr)_minmax(22rem,1fr)]">
             <div className="min-w-0 space-y-2.5">
               <div className="grid items-start gap-2.5 md:grid-cols-[minmax(17rem,0.65fr)_minmax(20rem,0.85fr)]">
+                <div className="space-y-2.5">
                 <Card><CardHeader className="px-3 py-2"><CardTitle className="flex items-center gap-1.5 text-sm"><Banknote className="h-3.5 w-3.5" />{t("cashCount")}</CardTitle><CardDescription className="text-[10px] leading-tight">{t("cashCountDescription")}</CardDescription></CardHeader><CardContent className="px-3 pb-2 pt-0">
               <div className="grid gap-0.5">
                 {CASH_DENOMINATIONS.map(item => <div key={item.key} className="grid min-h-5 grid-cols-[minmax(4.5rem,0.8fr)_5.25rem_minmax(5.5rem,1fr)] items-center gap-1 rounded border px-2"><span className="text-xs font-medium tabular-nums">{item.label} Lek</span><Input aria-label={`${item.label} ${t("quantity")}`} type="number" min={0} step={1} disabled={isReadOnly} className="h-5 rounded px-1 text-center text-xs" value={cashCounts[item.key] ?? 0} onChange={event => setCashCounts(current => ({ ...current, [item.key]: Math.floor(numericValue(event.target.value)) }))} /><span className="text-right text-xs font-medium tabular-nums">{formatter.format(item.value * (cashCounts[item.key] ?? 0))}</span></div>)}
@@ -229,10 +253,16 @@ export function DailyClosingClient() {
               </div>
                 </CardContent></Card>
 
+                <Card><CardHeader className="px-3 py-2"><CardTitle className="flex items-center gap-1.5 text-sm"><Smartphone className="h-3.5 w-3.5" />{t("cell")}</CardTitle><CardDescription className="text-[10px] leading-tight">{t(actor.role === "admin" ? "cellDescription" : "cellAdminOnly")}</CardDescription></CardHeader><CardContent className="space-y-2 px-3 pb-3 pt-0">
+                  <div className="grid grid-cols-[1fr_8rem] items-center gap-2"><Label className="text-sm" htmlFor="cell-amount">{t("cellAmount")}</Label><div className="relative"><Input id="cell-amount" aria-label={t("cellAmount")} type="number" min={0} step={1} disabled={isCellReadOnly} className="h-8 pr-9 text-right" value={cell.amount} onChange={event => setCell(current => ({ ...current, amount: numericValue(event.target.value) }))} /><span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">Lek</span></div></div>
+                  <div className="space-y-1"><Label className="text-sm" htmlFor="cell-note">{t("cellNote")}</Label><Input id="cell-note" aria-label={t("cellNote")} maxLength={500} disabled={isCellReadOnly} className="h-8" placeholder={t("cellNotePlaceholder")} value={cell.note} onChange={event => setCell(current => ({ ...current, note: event.target.value }))} /></div>
+                </CardContent></Card>
+                </div>
+
                 <div className="space-y-2.5">
                   <Card><CardHeader className="p-3 pb-2"><CardTitle className="flex items-center gap-2 text-base"><ReceiptText className="h-4 w-4" />{t("reconciliation")}</CardTitle><CardDescription className="text-xs">{t("reconciliationDescription")}</CardDescription></CardHeader><CardContent className="space-y-2 p-3 pt-0">
                 {(["boss", "invoice"] as const).map(key => <div key={key} className="grid grid-cols-[1fr_8rem] items-center gap-2"><Label className="text-sm" htmlFor={`adjustment-${key}`}>{t(key)}</Label><Input id={`adjustment-${key}`} type="number" min={0} step={1} disabled={isReadOnly} className="h-8 text-right" value={adjustments[key]} onChange={event => setAdjustments(current => ({ ...current, [key]: numericValue(event.target.value) }))} /></div>)}
-                <div className="grid grid-cols-2 gap-2 border-t pt-2 text-xs sm:grid-cols-4"><div><span className="block text-muted-foreground">{t("debtTotal")}</span><strong>{formatter.format(calculation.totals.debtTotal)} Lek</strong></div><div><span className="block text-muted-foreground">{t("unsubscribe")}</span><strong>{formatter.format(unsubscribeTotal)} Lek</strong></div><div><span className="block text-muted-foreground">{t("expectedCash")}</span><strong>{formatter.format(calculation.totals.expectedCash)} Lek</strong></div><div className={cn("rounded-md px-2 py-1", calculation.totals.difference === 0 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-800 dark:text-amber-200")}><span className="block">{t("difference")}</span><strong>{formatter.format(calculation.totals.difference)} Lek</strong></div></div>
+                <div className="grid grid-cols-2 gap-2 border-t pt-2 text-xs sm:grid-cols-4"><div><span className="block text-muted-foreground">{t("debtTotal")}</span><strong>{formatter.format(calculation.totals.debtTotal)} Lek</strong></div><div><span className="block text-muted-foreground">{t("unsubscribe")}</span><strong>{formatter.format(unsubscribeTotal)} Lek</strong></div><div><span className="block text-muted-foreground">{t("expectedCash")}</span><strong>{formatter.format(calculation.totals.expectedCash)} Lek</strong></div><div className={cn("rounded-md px-2 py-1", differenceColor)}><span className="block">{t("difference")}</span><strong>{formatter.format(calculation.totals.difference)} Lek</strong></div></div>
                   </CardContent></Card>
 
                   <Card><CardHeader className="flex-row items-center justify-between space-y-0 p-3 pb-2"><div><CardTitle className="text-base">{t("unsubscribeEntries")}</CardTitle><CardDescription className="text-xs">{t("unsubscribeEntriesDescription")}</CardDescription></div><Button type="button" variant="outline" size="sm" className="h-7" disabled={isReadOnly} onClick={() => setUnsubscribeEntries(current => [...current, { id: crypto.randomUUID(), invoice: "", msisdn: "", amount: 0 }])}><Plus className="mr-1 h-3.5 w-3.5" />{t("addUnsubscribe")}</Button></CardHeader><CardContent className="max-h-32 space-y-1.5 overflow-y-auto p-3 pt-0">{unsubscribeEntries.length === 0 ? <p className="rounded-md border border-dashed p-2 text-center text-xs text-muted-foreground">{t("noUnsubscribeEntries")}</p> : unsubscribeEntries.map((entry, index) => <div key={entry.id} className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_2rem] gap-1.5"><Input aria-label={t("unsubscribeInvoice", { number: index + 1 })} placeholder={t("invoicePlaceholder")} disabled={isReadOnly} className="h-8" value={entry.invoice} onChange={event => setUnsubscribeEntries(current => current.map(item => item.id === entry.id ? { ...item, invoice: event.target.value } : item))} /><Input aria-label={t("unsubscribeMsisdn", { number: index + 1 })} placeholder={t("msisdnPlaceholder")} disabled={isReadOnly} className="h-8" value={entry.msisdn} onChange={event => setUnsubscribeEntries(current => current.map(item => item.id === entry.id ? { ...item, msisdn: event.target.value } : item))} /><Input aria-label={t("unsubscribeAmount", { number: index + 1 })} type="number" min={0} step={1} disabled={isReadOnly} className="h-8 text-right" value={entry.amount} onChange={event => setUnsubscribeEntries(current => current.map(item => item.id === entry.id ? { ...item, amount: numericValue(event.target.value) } : item))} /><Button type="button" size="icon" variant="ghost" className="h-8 w-8" disabled={isReadOnly} aria-label={t("removeUnsubscribe")} onClick={() => setUnsubscribeEntries(current => current.filter(item => item.id !== entry.id))}><Trash2 className="h-4 w-4" /></Button></div>)}</CardContent></Card>
@@ -241,7 +271,7 @@ export function DailyClosingClient() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">{summaryCards.map(card => <Card key={card.label} className={cn(card.alert && "border-amber-500/60 bg-amber-500/5")}><CardContent className="flex items-center justify-between gap-2 p-3"><div className="min-w-0"><p className="truncate text-xs font-medium text-muted-foreground">{card.label}</p><p className="truncate text-lg font-bold tabular-nums">{card.value}</p></div><card.icon className="h-4 w-4 shrink-0 text-muted-foreground" /></CardContent></Card>)}</div>
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">{summaryCards.map(card => <Card key={card.label} className={card.className}><CardContent className="flex items-center justify-between gap-2 p-3"><div className="min-w-0"><p className={cn("truncate text-xs font-medium", card.className ? "text-current opacity-80" : "text-muted-foreground")}>{card.label}</p><p className="truncate text-lg font-bold tabular-nums">{card.value}</p></div><card.icon className={cn("h-4 w-4 shrink-0", card.className ? "text-current" : "text-muted-foreground")} /></CardContent></Card>)}</div>
             </div>
 
             <Card><CardHeader className="p-3 pb-2"><div className="flex flex-wrap items-center justify-between gap-2"><div><CardTitle className="flex items-center gap-2 text-base"><CircleGauge className="h-4 w-4" />{t("dailyActivity")}</CardTitle><CardDescription className="text-xs">{t("dailyActivityDescription")}</CardDescription></div><div className="text-right"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("dailyIncrease")}</p><p className="text-sm font-semibold">{percentFormatter.format(calculation.totals.performanceScore)}</p></div></div></CardHeader><CardContent className="p-3 pt-0"><div className="grid gap-1.5">{metrics.map(metric => <div key={metric} className="grid grid-cols-[minmax(0,1fr)_4.5rem_4.5rem] items-center gap-1.5 rounded-md border px-2 py-1"><div className="min-w-0"><p className="truncate text-xs font-medium" title={metricLabel(metric)}>{metricLabel(metric)}</p><p className="text-[10px] text-muted-foreground">{t("targetAndWeight", { target: formatter.format(targets?.[metric] ?? 0), weight: percentFormatter.format(calculation.metricWeights[metric] ?? 0) })}</p></div><Input aria-label={`${metricLabel(metric)} ${t("quantity")}`} type="number" min={0} step="any" disabled={isReadOnly} className="h-7 px-2 text-right text-xs" value={activities[metric] ?? 0} onChange={event => setActivities(current => ({ ...current, [metric]: numericValue(event.target.value) }))} /><span className="text-right text-xs font-medium tabular-nums">{percentFormatter.format(calculation.totals.activityContributions[metric] ?? 0)}</span></div>)}</div></CardContent></Card>
