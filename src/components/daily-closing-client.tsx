@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import Link from "next/link";
 import {
   ArrowLeft,
   Banknote,
+  CalendarDays,
+  CalendarRange,
   CheckCircle2,
   CircleGauge,
   HandCoins,
@@ -17,10 +20,14 @@ import {
   Save,
   Scale,
   Trash2,
+  Wallet,
 } from "lucide-react";
 
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions";
 import { Header } from "@/components/header";
+import { MonthlyClosingSummary } from "@/components/monthly-closing-summary";
+import { MonthlyDebts } from "@/components/monthly-debts";
+import { closingMonthSchema, monthlyClosingQueryKey, monthlyDebtsQueryKey } from "@/lib/monthly-closing";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -46,11 +53,17 @@ function numericValue(value: string) {
 
 export function DailyClosingClient() {
   const locale = useLocale();
+  const monthlyTranslations = useTranslations("MonthlyClosing");
+  const debtTranslations = useTranslations("MonthlyDebts");
+  const queryClient = useQueryClient();
+  const [view, setView] = useState<"daily" | "monthly" | "debts">("daily");
+  const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const t = useTranslations("DailyClosing");
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
   const { selectedShop, actor } = useShop();
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  const [debtRevision, setDebtRevision] = useState(0);
   const [closing, setClosing] = useState<DailyClosing | null>(null);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(() => createEmptyCashCounts());
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_EXCHANGE_RATE);
@@ -110,7 +123,7 @@ export function DailyClosingClient() {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [selectedShop?.id, date, t, toast]);
+  }, [selectedShop?.id, date, t, toast, debtRevision]);
 
   if (!selectedShop) return null;
 
@@ -121,6 +134,7 @@ export function DailyClosingClient() {
   const payload = () => ({
     shopId: selectedShop.id,
     date,
+    expectedUpdatedAt: closing?.updatedAt ?? null,
     cashCounts,
     exchangeRate,
     adjustments: effectiveAdjustments,
@@ -130,6 +144,8 @@ export function DailyClosingClient() {
   });
 
   const applySavedClosing = (data: DailyClosing) => {
+    void queryClient.invalidateQueries({ queryKey: monthlyClosingQueryKey(selectedShop.id, data.date.slice(0, 7)) });
+    void queryClient.invalidateQueries({ queryKey: monthlyDebtsQueryKey(selectedShop.id, data.date.slice(0, 7)) });
     setClosing(data);
     setCashCounts(data.cashCounts);
     setExchangeRate(data.exchangeRate);
@@ -178,13 +194,23 @@ export function DailyClosingClient() {
   ];
 
   return <div className="flex h-full flex-col">
-    <Header title={`${t("pageTitle")}: ${selectedShop.name}`} actions={<>
+    <Header title={`${view === "daily" ? t("pageTitle") : view === "debts" ? debtTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={<>
       <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline", size: "sm" })}><ArrowLeft className="mr-1.5 h-4 w-4" />{t("back")}</Link>
       <ShopPageNav shopId={selectedShop.id} active="closing" />
-      <Input aria-label={t("date")} type="date" className="h-9 w-40" value={date} onChange={event => setDate(event.target.value)} />
+      {view === "daily"
+        ? <Input aria-label={t("date")} type="date" className="h-9 w-40" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />
+        : <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-44" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />}
     </>} />
     <main className="flex-1 overflow-y-auto p-2 md:p-3">
       <div className="mx-auto w-full max-w-[1500px] space-y-2.5">
+        <div className="flex gap-2" role="group" aria-label={monthlyTranslations("view")}>
+          <Button size="sm" variant={view === "daily" ? "default" : "outline"} aria-pressed={view === "daily"} onClick={() => setView("daily")}><CalendarDays className="mr-1.5 h-4 w-4" />{monthlyTranslations("daily")}</Button>
+          <Button size="sm" variant={view === "monthly" ? "default" : "outline"} aria-pressed={view === "monthly"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("monthly"); }}><CalendarRange className="mr-1.5 h-4 w-4" />{monthlyTranslations("monthly")}</Button>
+          <Button size="sm" variant={view === "debts" ? "default" : "outline"} aria-pressed={view === "debts"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("debts"); }}><Wallet className="mr-1.5 h-4 w-4" />{debtTranslations("title")}</Button>
+        </div>
+        {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} />}
+        {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
+        <div hidden={view !== "daily"} className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div><h2 className="text-lg font-semibold leading-tight md:text-xl">{t("heading")}</h2><p className="text-xs text-muted-foreground">{t("description")}</p></div>
           <Badge variant={isFinalized ? "default" : "secondary"} className="gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />{t(isFinalized ? "statusFinalized" : "statusDraft")}</Badge>
@@ -224,6 +250,7 @@ export function DailyClosingClient() {
 
           {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
         </>}
+        </div>
       </div>
     </main>
   </div>;

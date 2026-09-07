@@ -26,6 +26,7 @@ import {
   ShieldCheck,
   UserRound,
   Users,
+  SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,6 +74,7 @@ import { ScrollArea } from "./ui/scroll-area";
 import { ExcelImportDialog } from "./excel-import-dialog";
 import { ActivityHistoryDialog } from "./activity-history-dialog";
 import { UserManagementDialog } from "./user-management-dialog";
+import { WeightProfileManagerDialog } from "./weight-profile-manager-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleClearAllData, handleSaveAchievementOverrides } from "@/app/actions";
 import { useToast } from "@/hooks/use-toast";
@@ -140,6 +142,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isExcelImportDialogOpen, setIsExcelImportDialogOpen] = useState(false);
     const [isActivityHistoryDialogOpen, setIsActivityHistoryDialogOpen] = useState(false);
     const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
+    const [isWeightProfileManagerOpen, setIsWeightProfileManagerOpen] = useState(false);
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
@@ -456,6 +459,9 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             {isAdmin && <DropdownMenuItem onSelect={() => setIsUserManagementOpen(true)}>
                                 <Users className="mr-2 h-4 w-4" />Manage users
                             </DropdownMenuItem>}
+                            {isAdmin && <DropdownMenuItem onSelect={() => setIsWeightProfileManagerOpen(true)}>
+                                <SlidersHorizontal className="mr-2 h-4 w-4" />Manage weight profiles
+                            </DropdownMenuItem>}
                             <DropdownMenuSeparator />
                             <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Dashboard actions</DropdownMenuLabel>
                             {canEdit && <>
@@ -495,6 +501,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                     <ExcelImportDialog open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
                     <ActivityHistoryDialog open={isActivityHistoryDialogOpen} onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />
                     {isAdmin && <UserManagementDialog open={isUserManagementOpen} onOpenChange={setIsUserManagementOpen} showTrigger={false} />}
+                    {isAdmin && <WeightProfileManagerDialog open={isWeightProfileManagerOpen} onOpenChange={setIsWeightProfileManagerOpen} />}
                     {isAdmin && <>
                     <AlertDialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
                         <AlertDialogContent>

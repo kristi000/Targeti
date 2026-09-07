@@ -13,6 +13,7 @@ const finiteNonNegativeNumber = z.number().finite().nonnegative();
 const finiteMoney = z.number().finite().nonnegative().max(1_000_000_000);
 
 export const shopIdSchema = documentIdSchema;
+export const weightProfileIdSchema = documentIdSchema;
 export const supervisorIdSchema = documentIdSchema;
 export const supervisorSchema = z.object({
   id: supervisorIdSchema,
@@ -33,6 +34,41 @@ const metricSettingSchema = z.object({
 
 const metricSettingsSchema = z.record(metricKeySchema, metricSettingSchema);
 const metricOrderSchema = z.array(metricKeySchema).max(100);
+const metricWeightProfileObjectSchema = z.object({
+  id: weightProfileIdSchema,
+  name: z.string().trim().min(1).max(80),
+  metricSettings: metricSettingsSchema,
+  metricOrder: metricOrderSchema.min(1),
+  createdAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.string().datetime({ offset: true }).optional(),
+}).strict();
+
+const validateMetricWeightProfile = (value: z.infer<typeof metricWeightProfileObjectSchema>, context: z.RefinementCtx) => {
+  if (new Set(value.metricOrder).size !== value.metricOrder.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Profile metrics must be unique." });
+  }
+  const total = value.metricOrder.reduce((sum, metric) => sum + Number(value.metricSettings[metric]?.weight ?? 0), 0);
+  if (Math.abs(total - 1) > 0.00001) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Profile weights must total exactly 100%." });
+  }
+  value.metricOrder.forEach(metric => {
+    if (!value.metricSettings[metric]?.label?.trim()) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Every profile metric needs a name." });
+    }
+    if (Number(value.metricSettings[metric]?.weight ?? 0) > 1) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: "Profile weights cannot exceed 100%." });
+    }
+  });
+  const labels = value.metricOrder.map(metric => value.metricSettings[metric]?.label?.trim().toLocaleLowerCase());
+  if (new Set(labels).size !== labels.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Profile metric names must be unique." });
+  }
+};
+
+export const metricWeightProfileSchema = metricWeightProfileObjectSchema.superRefine(validateMetricWeightProfile);
+export const newMetricWeightProfileSchema = metricWeightProfileObjectSchema
+  .omit({ id: true, createdAt: true, updatedAt: true })
+  .superRefine((value, context) => validateMetricWeightProfile({ id: "new-profile", ...value }, context));
 const qualityMetricsSchema = z.object({
   checklistScore: finiteNonNegativeNumber.optional(),
   npsScore: z.number().finite().min(-100).max(100).optional(),
@@ -73,6 +109,18 @@ const dailyClosingDebtSchema = z.object({
   id: documentIdSchema,
   description: z.string().trim().min(1).max(200),
   amount: finiteMoney,
+  paidAt: z.string().datetime().optional(),
+}).strict();
+
+export const debtMutationSchema = z.object({
+  shopId: shopIdSchema,
+  date: isoDateSchema,
+  debtId: documentIdSchema,
+  expectedUpdatedAt: z.string().datetime(),
+  change: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("edit"), description: dailyClosingDebtSchema.shape.description, amount: finiteMoney }).strict(),
+    z.object({ kind: z.literal("payment"), paid: z.boolean() }).strict(),
+  ]),
 }).strict();
 
 const dailyClosingUnsubscribeEntrySchema = z.object({
@@ -148,6 +196,7 @@ export const shopSchema = z.object({
   metricSettings: metricSettingsSchema.optional(),
   metricOrder: metricOrderSchema.optional(),
   disabledMetrics: metricOrderSchema.optional(),
+  weightProfileId: weightProfileIdSchema.optional(),
   monthlyData: z.record(monthSchema, monthlyShopDataSchema).optional(),
   quarterSettings: z.record(
     z.string().regex(/^\d{4}-Q[1-4]$/),
@@ -186,7 +235,7 @@ export const bonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed"]),
+  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),

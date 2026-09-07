@@ -2,7 +2,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
-import { type Shop, type Supervisor, type PerformanceData, type Target, getInitialTargets } from '@/lib/types';
+import { type Shop, type Supervisor, type PerformanceData, type Target, type MetricWeightProfile, getInitialTargets } from '@/lib/types';
 import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSavePerformanceData, fetchPerformanceData, fetchPerformanceDataForMonth, fetchShopData, type ShopData } from '@/app/actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
@@ -13,6 +13,7 @@ type ShopContextType = {
   isAdmin: boolean;
   shops: Shop[];
   supervisors: Supervisor[];
+  weightProfiles: MetricWeightProfile[];
   selectedShop: Shop | null;
   setSelectedShop: (shop: Shop | null) => void;
   addShop: (shopName: string, description?: string) => Promise<void>;
@@ -36,6 +37,7 @@ const ShopContext = createContext<ShopContextType | undefined>(undefined);
 export function ShopProvider({ children, initialData, actor }: { children: React.ReactNode; initialData: ShopData; actor: AppActor }) {
   const [shops, setShops] = useState<Shop[]>(initialData.shops);
   const [supervisors, setSupervisors] = useState<Supervisor[]>(initialData.supervisors);
+  const [weightProfiles, setWeightProfiles] = useState<MetricWeightProfile[]>(initialData.weightProfiles);
   const [selectedShop, setSelectedShop] = useState<Shop | null>(initialData.shops[0] ?? null);
   const [allPerformanceData, setAllPerformanceData] = useState<Record<string, PerformanceData[]>>({});
   const [allMonthlyTargets, setAllMonthlyTargets] = useState<Record<string, Target>>(initialData.monthlyTargets);
@@ -54,6 +56,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
         const shop = data.shops.find(item => item.id === shopId);
         setShops(data.shops);
         setSupervisors(data.supervisors);
+        setWeightProfiles(data.weightProfiles);
         setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
         setAllMonthlyTargets(data.monthlyTargets);
         if (shop) setSelectedShop(shop);
@@ -103,10 +106,11 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   const loadInitialData = useCallback(async () => {
     setLoading(true);
     try {
-      const { shops, supervisors, monthlyTargets } = await fetchShopData();
+      const { shops, supervisors, weightProfiles, monthlyTargets } = await fetchShopData();
       
       setShops(shops);
       setSupervisors(supervisors);
+      setWeightProfiles(weightProfiles);
       setAllMonthlyTargets(monthlyTargets);
       
       setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
@@ -127,9 +131,10 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   }, [toast, t, selectedShop?.id, selectedDatasetId, loadPerformanceForShop, loadPerformanceMonth]);
 
   const refreshShopDirectory = useCallback(async () => {
-    const { shops, supervisors, monthlyTargets } = await fetchShopData();
+    const { shops, supervisors, weightProfiles, monthlyTargets } = await fetchShopData();
     setShops(shops);
     setSupervisors(supervisors);
+    setWeightProfiles(weightProfiles);
     setAllMonthlyTargets(monthlyTargets);
     setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
   }, []);
@@ -218,6 +223,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     isAdmin: actor.role === "admin",
     shops,
     supervisors,
+    weightProfiles,
     selectedShop: selectedShop,
     setSelectedShop: handleSetSelectedShop,
     addShop,
@@ -234,7 +240,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     reloadData: loadInitialData,
     selectedDatasetId,
     setSelectedDatasetId,
-  }), [actor, shops, supervisors, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, loading, refreshDataForShop, refreshShopDirectory, loadPerformanceForShop, loadPerformanceMonth, loadInitialData, selectedDatasetId]);
+  }), [actor, shops, supervisors, weightProfiles, selectedShop, addShop, updateShop, deleteShop, allPerformanceData, allMonthlyTargets, updatePerformanceData, loading, refreshDataForShop, refreshShopDirectory, loadPerformanceForShop, loadPerformanceMonth, loadInitialData, selectedDatasetId]);
   
   return (
     <ShopContext.Provider value={contextValue}>

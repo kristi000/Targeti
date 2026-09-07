@@ -13,13 +13,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { importTargetWorkbook, type ImportedShopData, type ImportedWorkbookData } from "@/lib/excel-import";
-import { EXCEL_METRIC_LABELS, getCustomMetricLabel } from "@/lib/metric-definitions";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   getQuarterKey,
   getMonthlyRepresentatives,
   getOverviewPerformanceData,
   type MetricSettings,
+  type MetricWeightProfile,
   type PerformanceData,
   type PerformanceMetric,
   type Shop,
@@ -33,9 +33,7 @@ type ReviewState = {
   reportMonth: string;
   asOfDate: string;
   includeInOverview: boolean;
-  metricOrder: PerformanceMetric[];
-  keptMetrics: Partial<Record<PerformanceMetric, boolean>>;
-  metricSettings: MetricSettings;
+  profileSelections: Record<number, string>;
   targetedRepresentatives: Record<string, boolean>;
   skippedRecords: number;
 };
@@ -71,23 +69,6 @@ function metricRecord(record: Partial<Record<PerformanceMetric, number>>, metric
   return Object.fromEntries(metrics.map(metric => [metric, Number(record[metric] ?? 0)])) as Target;
 }
 
-function getImportMetricSettings(
-  shop: Shop,
-  month: string,
-  quarter: string,
-  metrics: readonly PerformanceMetric[],
-  reviewedSettings: MetricSettings,
-) {
-  const savedSettings = shop.quarterSettings?.[quarter]?.metricSettings
-    ?? shop.monthlyData?.[month]?.metricSettings
-    ?? shop.metricSettings;
-
-  return Object.fromEntries(metrics.map(metric => [metric, {
-    label: reviewedSettings[metric]?.label?.trim(),
-    weight: savedSettings?.[metric]?.weight ?? reviewedSettings[metric]?.weight ?? 0,
-  }])) as MetricSettings;
-}
-
 function metricWeightTotal(settings: MetricSettings, metrics: readonly PerformanceMetric[]) {
   return metrics.reduce((total, metric) => total + Number(settings[metric]?.weight ?? 0), 0);
 }
@@ -116,7 +97,7 @@ export function ExcelImportDialog({
   onOpenChange,
   showTrigger = true,
 }: ExcelImportDialogProps) {
-  const { selectedShop, shops, allMonthlyTargets, allPerformanceData, loadPerformanceMonth, reloadData } = useShop();
+  const { selectedShop, shops, weightProfiles, allPerformanceData, loadPerformanceMonth, reloadData } = useShop();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +129,7 @@ export function ExcelImportDialog({
       const knownMetricSettings = {
         ...selectedShop?.metricSettings,
         ...Object.values(selectedShop?.quarterSettings ?? {}).reduce((settings, quarter) => ({ ...settings, ...quarter.metricSettings }), {} as MetricSettings),
+        ...weightProfiles.reduce((settings, profile) => ({ ...settings, ...profile.metricSettings }), {} as MetricSettings),
       };
       const customMetricLabels = Object.fromEntries(Object.entries(knownMetricSettings)
         .filter(([metric, setting]) => metric.startsWith("custom_") && setting?.label?.trim().toLocaleLowerCase() !== "mixmax")
@@ -178,25 +160,20 @@ export function ExcelImportDialog({
       await loadPerformanceMonth(reportMonth);
       const parsedDate = parseISO(date);
       const reportType = parsedDate.getDate() >= getDaysInMonth(parsedDate) ? "completedMonth" : "midMonth";
-      const savedQuarter = selectedShop?.quarterSettings?.[getQuarterKey(date)];
-      const metricOrder = Array.from(new Set([...(savedQuarter?.metricOrder ?? []), ...workbook.detectedMetrics]));
-      const keptMetrics = Object.fromEntries(metricOrder.map(metric => [metric, savedQuarter ? savedQuarter.metricOrder.includes(metric) : true]));
-      const metricSettings = metricOrder.reduce((settings, metric) => {
-        settings[metric] = {
-          label: savedQuarter?.metricSettings[metric]?.label
-            ?? selectedShop?.metricSettings?.[metric]?.label
-            ?? workbook.detectedMetricLabels[metric]
-            ?? (metric in EXCEL_METRIC_LABELS ? EXCEL_METRIC_LABELS[metric] : getCustomMetricLabel(metric)),
-          weight: savedQuarter?.metricSettings[metric]?.weight
-            ?? 0,
-        };
-        return settings;
-      }, {} as MetricSettings);
+      const profileSelections = Object.fromEntries(workbook.shops.map((imported, shopIndex) => {
+        const existingShop = restrictToSelectedShop && selectedShop
+          ? selectedShop
+          : shops.find(shop => normalizeName(shop.name) === normalizeName(imported.shopName));
+        const profileId = weightProfiles.some(profile => profile.id === existingShop?.weightProfileId)
+          ? existingShop!.weightProfileId!
+          : "";
+        return [shopIndex, profileId];
+      }));
       const targetedRepresentatives = Object.fromEntries(workbook.shops.flatMap((shop, shopIndex) =>
         shop.representatives.map(representative => [representativeKey(shopIndex, representative.id), true]),
       ));
 
-      setReview({ workbook, reportType, reportMonth, asOfDate: date, includeInOverview: true, metricOrder, keptMetrics, metricSettings, targetedRepresentatives, skippedRecords: ignoredShopCount });
+      setReview({ workbook, reportType, reportMonth, asOfDate: date, includeInOverview: true, profileSelections, targetedRepresentatives, skippedRecords: ignoredShopCount });
       setFileName(file.name);
     } catch (error) {
       toast({ variant: "destructive", title: "Import failed", description: error instanceof Error ? error.message : "The workbook could not be read." });
@@ -217,27 +194,20 @@ export function ExcelImportDialog({
     const errors: string[] = [];
     const warnings: string[] = [];
     warnings.push(...review.workbook.warnings);
-    const keptMetrics = review.metricOrder.filter(metric => review.keptMetrics[metric]);
-    review.metricOrder.filter(metric => review.keptMetrics[metric] && !review.workbook.detectedMetrics.includes(metric)).forEach(metric => {
-      warnings.push(`${review.metricSettings[metric]?.label ?? metric} is configured for this quarter but was not detected in the workbook.`);
-    });
     if (!/^\d{4}-\d{2}$/.test(review.reportMonth)) errors.push("Choose a valid reporting month.");
     if (review.reportType === "midMonth" && !review.asOfDate.startsWith(`${review.reportMonth}-`)) errors.push("The cutoff date must be inside the reporting month.");
-
-    if (!keptMetrics.length) errors.push("Keep at least one metric.");
-    const totalWeight = keptMetrics.reduce((sum, metric) => sum + Number(review.metricSettings[metric]?.weight ?? 0), 0);
-    if (Math.abs(totalWeight - 1) > 0.00001) errors.push(`Metric weights total ${(totalWeight * 100).toFixed(1)}%; they must total exactly 100%.`);
-    const labels = keptMetrics.map(metric => review.metricSettings[metric]?.label?.trim() ?? "");
-    if (labels.some(label => !label)) errors.push("Every metric needs a name.");
-    if (new Set(labels.map(normalizeName)).size !== labels.length) errors.push("Metric names must be unique.");
-    keptMetrics.forEach(metric => {
-      const weight = Number(review.metricSettings[metric]?.weight);
-      if (!isValidNumber(weight) || weight > 1) errors.push(`${review.metricSettings[metric]?.label ?? metric} has an invalid weight.`);
-    });
 
     const shopNames = review.workbook.shops.map(shop => normalizeName(shop.shopName));
     if (new Set(shopNames).size !== shopNames.length) errors.push("The workbook contains duplicate shop names.");
     review.workbook.shops.forEach((shop, shopIndex) => {
+      const profile = weightProfiles.find(item => item.id === review.profileSelections[shopIndex]);
+      if (!profile) {
+        errors.push(`${shop.shopName}: select a weight profile.`);
+        return;
+      }
+      const metrics = profile.metricOrder;
+      if (Math.abs(metricWeightTotal(profile.metricSettings, metrics) - 1) > 0.00001) errors.push(`${profile.name}: profile weights must total exactly 100%.`);
+      metrics.filter(metric => !review.workbook.detectedMetrics.includes(metric)).forEach(metric => warnings.push(`${shop.shopName}: ${profile.metricSettings[metric]?.label ?? metric} is in ${profile.name} but was not detected in the workbook.`));
       if (!shop.shopName.trim()) errors.push("Every shop needs a name.");
       if (!isValidNumber(shop.revenue)) errors.push(`${shop.shopName}: revenue must be zero or greater.`);
       if (shop.qualityMetrics?.checklistScore !== undefined && !isValidNumber(shop.qualityMetrics.checklistScore)) errors.push(`${shop.shopName}: checklist score is invalid.`);
@@ -252,8 +222,8 @@ export function ExcelImportDialog({
       const representativeNames = shop.representatives.map(rep => normalizeName(rep.name));
       if (new Set(representativeNames).size !== representativeNames.length) errors.push(`${shop.shopName}: representative names must be unique.`);
       if (!shop.representatives.some(rep => review.targetedRepresentatives[representativeKey(shopIndex, rep.id)])) errors.push(`${shop.shopName}: select at least one representative to receive targets.`);
-      keptMetrics.forEach(metric => {
-        const label = review.metricSettings[metric]?.label ?? metric;
+      metrics.forEach(metric => {
+        const label = profile.metricSettings[metric]?.label ?? metric;
         const target = Number(shop.targets[metric]);
         const actual = Number(shop.achievements[metric]);
         if (!isValidNumber(target) || !isValidNumber(actual)) errors.push(`${shop.shopName}: ${label} has an invalid target or achievement.`);
@@ -263,7 +233,7 @@ export function ExcelImportDialog({
       });
     });
     return { errors: Array.from(new Set(errors)), warnings: Array.from(new Set(warnings)) };
-  }, [review, restrictToSelectedShop, selectedShop, shops, allPerformanceData]);
+  }, [review, restrictToSelectedShop, selectedShop, shops, weightProfiles, allPerformanceData]);
 
   const applyImport = async () => {
     if (!review || validation.errors.length) return;
@@ -275,35 +245,13 @@ export function ExcelImportDialog({
       const importId = `excel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const reportDate = review.reportType === "completedMonth" ? monthEnd(review.reportMonth) : review.asOfDate;
       const quarterKey = getQuarterKey(reportDate);
-      const keptMetrics = review.metricOrder.filter(metric => review.keptMetrics[metric]);
-      const reviewedMetricSettings = keptMetrics.reduce((settings, metric) => {
-        settings[metric] = {
-          label: review.metricSettings[metric]?.label?.trim(),
-          weight: Number(review.metricSettings[metric]?.weight ?? 0),
-        };
-        return settings;
-      }, {} as MetricSettings);
-      const savedMetricSettingsByShopId = new Map<string, MetricSettings>();
-      review.workbook.shops.forEach(imported => {
-        const shop = restrictToSelectedShop && selectedShop
-          ? selectedShop
-          : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
-        if (!shop) return;
-        const settings = getImportMetricSettings(
-          shop,
-          review.reportMonth,
-          quarterKey,
-          keptMetrics,
-          reviewedMetricSettings,
-        );
-        if (Math.abs(metricWeightTotal(settings, keptMetrics) - 1) > 0.00001) {
-          throw new Error(`${shop.name}: the saved metric weights do not total 100%. Review this shop's metric configuration before importing.`);
-        }
-        savedMetricSettingsByShopId.set(shop.id, settings);
-      });
       const importChanges: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: import("@/lib/types").Shop | null; importedShop: import("@/lib/types").Shop }> = [];
 
       for (const [shopIndex, imported] of review.workbook.shops.entries()) {
+        const profile = weightProfiles.find(item => item.id === review.profileSelections[shopIndex]);
+        if (!profile) throw new Error(`${imported.shopName}: select a weight profile before importing.`);
+        const keptMetrics = profile.metricOrder;
+        const metricSettings = structuredClone(profile.metricSettings);
         let shop = restrictToSelectedShop && selectedShop
           ? selectedShop
           : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
@@ -317,8 +265,6 @@ export function ExcelImportDialog({
         if (!preparation.success) throw new Error(preparation.error);
         shop = { ...shop, hiddenSalesRepresentatives: preparation.hiddenSalesRepresentatives };
         const previousShop = existedBeforeImport ? structuredClone(shop) : null;
-        const metricSettings = savedMetricSettingsByShopId.get(shop.id) ?? reviewedMetricSettings;
-
         const targets = metricRecord(imported.targets, keptMetrics);
         const achievements = metricRecord(imported.achievements, keptMetrics);
         const hiddenSalesRepresentatives = hiddenRepresentativesForImport(
@@ -343,6 +289,7 @@ export function ExcelImportDialog({
         const collection = Number(imported.revenue);
         const updatedShop = {
           ...shop,
+          weightProfileId: profile.id,
           revenue: collection,
           monthlyTargets: targets,
           salesRepresentatives: reps,
@@ -412,8 +359,16 @@ export function ExcelImportDialog({
     setDragging(false);
     void readFile(event.dataTransfer.files[0]);
   };
-  const keptMetricOrder = review?.metricOrder.filter(metric => review.keptMetrics[metric]) ?? [];
-  const totalWeight = keptMetricOrder.reduce((sum, metric) => sum + Number(review?.metricSettings[metric]?.weight ?? 0), 0);
+  const selectedProfileFor = (shopIndex: number): MetricWeightProfile | undefined => weightProfiles.find(profile => profile.id === review?.profileSelections[shopIndex]);
+  const profileSummary = useMemo(() => {
+    if (!review) return [];
+    const counts = new Map<string, number>();
+    review.workbook.shops.forEach((_, index) => {
+      const name = selectedProfileFor(index)?.name ?? "Profile required";
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    });
+    return Array.from(counts.entries());
+  }, [review, weightProfiles]);
   const previewCounts = useMemo(() => {
     if (!review) return { created: 0, updated: 0, skipped: 0, invalid: 0 };
     const invalid = validation.errors.length ? review.workbook.shops.length : 0;
@@ -463,21 +418,18 @@ export function ExcelImportDialog({
           <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"><div><p className="text-sm font-medium">Show on main page</p><p className="text-xs text-muted-foreground">Otherwise shop pages only</p></div><Switch checked={review.includeInOverview} onCheckedChange={includeInOverview => setReview(current => current && { ...current, includeInOverview })} /></div>
         </div>
 
-        <section className="space-y-2">
-          <div className="flex items-end justify-between gap-3"><div><h3 className="font-semibold">Quarter metrics and weights</h3><p className="text-xs text-muted-foreground">{getQuarterKey(`${review.reportMonth}-01`)} · applies to all three months in this quarter</p></div><span className={`text-sm font-semibold ${Math.abs(totalWeight - 1) < 0.00001 ? "text-emerald-600" : "text-destructive"}`}>{(totalWeight * 100).toFixed(1)}%</span></div>
-          <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[700px] text-sm"><thead className="bg-muted/60"><tr><th className="w-24 px-3 py-2 text-left">Keep</th><th className="px-3 py-2 text-left">Detected metric</th><th className="w-44 px-3 py-2 text-right">Weight</th></tr></thead><tbody className="divide-y">{review.metricOrder.map(metric => {
-            const kept = Boolean(review.keptMetrics[metric]);
-            return <tr key={metric} className={kept ? "" : "bg-muted/30 text-muted-foreground"}><td className="px-3 py-2"><Switch checked={kept} aria-label={`Keep ${review.metricSettings[metric]?.label ?? metric}`} onCheckedChange={checked => setReview(current => current && { ...current, keptMetrics: { ...current.keptMetrics, [metric]: checked } })} /></td><td className="px-3 py-2"><Input disabled={!kept} value={review.metricSettings[metric]?.label ?? ""} onChange={event => setReview(current => current && { ...current, metricSettings: { ...current.metricSettings, [metric]: { ...current.metricSettings[metric], label: event.target.value } } })} /></td><td className="px-3 py-2"><div className="flex items-center gap-2"><Input disabled={!kept} className="text-right" type="number" min="0" max="100" step="0.1" value={Number(review.metricSettings[metric]?.weight ?? 0) * 100} onChange={event => setReview(current => current && { ...current, metricSettings: { ...current.metricSettings, [metric]: { ...current.metricSettings[metric], weight: Number(event.target.value) / 100 } } })} /><span>%</span></div></td></tr>;
-          })}</tbody></table></div>
+        <section className="space-y-2 rounded-lg border bg-muted/20 p-4">
+          <div><h3 className="font-semibold">Weight profiles</h3><p className="text-xs text-muted-foreground">Defaults were selected by shop for {getQuarterKey(`${review.reportMonth}-01`)}. Change a shop below only when this import should also change its future default.</p></div>
+          <div className="flex flex-wrap gap-2">{profileSummary.map(([name, count]) => <span key={name} className={`rounded-full border bg-background px-3 py-1 text-sm ${name === "Profile required" ? "border-destructive text-destructive" : ""}`}>{name}: {count} {count === 1 ? "shop" : "shops"}</span>)}</div>
         </section>
 
         <section className="space-y-2"><h3 className="font-semibold">Shop data</h3><Accordion type="multiple" defaultValue={review.workbook.shops.length === 1 ? ["shop-0"] : []} className="space-y-2">{review.workbook.shops.map((shop, shopIndex) => <AccordionItem key={`${shop.shopName}-${shopIndex}`} value={`shop-${shopIndex}`} className="rounded-md border px-3"><AccordionTrigger><span className="flex flex-1 items-center justify-between pr-3"><span>{shop.shopName}</span><span className="text-xs font-normal text-muted-foreground">{shop.representatives.length} representatives</span></span></AccordionTrigger><AccordionContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2"><Label className="grid gap-1.5">Shop name<Input value={shop.shopName} disabled={restrictToSelectedShop} onChange={event => updateShop(shopIndex, current => ({ ...current, shopName: event.target.value }))} /></Label><Label className="grid gap-1.5">Revenue<Input type="number" min="0" value={shop.revenue} onChange={event => updateShop(shopIndex, current => ({ ...current, revenue: Number(event.target.value) }))} /></Label></div>
+          <div className="grid gap-3 sm:grid-cols-3"><Label className="grid gap-1.5">Shop name<Input value={shop.shopName} disabled={restrictToSelectedShop} onChange={event => updateShop(shopIndex, current => ({ ...current, shopName: event.target.value }))} /></Label><Label className="grid gap-1.5">Revenue<Input type="number" min="0" value={shop.revenue} onChange={event => updateShop(shopIndex, current => ({ ...current, revenue: Number(event.target.value) }))} /></Label><Label className="grid gap-1.5">Weight profile<select className="h-10 rounded-md border bg-background px-3 text-sm" value={review.profileSelections[shopIndex] ?? ""} onChange={event => setReview(current => current && ({ ...current, profileSelections: { ...current.profileSelections, [shopIndex]: event.target.value } }))}><option value="">Select profile</option>{weightProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label></div>
           {shop.qualityMetrics && <div className="space-y-2 rounded-md border bg-muted/20 p-3"><div><p className="text-sm font-semibold">Quality indicators</p><p className="text-xs text-muted-foreground">Shown separately from weighted target metrics.</p></div><div className="grid gap-3 sm:grid-cols-3"><Label className="grid gap-1.5">Checklist score<Input type="number" min="0" value={shop.qualityMetrics.checklistScore ?? ""} onChange={event => updateShop(shopIndex, current => ({ ...current, qualityMetrics: { ...current.qualityMetrics, checklistScore: Number(event.target.value) } }))} /></Label><Label className="grid gap-1.5">NPS score<Input type="number" min="-100" max="100" value={shop.qualityMetrics.npsScore ?? ""} onChange={event => updateShop(shopIndex, current => ({ ...current, qualityMetrics: { ...current.qualityMetrics, npsScore: Number(event.target.value) } }))} /></Label><Label className="grid gap-1.5">NPS responses<Input type="number" min="0" value={shop.qualityMetrics.npsResponses ?? ""} onChange={event => updateShop(shopIndex, current => ({ ...current, qualityMetrics: { ...current.qualityMetrics, npsResponses: Number(event.target.value) } }))} /></Label></div></div>}
-          <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[700px] text-sm"><thead className="bg-muted/60"><tr><th className="px-3 py-2 text-left">Metric</th><th className="px-3 py-2 text-right">Target</th><th className="px-3 py-2 text-right">Shop achievement</th></tr></thead><tbody className="divide-y">{keptMetricOrder.map(metric => <tr key={metric}><td className="px-3 py-2 font-medium">{review.metricSettings[metric]?.label}</td><td className="px-3 py-2"><Input className="text-right" type="number" min="0" value={shop.targets[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, targets: { ...current.targets, [metric]: Number(event.target.value) } }))} /></td><td className="px-3 py-2"><Input className="text-right" type="number" min="0" value={shop.achievements[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, achievements: { ...current.achievements, [metric]: Number(event.target.value) } }))} /></td></tr>)}</tbody></table></div>
+          {selectedProfileFor(shopIndex) && <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[700px] text-sm"><thead className="bg-muted/60"><tr><th className="px-3 py-2 text-left">Metric</th><th className="w-28 px-3 py-2 text-right">Weight</th><th className="px-3 py-2 text-right">Target</th><th className="px-3 py-2 text-right">Shop achievement</th></tr></thead><tbody className="divide-y">{selectedProfileFor(shopIndex)!.metricOrder.map(metric => <tr key={metric}><td className="px-3 py-2 font-medium">{selectedProfileFor(shopIndex)!.metricSettings[metric]?.label ?? metric}</td><td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{(Number(selectedProfileFor(shopIndex)!.metricSettings[metric]?.weight ?? 0) * 100).toFixed(1)}%</td><td className="px-3 py-2"><Input className="text-right" type="number" min="0" value={shop.targets[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, targets: { ...current.targets, [metric]: Number(event.target.value) } }))} /></td><td className="px-3 py-2"><Input className="text-right" type="number" min="0" value={shop.achievements[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, achievements: { ...current.achievements, [metric]: Number(event.target.value) } }))} /></td></tr>)}</tbody></table></div>}
           <Accordion type="multiple" className="rounded-md border px-3"><AccordionItem value="representatives" className="border-0"><AccordionTrigger>Representative achievements and targets</AccordionTrigger><AccordionContent className="space-y-4">{shop.representatives.map((representative, representativeIndex) => {
             const targetKey = representativeKey(shopIndex, representative.id);
-            return <div key={representative.id} className="space-y-2 rounded-md border p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><Input className="max-w-sm font-medium" value={representative.name} onChange={event => updateShop(shopIndex, current => ({ ...current, representatives: current.representatives.map((rep, index) => index === representativeIndex ? { ...rep, name: event.target.value } : rep) }))} /><div className="flex items-center gap-2"><Switch checked={Boolean(review.targetedRepresentatives[targetKey])} onCheckedChange={checked => setReview(current => current && { ...current, targetedRepresentatives: { ...current.targetedRepresentatives, [targetKey]: checked } })} /><span className="text-sm">Receives an equal share of shop targets</span></div></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{keptMetricOrder.map(metric => <Label key={metric} className="grid gap-1 text-xs"><span className="truncate">{review.metricSettings[metric]?.label}</span><Input type="number" min="0" value={representative.achievements[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, representatives: current.representatives.map((rep, index) => index === representativeIndex ? { ...rep, achievements: { ...rep.achievements, [metric]: Number(event.target.value) } } : rep) }))} /></Label>)}</div></div>;
+            return <div key={representative.id} className="space-y-2 rounded-md border p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><Input className="max-w-sm font-medium" value={representative.name} onChange={event => updateShop(shopIndex, current => ({ ...current, representatives: current.representatives.map((rep, index) => index === representativeIndex ? { ...rep, name: event.target.value } : rep) }))} /><div className="flex items-center gap-2"><Switch checked={Boolean(review.targetedRepresentatives[targetKey])} onCheckedChange={checked => setReview(current => current && { ...current, targetedRepresentatives: { ...current.targetedRepresentatives, [targetKey]: checked } })} /><span className="text-sm">Receives an equal share of shop targets</span></div></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(selectedProfileFor(shopIndex)?.metricOrder ?? []).map(metric => <Label key={metric} className="grid gap-1 text-xs"><span className="truncate">{selectedProfileFor(shopIndex)?.metricSettings[metric]?.label ?? metric}</span><Input type="number" min="0" value={representative.achievements[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, representatives: current.representatives.map((rep, index) => index === representativeIndex ? { ...rep, achievements: { ...rep.achievements, [metric]: Number(event.target.value) } } : rep) }))} /></Label>)}</div></div>;
           })}</AccordionContent></AccordionItem></Accordion>
         </AccordionContent></AccordionItem>)}</Accordion></section>
 

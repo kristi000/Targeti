@@ -189,6 +189,15 @@ export type MetricSetting = {
 
 export type MetricSettings = Partial<Record<PerformanceMetric, MetricSetting>>;
 
+export type MetricWeightProfile = {
+  id: string;
+  name: string;
+  metricSettings: MetricSettings;
+  metricOrder: PerformanceMetric[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
 export type Shop = {
   id: string;
   name: string;
@@ -201,6 +210,7 @@ export type Shop = {
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
   disabledMetrics?: PerformanceMetric[];
+  weightProfileId?: string;
   monthlyData?: Record<string, MonthlyShopData>;
   quarterSettings?: Record<string, QuarterMetricSettings>;
 };
@@ -265,6 +275,10 @@ export type ActivityAction =
   | "representatives_hidden"
   | "representatives_unhidden"
   | "metric_deleted"
+  | "weight_profile_created"
+  | "weight_profile_edited"
+  | "weight_profile_deleted"
+  | "weight_profile_assignments_changed"
   | "daily_closing_saved"
   | "daily_closing_finalized"
   | "daily_closing_reopened"
@@ -289,6 +303,7 @@ export type DailyClosingDebt = {
   id: string;
   description: string;
   amount: number;
+  paidAt?: string;
 };
 
 export type DailyClosingUnsubscribeEntry = {
