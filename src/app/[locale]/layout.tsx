@@ -1,10 +1,6 @@
 import { getMessages, getLocale } from "next-intl/server";
-import { redirect } from "next/navigation";
 import { NextIntlClientProvider } from "next-intl";
-import { AppLayout } from "@/components/app-layout";
-import { ShopProvider } from "@/components/shop-provider";
-import { QueryProvider } from "@/components/query-provider";
-import { fetchAccessProfile, fetchShopData } from "@/app/actions";
+import { ClientApplication } from "@/components/client-application";
 
 type Props = {
   children: React.ReactNode;
@@ -22,29 +18,12 @@ export default async function LocaleLayout({
    try {
      messages = await getMessages({locale});
    } catch (error) {
-     redirect('/en');
-   }
-   let actor;
-   try {
-     actor = await fetchAccessProfile();
-   } catch {
-     redirect('/login');
-   }
-   let initialShopData;
-   try {
-     initialShopData = await fetchShopData();
-   } catch (error) {
-     console.error("Could not load application data:", error);
-     redirect('/login?error=database');
+     messages = await getMessages({ locale: "en" });
    }
 
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
-      <QueryProvider>
-        <ShopProvider initialData={initialShopData} actor={actor}>
-          <AppLayout>{children}</AppLayout>
-        </ShopProvider>
-      </QueryProvider>
+      <ClientApplication>{children}</ClientApplication>
     </NextIntlClientProvider>
   );
 }

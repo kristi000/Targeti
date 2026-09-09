@@ -1,34 +1,34 @@
-"use server";
+"use client";
 
-import { revalidateTag, unstable_cache } from "next/cache";
 import {
   addDoc,
   collection,
-  collectionGroup,
+  deleteDoc,
   deleteField,
   doc,
   documentId,
+  getDoc,
   getDocs,
   limit,
   orderBy,
   query,
   runTransaction,
+  setDoc,
   startAfter,
   updateDoc,
   where,
   writeBatch,
   type DocumentReference,
-} from "@/lib/firebase-admin";
-import { format, getDaysInMonth, parseISO, subMonths } from "date-fns";
+} from "firebase/firestore";
+import { format } from "date-fns";
 import { z } from "zod";
 
-import { adminDb as db } from "@/lib/firebase-admin";
-import { getCurrentActor, requireAdmin, requireEditor } from "@/lib/access";
-import { createManagedUser, listManagedUsers, managedRoleSchema, setManagedUserRole, usernameSchema } from "@/lib/local-auth";
+import { db } from "@/lib/firebase-client";
+import { getCurrentActor, requireAdmin, requireEditor } from "@/lib/client-access";
 import { getMetricWeight } from "@/lib/data";
 import { calculateDailyClosing, getDailyClosingMetricConfig } from "@/lib/daily-closing";
 import { closingMonthSchema, monthlyDebtsInputSchema, monthlyUnsubscribesInputSchema, type MonthlyCellSummary, type MonthlyClosingSummary, type MonthlyDebtsPage, type MonthlyUnsubscribesPage } from "@/lib/monthly-closing";
-import { calculateTotalAchievement } from "@/lib/utils";
+import { refreshDashboardSummaries } from "@/app/dashboard-actions";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   bonusSnapshotSchema,
@@ -51,7 +51,7 @@ import {
   targetSchema,
   weightProfileIdSchema,
 } from "@/lib/persistence-schemas";
-import { getInitialTargets, getOverviewPerformanceData, getPerformanceShopActuals, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type DailyClosing, type MetricSettings, type MetricWeightProfile, type PerformanceData, type PerformanceMetric, type RepPerformanceData, type Shop, type Supervisor, type Target } from "@/lib/types";
+import { getInitialTargets, getOverviewPerformanceData, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type DailyClosing, type MetricSettings, type MetricWeightProfile, type PerformanceData, type PerformanceMetric, type RepPerformanceData, type Shop, type Supervisor, type Target } from "@/lib/types";
 
 export type ShopData = {
   shops: Shop[];
@@ -59,12 +59,6 @@ export type ShopData = {
   weightProfiles: MetricWeightProfile[];
   monthlyTargets: Record<string, Target>;
 };
-
-const SHOP_DATA_CACHE_TAG = "shop-data";
-
-function invalidateShopData() {
-  revalidateTag(SHOP_DATA_CACHE_TAG);
-}
 
 function validationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? "Invalid data.";
@@ -127,7 +121,10 @@ async function savePerformanceData(shopId: string, data: PerformanceData[], useI
   });
 
   await batch.commit();
-  invalidateShopData();
+  await refreshDashboardSummaries({
+    shopIds: [validShopId],
+    months: [...new Set(validData.map(entry => entry.date.slice(0, 7)))],
+  });
   return validData;
 }
 
@@ -162,8 +159,8 @@ function parseDailyClosingDocument(id: string, value: unknown): DailyClosing | n
 }
 
 async function getClosingShop(shopId: string) {
-  const snapshot = await doc(db, "shops", shopId).get();
-  if (!snapshot.exists) throw new Error("SHOP_NOT_FOUND");
+  const snapshot = await getDoc(doc(db, "shops", shopId));
+  if (!snapshot.exists()) throw new Error("SHOP_NOT_FOUND");
   const parsed = shopSchema.safeParse({ id: snapshot.id, ...snapshot.data() });
   if (!parsed.success) throw new Error("INVALID_SHOP");
   return parsed.data as unknown as Shop;
@@ -198,7 +195,7 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
   let closing: DailyClosing | null = null;
   await runTransaction(db, async transaction => {
     const existingSnapshot = await transaction.get(reference);
-    const existing = existingSnapshot.exists ? parseDailyClosingDocument(existingSnapshot.id, existingSnapshot.data()) : null;
+    const existing = existingSnapshot.exists() ? parseDailyClosingDocument(existingSnapshot.id, existingSnapshot.data()) : null;
     if (existing?.status === "finalized") throw new Error("CLOSING_FINALIZED");
     if ((existing?.updatedAt ?? null) !== value.expectedUpdatedAt) throw new Error("CLOSING_CONFLICT");
     const existingCell = existing?.cell ?? { amount: 0, note: "" };
@@ -241,8 +238,8 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
 export async function fetchDailyClosing(shopId: string, date: string): Promise<DailyClosing | null> {
   await getCurrentActor();
   const value = dailyClosingInputSchema.pick({ shopId: true, date: true }).parse({ shopId, date });
-  const snapshot = await doc(db, "shops", value.shopId, "dailyClosings", value.date).get();
-  return snapshot.exists ? parseDailyClosingDocument(snapshot.id, snapshot.data()) : null;
+  const snapshot = await getDoc(doc(db, "shops", value.shopId, "dailyClosings", value.date));
+  return snapshot.exists() ? parseDailyClosingDocument(snapshot.id, snapshot.data()) : null;
 }
 
 async function loadMonthlyClosings(shopId: string, month: string) {
@@ -370,7 +367,7 @@ export async function handleUpdateDebt(input: z.infer<typeof debtMutationSchema>
     const reference = doc(db, "shops", value.shopId, "dailyClosings", value.date);
     await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(reference);
-      const closing = snapshot.exists ? parseDailyClosingDocument(snapshot.id, snapshot.data()) : null;
+      const closing = snapshot.exists() ? parseDailyClosingDocument(snapshot.id, snapshot.data()) : null;
       if (!closing) throw new Error("DEBT_NOT_FOUND");
       if (closing.updatedAt !== value.expectedUpdatedAt) throw new Error("DEBT_CONFLICT");
       const debt = closing.debts.find(entry => entry.id === value.debtId);
@@ -473,7 +470,7 @@ export async function handleReopenDailyClosing(shopId: string, date: string) {
     const shop = await getClosingShop(value.shopId);
     const reopened = await runTransaction(db, async transaction => {
       const snapshot = await transaction.get(reference);
-      const existing = snapshot.exists ? parseDailyClosingDocument(snapshot.id, snapshot.data()) : null;
+      const existing = snapshot.exists() ? parseDailyClosingDocument(snapshot.id, snapshot.data()) : null;
       if (!existing) throw new Error("CLOSING_NOT_FOUND");
       if (existing.status !== "finalized") return existing;
       const updated = dailyClosingSchema.parse({
@@ -556,7 +553,7 @@ export async function handleSaveAchievementOverrides(shopId: string, month: stri
         },
       };
       const { id: _id, ...documentData } = performanceDataSchema.parse(nextReport) as unknown as PerformanceData;
-      await importedReport.reference.set(toFirestoreData(documentData));
+      await setDoc(importedReport.reference, toFirestoreData(documentData));
     } else {
       const manualReport: PerformanceData = {
         id: `${input.month}-01`,
@@ -565,8 +562,10 @@ export async function handleSaveAchievementOverrides(shopId: string, month: stri
         shopActuals: sumRepresentativeAchievements(input.reps),
       };
       const { id: _id, ...documentData } = performanceDataSchema.parse(manualReport) as unknown as PerformanceData;
-      await doc(db, "shops", input.shopId, "performance", manualReport.id!).set(toFirestoreData(documentData));
+      await setDoc(doc(db, "shops", input.shopId, "performance", manualReport.id!), toFirestoreData(documentData));
     }
+
+    await refreshDashboardSummaries({ shopIds: [input.shopId], months: [input.month] });
 
     const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", input.shopId), limit(1)))).docs[0];
     const shopName = String(shopDocument?.data().name ?? input.shopId);
@@ -577,7 +576,6 @@ export async function handleSaveAchievementOverrides(shopId: string, month: stri
       shopNames: [shopName],
       metadata: { month: input.month, importedOverride: Boolean(importedReport) },
     });
-    invalidateShopData();
     return { success: true as const };
   } catch (error) {
     return { success: false as const, error: mutationError("save achievement changes", error) };
@@ -590,20 +588,21 @@ export async function handleRevertAchievementOverrides(shopId: string, performan
     const validShopId = shopIdSchema.parse(shopId);
     const validPerformanceId = shopIdSchema.parse(performanceId);
     const reference = doc(db, "shops", validShopId, "performance", validPerformanceId);
-    const snapshot = await reference.get();
-    const parsed = snapshot.exists
+    const snapshot = await getDoc(reference);
+    const parsed = snapshot.exists()
       ? performanceDataSchema.safeParse({ id: snapshot.id, ...snapshot.data() })
       : null;
     if (!parsed?.success || !parsed.data.achievementOverride) throw new Error("OVERRIDE_NOT_FOUND");
     const report = parsed.data as unknown as PerformanceData;
     const original = report.achievementOverride!;
-    await reference.update({
+    await updateDoc(reference, {
       reps: toFirestoreData(original.originalReps),
       shopActuals: original.originalShopActuals
         ? toFirestoreData(original.originalShopActuals)
         : deleteField(),
       achievementOverride: deleteField(),
     });
+    await refreshDashboardSummaries({ shopIds: [validShopId], months: [report.date.slice(0, 7)] });
 
     const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShopId), limit(1)))).docs[0];
     const shopName = String(shopDocument?.data().name ?? validShopId);
@@ -614,7 +613,6 @@ export async function handleRevertAchievementOverrides(shopId: string, performan
       shopNames: [shopName],
       metadata: { month: report.date.slice(0, 7), performanceId: validPerformanceId },
     });
-    invalidateShopData();
     return { success: true as const };
   } catch (error) {
     if (error instanceof Error && error.message === "OVERRIDE_NOT_FOUND") {
@@ -632,7 +630,7 @@ export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot)
     const snapshotRef = doc(db, "shops", validShopId, "bonusSnapshots", validSnapshot.month);
 
     await runTransaction(db, async transaction => {
-      if ((await transaction.get(snapshotRef)).exists) throw new Error("ALREADY_FINALIZED");
+      if ((await transaction.get(snapshotRef)).exists()) throw new Error("ALREADY_FINALIZED");
       transaction.set(snapshotRef, toFirestoreData(validSnapshot));
     });
 
@@ -649,8 +647,8 @@ export async function fetchBonusSnapshot(shopId: string, month: string): Promise
   await getCurrentActor();
   const validShopId = shopIdSchema.parse(shopId);
   const validMonth = monthSchema.parse(month);
-  const snapshot = await doc(db, "shops", validShopId, "bonusSnapshots", validMonth).get();
-  if (!snapshot.exists) return null;
+  const snapshot = await getDoc(doc(db, "shops", validShopId, "bonusSnapshots", validMonth));
+  if (!snapshot.exists()) return null;
   const result = bonusSnapshotSchema.safeParse(snapshot.data());
   if (result.success) return result.data as BonusSnapshot;
   console.error(`Ignoring invalid bonus snapshot ${snapshot.ref.path}:`, result.error.flatten());
@@ -670,8 +668,8 @@ export async function handleAddShop(shopName: string, description?: string) {
       createdAt: new Date().toISOString(),
     };
     const document = await addDoc(collection(db, "shops"), toFirestoreData(shopData));
+    await refreshDashboardSummaries({ shopIds: [document.id] });
     await recordActivity({ action: "shop_created", summary: `Created shop ${shopData.name}.`, shopIds: [document.id], shopNames: [shopData.name] });
-    invalidateShopData();
 
     return {
       success: true as const,
@@ -693,8 +691,8 @@ export async function handleUpdateShop(shop: Shop) {
     }
     const { id, ...shopData } = validShop;
     await updateDoc(doc(db, "shops", id), toFirestoreData(shopData));
+    await refreshDashboardSummaries({ shopIds: [id] });
     await recordActivity({ action: "shop_edited", summary: `Edited shop ${validShop.name}.`, shopIds: [id], shopNames: [validShop.name] });
-    invalidateShopData();
     return { success: true as const, data: validShop };
   } catch (error) {
     return { success: false as const, error: mutationError("update the shop", error) };
@@ -713,7 +711,6 @@ export async function handleCreateWeightProfile(profile: Omit<MetricWeightProfil
     const data = { ...input, createdAt: now, updatedAt: now };
     const document = await addDoc(collection(db, "weightProfiles"), toFirestoreData(data));
     await recordActivity({ action: "weight_profile_created", summary: `Created weight profile ${input.name}.`, shopIds: [], shopNames: [] });
-    invalidateShopData();
     return { success: true as const, data: { id: document.id, ...data } as MetricWeightProfile };
   } catch (error) {
     if (error instanceof Error && error.message === "PROFILE_NAME_EXISTS") return { success: false as const, error: "A profile with this name already exists." };
@@ -730,11 +727,10 @@ export async function handleUpdateWeightProfile(profile: MetricWeightProfile) {
       throw new Error("PROFILE_NAME_EXISTS");
     }
     const reference = doc(db, "weightProfiles", input.id);
-    if (!(await reference.get()).exists) throw new Error("PROFILE_NOT_FOUND");
+    if (!(await getDoc(reference)).exists()) throw new Error("PROFILE_NOT_FOUND");
     const { id, ...data } = input;
-    await reference.set(toFirestoreData(data));
+    await setDoc(reference, toFirestoreData(data));
     await recordActivity({ action: "weight_profile_edited", summary: `Edited weight profile ${input.name}.`, shopIds: [], shopNames: [] });
-    invalidateShopData();
     return { success: true as const, data: input };
   } catch (error) {
     if (error instanceof Error && error.message === "PROFILE_NAME_EXISTS") return { success: false as const, error: "A profile with this name already exists." };
@@ -748,15 +744,14 @@ export async function handleDeleteWeightProfile(profileId: string) {
     await requireAdmin();
     const id = weightProfileIdSchema.parse(profileId);
     const [profileDocument, assignedShops] = await Promise.all([
-      doc(db, "weightProfiles", id).get(),
+      getDoc(doc(db, "weightProfiles", id)),
       getDocs(query(collection(db, "shops"), where("weightProfileId", "==", id), limit(1))),
     ]);
-    if (!profileDocument.exists) throw new Error("PROFILE_NOT_FOUND");
+    if (!profileDocument.exists()) throw new Error("PROFILE_NOT_FOUND");
     if (!assignedShops.empty) throw new Error("PROFILE_ASSIGNED");
     const name = String(profileDocument.data()?.name ?? "profile");
-    await profileDocument.ref.delete();
+    await deleteDoc(profileDocument.ref);
     await recordActivity({ action: "weight_profile_deleted", summary: `Deleted weight profile ${name}.`, shopIds: [], shopNames: [] });
-    invalidateShopData();
     return { success: true as const };
   } catch (error) {
     if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") return { success: false as const, error: "The weight profile no longer exists." };
@@ -771,15 +766,16 @@ export async function handleAssignWeightProfile(profileId: string, shopIds: stri
     const id = weightProfileIdSchema.parse(profileId);
     const selectedIds = new Set(z.array(shopIdSchema).min(1).max(500).parse(shopIds));
     const [profileDocument, shopsSnapshot] = await Promise.all([
-      doc(db, "weightProfiles", id).get(),
+      getDoc(doc(db, "weightProfiles", id)),
       getDocs(collection(db, "shops")),
     ]);
-    if (!profileDocument.exists) throw new Error("PROFILE_NOT_FOUND");
+    if (!profileDocument.exists()) throw new Error("PROFILE_NOT_FOUND");
     const selectedShops = shopsSnapshot.docs.filter(document => selectedIds.has(document.id));
     if (selectedShops.length !== selectedIds.size) throw new Error("SHOP_NOT_FOUND");
     const batch = writeBatch(db);
     selectedShops.forEach(document => batch.update(document.ref, { weightProfileId: id }));
     await batch.commit();
+    await refreshDashboardSummaries({ shopIds: selectedShops.map(document => document.id) });
     await recordActivity({
       action: "weight_profile_assignments_changed",
       summary: `Assigned ${String(profileDocument.data()?.name ?? "weight profile")} to ${selectedShops.length} shops.`,
@@ -787,7 +783,6 @@ export async function handleAssignWeightProfile(profileId: string, shopIds: stri
       shopNames: selectedShops.map(document => String(document.data().name ?? document.id)),
       metadata: { profileId: id, shopCount: selectedShops.length },
     });
-    invalidateShopData();
     return { success: true as const, count: selectedShops.length };
   } catch (error) {
     if (error instanceof Error && error.message === "PROFILE_NOT_FOUND") return { success: false as const, error: "The weight profile no longer exists." };
@@ -837,7 +832,6 @@ export async function handlePrepareRepresentativeImport(shopId: string) {
     const hiddenSalesRepresentatives = Array.from(hiddenById.values());
     if (hiddenSalesRepresentatives.length !== (shop.hiddenSalesRepresentatives ?? []).length) {
       await updateDoc(doc(db, "shops", validShopId), { hiddenSalesRepresentatives: toFirestoreData(hiddenSalesRepresentatives) });
-      invalidateShopData();
     }
     return { success: true as const, hiddenSalesRepresentatives };
   } catch (error) {
@@ -928,7 +922,6 @@ export async function handleHideRepresentatives(month: string, representatives: 
       shopNames: updatedShops.map(shop => shop.name),
       metadata: { month: input.month, representativeCount: hiddenCount, shopCount: updatedShops.length },
     });
-    invalidateShopData();
     return { success: true as const, count: hiddenCount, shops: updatedShops.length };
   } catch (error) {
     if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more shops no longer exist." };
@@ -1021,7 +1014,6 @@ export async function handleUnhideRepresentatives(month: string, representatives
       shopNames: updatedShops.map(shop => shop.name),
       metadata: { month: input.month, representativeCount: unhiddenCount, shopCount: updatedShops.length },
     });
-    invalidateShopData();
     return { success: true as const, count: unhiddenCount, shops: updatedShops.length };
   } catch (error) {
     if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more shops no longer exist." };
@@ -1044,7 +1036,6 @@ export async function handleAddSupervisor(name: string) {
     const document = await addDoc(collection(db, "supervisors"), input);
     const supervisor = { id: document.id, name: input.name } satisfies Supervisor;
     await recordActivity({ action: "supervisor_created", summary: `Created supervisor ${supervisor.name}.`, shopIds: [], shopNames: [], metadata: { supervisorId: supervisor.id } });
-    invalidateShopData();
     return { success: true as const, data: supervisor };
   } catch (error) {
     if (error instanceof Error && error.message === "DUPLICATE_SUPERVISOR") return { success: false as const, error: "A supervisor with this name already exists." };
@@ -1058,8 +1049,9 @@ export async function handleUpdateSupervisor(supervisor: Supervisor) {
     const validSupervisor = supervisorSchema.parse(supervisor) as Supervisor;
     if (await supervisorNameExists(validSupervisor.name, validSupervisor.id)) throw new Error("DUPLICATE_SUPERVISOR");
     await updateDoc(doc(db, "supervisors", validSupervisor.id), { name: validSupervisor.name });
+    const assignedShops = await getDocs(query(collection(db, "shops"), where("supervisorId", "==", validSupervisor.id)));
+    if (!assignedShops.empty) await refreshDashboardSummaries({ shopIds: assignedShops.docs.map(document => document.id) });
     await recordActivity({ action: "supervisor_edited", summary: `Renamed supervisor to ${validSupervisor.name}.`, shopIds: [], shopNames: [], metadata: { supervisorId: validSupervisor.id } });
-    invalidateShopData();
     return { success: true as const, data: validSupervisor };
   } catch (error) {
     if (error instanceof Error && error.message === "DUPLICATE_SUPERVISOR") return { success: false as const, error: "A supervisor with this name already exists." };
@@ -1087,10 +1079,10 @@ export async function handleAssignSupervisor(supervisorId: string, shopIds: stri
       }));
       await batch.commit();
     }
+    if (changedDocuments.length) await refreshDashboardSummaries({ shopIds: changedDocuments.map(document => document.id) });
     const selectedShops = shopsSnapshot.docs.filter(document => selectedIds.has(document.id));
     const supervisorName = String(supervisorDocument.docs[0].data().name ?? validSupervisorId);
     await recordActivity({ action: "supervisor_assignments_changed", summary: `Assigned ${selectedShops.length} shop(s) to ${supervisorName}.`, shopIds: selectedShops.map(document => document.id), shopNames: selectedShops.map(document => String(document.data().name ?? document.id)), metadata: { supervisorId: validSupervisorId, shopCount: selectedShops.length } });
-    invalidateShopData();
     return { success: true as const, count: selectedShops.length };
   } catch (error) {
     if (error instanceof Error && error.message === "SUPERVISOR_NOT_FOUND") return { success: false as const, error: "The supervisor no longer exists." };
@@ -1114,10 +1106,10 @@ export async function handleDeleteSupervisor(supervisorId: string) {
       assignedShops.docs.slice(start, start + 450).forEach(document => batch.update(document.ref, { supervisorId: deleteField() }));
       await batch.commit();
     }
-    await supervisorDocument.ref.delete();
+    await deleteDoc(supervisorDocument.ref);
+    if (!assignedShops.empty) await refreshDashboardSummaries({ shopIds: assignedShops.docs.map(document => document.id) });
     const supervisorName = String(supervisorDocument.data().name ?? validSupervisorId);
     await recordActivity({ action: "supervisor_deleted", summary: `Deleted supervisor ${supervisorName} and unassigned ${assignedShops.size} shop(s).`, shopIds: assignedShops.docs.map(document => document.id), shopNames: assignedShops.docs.map(document => String(document.data().name ?? document.id)), metadata: { supervisorId: validSupervisorId, shopCount: assignedShops.size } });
-    invalidateShopData();
     return { success: true as const };
   } catch (error) {
     if (error instanceof Error && error.message === "SUPERVISOR_NOT_FOUND") return { success: false as const, error: "The supervisor no longer exists." };
@@ -1147,9 +1139,9 @@ export async function handleDeleteShop(shopId: string) {
       childReferences.slice(start, start + 450).forEach(reference => batch.delete(reference));
       await batch.commit();
     }
-    await shopRef.delete();
+    await deleteDoc(shopRef);
+    await refreshDashboardSummaries({ shopIds: [validShopId] });
     await recordActivity({ action: "shop_deleted", summary: `Deleted shop ${shopName}.`, shopIds: [validShopId], shopNames: [shopName] });
-    invalidateShopData();
     return { success: true as const };
   } catch (error) {
     return { success: false as const, error: mutationError("delete the shop", error) };
@@ -1180,8 +1172,8 @@ export async function handleClearAllData() {
       references.slice(start, start + 450).forEach(reference => batch.delete(reference));
       await batch.commit();
     }
+    if (!shops.empty) await refreshDashboardSummaries({ shopIds: shops.docs.map(document => document.id) });
     await recordActivity({ action: "all_data_deleted", summary: `Deleted all application data (${shops.size} shops).`, shopIds: shops.docs.map(item => item.id), shopNames: shops.docs.map(item => String(item.data().name ?? item.id)), metadata: { shopCount: shops.size } });
-    invalidateShopData();
     return { success: true as const };
   } catch (error) {
     return { success: false as const, error: mutationError("clear application data", error) };
@@ -1244,7 +1236,7 @@ export async function handleApplyMetricWeightsToShops(month: string, weights: Re
     });
 
     await batch.commit();
-    invalidateShopData();
+    await refreshDashboardSummaries({ shopIds: selectedDocuments.map(document => document.id), months: [input.month] });
     return { success: true as const, count: selectedDocuments.length };
   } catch (error) {
     return { success: false as const, error: mutationError("apply metric weights to the selected shops", error) };
@@ -1326,7 +1318,7 @@ export async function handleRemoveMetricFromShops(metric: string, shopIds: strin
       writes.slice(start, start + 450).forEach(write => batch.set(write.reference, write.data));
       await batch.commit();
     }
-    invalidateShopData();
+    await refreshDashboardSummaries({ shopIds: selectedDocuments.map(document => document.id) });
     await recordActivity({ action: "metric_deleted", summary: `Removed metric ${validMetric} from ${selectedDocuments.length} shop(s).`, shopIds: selectedDocuments.map(item => item.id), shopNames: selectedDocuments.map(item => String(item.data().name ?? item.id)), metadata: { metric: validMetric, shopCount: selectedDocuments.length } });
     return { success: true as const, shops: selectedDocuments.length };
   } catch (error) {
@@ -1367,7 +1359,7 @@ export async function handleRestoreMetricToShops(metric: string, shopIds: string
       writes.slice(start, start + 450).forEach(write => batch.set(write.reference, write.data));
       await batch.commit();
     }
-    invalidateShopData();
+    await refreshDashboardSummaries({ shopIds: selectedDocuments.map(document => document.id) });
     return { success: true as const, shops: selectedDocuments.length };
   } catch (error) {
     return { success: false as const, error: mutationError("restore the metric for the selected shops", error) };
@@ -1415,50 +1407,7 @@ export async function fetchPerformanceData(shopId: string): Promise<PerformanceD
   }).sort((left, right) => left.date.localeCompare(right.date));
 }
 
-async function fetchPerformanceDocuments(startDate: string, endDate: string) {
-  try {
-    const snapshot = await getDocs(query(
-      collectionGroup(db, "performance"),
-      where("date", ">=", startDate),
-      where("date", "<=", endDate),
-      orderBy("date", "asc"),
-    ));
-    return snapshot.docs;
-  } catch (error) {
-    console.warn("The optimized performance collection-group query is unavailable; using per-shop queries temporarily.", error);
-    const shops = await getDocs(collection(db, "shops"));
-    const snapshots = await Promise.all(shops.docs.map(shop => getDocs(
-      collection(db, "shops", shop.id, "performance"),
-    )));
-    return snapshots
-      .flatMap(snapshot => snapshot.docs)
-      .filter(document => {
-        const date = String(document.data().date ?? "");
-        return date >= startDate && date <= endDate;
-      })
-      .sort((left, right) => String(left.data().date ?? "").localeCompare(String(right.data().date ?? "")));
-  }
-}
-
-export async function fetchPerformanceDataForMonth(month: string): Promise<Record<string, PerformanceData[]>> {
-  await getCurrentActor();
-  const validMonth = monthSchema.parse(month);
-  const documents = await fetchPerformanceDocuments(`${validMonth}-01`, `${validMonth}-31`);
-  const performanceData: Record<string, PerformanceData[]> = {};
-  documents.forEach(document => {
-    const shopId = document.ref.parent.parent?.id;
-    if (!shopId) return;
-    const result = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
-    if (!result.success) {
-      console.error(`Ignoring invalid performance document ${document.ref.path}:`, result.error.flatten());
-      return;
-    }
-    (performanceData[shopId] ??= []).push(result.data as unknown as PerformanceData);
-  });
-  return performanceData;
-}
-
-const loadShopData = unstable_cache(async (): Promise<ShopData> => {
+async function loadShopData(): Promise<ShopData> {
   const [shops, supervisors, weightProfiles] = await Promise.all([
     loadShops(),
     loadSupervisors(),
@@ -1473,64 +1422,11 @@ const loadShopData = unstable_cache(async (): Promise<ShopData> => {
       shops.flatMap(shop => shop.monthlyTargets ? [[shop.id, shop.monthlyTargets] as const] : []),
     ),
   };
-}, [SHOP_DATA_CACHE_TAG], { revalidate: 60, tags: [SHOP_DATA_CACHE_TAG] });
+}
 
 export async function fetchShopData(): Promise<ShopData> {
   await getCurrentActor();
   return loadShopData();
-}
-
-export async function fetchAccessProfile() {
-  return getCurrentActor();
-}
-
-export type AuthUser = {
-  id: string;
-  username: string;
-  name: string;
-  role: "admin" | "editor" | "viewer";
-  lastSignInAt: string | null;
-};
-
-export async function fetchAuthUsers(): Promise<AuthUser[]> {
-  await requireAdmin();
-  const users = await listManagedUsers();
-  return [
-    { id: "local-admin", username: "admin", name: "@Kristi", role: "admin", lastSignInAt: null },
-    ...users.map(user => ({ id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt })),
-  ];
-}
-
-const createAuthUserSchema = z.object({
-  username: usernameSchema,
-  name: z.string().trim().min(1).max(120),
-  password: z.string().min(2).max(128),
-  role: managedRoleSchema,
-}).strict();
-
-export async function handleCreateAuthUser(input: { username: string; name: string; password: string; role: "editor" | "viewer" }) {
-  try {
-    await requireAdmin();
-    const user = await createManagedUser(createAuthUserSchema.parse(input));
-    await recordActivity({ action: "user_created", summary: `Created ${user.role} profile ${user.username}.`, shopIds: [], shopNames: [], metadata: { userId: user.id, role: user.role } });
-    return { success: true as const, user: { id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt } satisfies AuthUser };
-  } catch (error) {
-    if (error instanceof Error && error.message === "USERNAME_TAKEN") return { success: false as const, error: "That username is already in use." };
-    return { success: false as const, error: mutationError("create the user profile", error) };
-  }
-}
-
-export async function handleSetUserRole(userId: string, role: "editor" | "viewer") {
-  try {
-    await requireAdmin();
-    const validUserId = z.string().uuid().parse(userId);
-    const validRole = managedRoleSchema.parse(role);
-    const user = await setManagedUserRole(validUserId, validRole);
-    await recordActivity({ action: "user_role_changed", summary: `Changed ${user.username} to ${validRole}.`, shopIds: [], shopNames: [], metadata: { userId: validUserId, role: validRole } });
-    return { success: true as const, role: validRole };
-  } catch (error) {
-    return { success: false as const, error: mutationError("change the user role", error) };
-  }
 }
 
 const activityCursorSchema = z.object({ occurredAt: z.string().datetime({ offset: true }), id: shopIdSchema }).optional();
@@ -1552,48 +1448,6 @@ export async function fetchActivityPage(cursor?: { occurredAt: string; id: strin
     nextCursor: hasMore && last ? { occurredAt: String(last.data().occurredAt), id: last.id } : null,
   };
 }
-
-export type DashboardCursor = { name: string; id: string };
-export type DashboardSortKey = "shop" | "achievement" | "forecast" | "revenue";
-export type DashboardRow = {
-  shop: Shop;
-  revenue: number;
-  totalAchievement: number;
-  forecastAchievement: number | null;
-  isFinal: boolean;
-  hasData: boolean;
-  previousAchievement: number | null;
-  previousRevenue: number | null;
-};
-export type DashboardSupervisorRow = {
-  id: string;
-  name: string;
-  shopCount: number;
-  activeShops: number;
-  shopsAtTarget: number;
-  averageAchievement: number;
-  forecastAchievement: number | null;
-  revenue: number;
-};
-export type DashboardSummary = {
-  average: number;
-  forecast: number | null;
-  revenue: number;
-  previousAverage: number | null;
-  previousRevenue: number | null;
-  allFinal: boolean;
-  activeShops: number;
-  shopsAtTarget: number;
-};
-
-const dashboardPageSchema = z.object({
-  month: monthSchema,
-  search: z.string().trim().max(120).default(""),
-  pageSize: z.number().int().min(5).max(50),
-  cursor: z.object({ name: z.string().min(1).max(120), id: shopIdSchema }).nullable().optional(),
-  sortBy: z.enum(["shop", "achievement", "forecast", "revenue"]).default("shop"),
-  sortDirection: z.enum(["asc", "desc"]).default("asc"),
-});
 
 const importChangeSchema = z.object({
   shopId: shopIdSchema,
@@ -1622,6 +1476,7 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     batch.set(doc(db, "imports", validImportId), toFirestoreData(value));
     validChanges.forEach(change => batch.set(doc(db, "imports", validImportId, "changes", change.shopId), toFirestoreData(change)));
     await batch.commit();
+    await refreshDashboardSummaries({ shopIds: validChanges.map(change => change.shopId), months: [validMonth] });
     await recordActivity({
       action: "excel_imported",
       summary: `Imported ${validFileName} for ${validChanges.length} shop(s).`,
@@ -1686,7 +1541,7 @@ export async function fetchImportHistoryPage(cursor?: { createdAt: string; id: s
 }
 
 async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)["docs"][number]) {
-    const data = importDocument.data();
+    const data = importDocument.data() as Record<string, unknown>;
     const changeSnapshot = await getDocs(collection(db, "imports", importDocument.id, "changes"));
     const changes = z.array(importChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data())) as Array<z.infer<typeof importChangeSchema>>;
     const currentShops = await Promise.all(changes.map(change => getDocs(query(collection(db, "shops"), where(documentId(), "==", change.shopId), limit(1)))));
@@ -1710,7 +1565,7 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
     });
     batch.update(importDocument.ref, { status: "undone", undoneAt: new Date().toISOString(), undoneBy: await getCurrentActor() });
     await batch.commit();
-    invalidateShopData();
+    await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [monthSchema.parse(data.month)] });
     await recordActivity({
       action: "excel_import_undone",
       summary: `Undid import ${String(data.fileName ?? importDocument.id)}.`,
@@ -1767,7 +1622,7 @@ export async function handleRemoveImport(importId: string) {
     changes.forEach(change => batch.delete(doc(db, "shops", change.shopId, "performance", change.performanceId)));
     batch.update(importDocument.ref, { status: "removed", removedAt: new Date().toISOString(), removedBy: await getCurrentActor() });
     await batch.commit();
-    invalidateShopData();
+    await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month] });
     await recordActivity({
       action: "excel_import_removed",
       summary: `Removed stored import ${String(data.fileName ?? importDocument.id)}.`,
@@ -1798,22 +1653,6 @@ export async function handleUndoLatestImport() {
   }
 }
 
-function performanceSummary(shop: Shop, entries: PerformanceData[]) {
-  const active = getOverviewPerformanceData(entries);
-  const report = active.at(-1);
-  const targets = report?.targets ?? shop.monthlyData?.[report?.date.slice(0, 7) ?? ""]?.targets ?? shop.monthlyTargets;
-  if (!report || !targets) return { achievement: null, revenue: null, forecast: null, isFinal: false };
-  const monthData = shop.monthlyData?.[report.date.slice(0, 7)];
-  const settings = monthData?.metricSettings ?? shop.metricSettings;
-  const metrics = getShopMetrics({ ...shop, metricSettings: settings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, targets);
-  const actuals = getPerformanceShopActuals(active, metrics);
-  const achievement = calculateTotalAchievement(actuals, targets, settings);
-  const isFinal = report.reportType === "completedMonth";
-  const reportedDate = parseISO(report.asOfDate ?? report.date);
-  const forecast = isFinal ? null : achievement / Math.max(reportedDate.getDate(), 1) * getDaysInMonth(reportedDate);
-  return { achievement, revenue: report.revenue ?? monthData?.collection ?? 0, forecast, isFinal };
-}
-
 export type DashboardPeriod = { month: string; importedAt: string | null };
 
 export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
@@ -1837,142 +1676,4 @@ export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
       if (right.importedAt) return 1;
       return right.month.localeCompare(left.month);
     });
-}
-
-export async function fetchDashboardPage(input: { month: string; search?: string; pageSize: number; cursor?: DashboardCursor | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
-  await getCurrentActor();
-  const value = dashboardPageSchema.parse(input);
-  const previousMonth = format(subMonths(parseISO(`${value.month}-01`), 1), "yyyy-MM");
-  const [snapshot, supervisors, performanceDocuments] = await Promise.all([
-    getDocs(query(collection(db, "shops"), orderBy("name", "asc"))),
-    loadSupervisors(),
-    fetchPerformanceDocuments(`${previousMonth}-01`, `${value.month}-31`),
-  ]);
-  const performanceByShopAndMonth = new Map<string, PerformanceData[]>();
-  performanceDocuments.forEach(document => {
-    const shopId = document.ref.parent.parent?.id;
-    const parsed = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
-    if (!shopId || !parsed.success) return;
-    const entry = parsed.data as unknown as PerformanceData;
-    const key = `${shopId}:${entry.date.slice(0, 7)}`;
-    const entries = performanceByShopAndMonth.get(key) ?? [];
-    entries.push(entry);
-    performanceByShopAndMonth.set(key, entries);
-  });
-  const normalizedSearch = value.search.toLocaleLowerCase();
-  const matchingSupervisorIds = new Set(supervisors
-    .filter(supervisor => supervisor.name.toLocaleLowerCase().includes(normalizedSearch))
-    .map(supervisor => supervisor.id));
-  const matchingDocuments = normalizedSearch
-    ? snapshot.docs.filter(document => {
-      const data = document.data();
-      return String(data.name ?? "").toLocaleLowerCase().includes(normalizedSearch)
-        || matchingSupervisorIds.has(String(data.supervisorId ?? ""));
-    })
-    : snapshot.docs;
-  const buildRow = (document: (typeof snapshot.docs)[number]) => {
-    const shop = parseFirestoreDocument(shopSchema, document.id, document.data()) as Shop | null;
-    if (!shop) return null;
-    const currentEntries = performanceByShopAndMonth.get(`${shop.id}:${value.month}`) ?? [];
-    const previousEntries = performanceByShopAndMonth.get(`${shop.id}:${previousMonth}`) ?? [];
-    const current = performanceSummary(shop, currentEntries);
-    const previous = performanceSummary(shop, previousEntries);
-    return {
-      shop,
-      revenue: current.revenue ?? 0,
-      totalAchievement: current.achievement ?? 0,
-      forecastAchievement: current.forecast,
-      isFinal: current.isFinal,
-      hasData: current.achievement !== null,
-      previousAchievement: previous.achievement,
-      previousRevenue: previous.revenue,
-    } satisfies DashboardRow;
-  };
-  const allRows = snapshot.docs.map(buildRow).filter((row): row is DashboardRow => Boolean(row));
-  const rows = matchingDocuments.map(buildRow).filter((row): row is DashboardRow => Boolean(row));
-
-  const supervisorRows = supervisors.flatMap(supervisor => {
-    const assignedRows = allRows.filter(row => row.shop.supervisorId === supervisor.id);
-    if (!assignedRows.length) return [];
-    const reportingRows = assignedRows.filter(row => row.hasData);
-    const forecastValues = reportingRows.flatMap(row => {
-      const forecast = row.isFinal ? row.totalAchievement : row.forecastAchievement;
-      return forecast === null ? [] : [forecast];
-    });
-    return [{
-      id: supervisor.id,
-      name: supervisor.name,
-      shopCount: assignedRows.length,
-      activeShops: reportingRows.length,
-      shopsAtTarget: reportingRows.filter(row => row.totalAchievement >= 100).length,
-      averageAchievement: reportingRows.length
-        ? reportingRows.reduce((sum, row) => sum + row.totalAchievement, 0) / reportingRows.length
-        : 0,
-      forecastAchievement: forecastValues.length
-        ? forecastValues.reduce((sum, forecast) => sum + forecast, 0) / forecastValues.length
-        : null,
-      revenue: reportingRows.reduce((sum, row) => sum + row.revenue, 0),
-    } satisfies DashboardSupervisorRow];
-  }).sort((left, right) => right.averageAchievement - left.averageAchievement || left.name.localeCompare(right.name));
-
-  const direction = value.sortDirection === "asc" ? 1 : -1;
-  const getSortValue = (row: DashboardRow): string | number | null => {
-    if (value.sortBy === "shop") return row.shop.name;
-    if (!row.hasData) return null;
-    if (value.sortBy === "achievement") return row.totalAchievement;
-    if (value.sortBy === "forecast") return row.forecastAchievement ?? (row.isFinal ? row.totalAchievement : null);
-    return row.revenue;
-  };
-  rows.sort((left, right) => {
-    const leftValue = getSortValue(left);
-    const rightValue = getSortValue(right);
-    if (leftValue === null && rightValue !== null) return 1;
-    if (leftValue !== null && rightValue === null) return -1;
-    if (typeof leftValue === "string" && typeof rightValue === "string") {
-      const comparison = leftValue.localeCompare(rightValue);
-      if (comparison) return comparison * direction;
-    } else if (typeof leftValue === "number" && typeof rightValue === "number" && leftValue !== rightValue) {
-      return (leftValue - rightValue) * direction;
-    }
-    return left.shop.name.localeCompare(right.shop.name) || left.shop.id.localeCompare(right.shop.id);
-  });
-
-  const reportingRows = rows.filter(row => row.hasData);
-  const previousAchievementRows = reportingRows.filter(row => row.previousAchievement !== null);
-  const previousRevenueRows = rows.filter(row => row.previousRevenue !== null);
-  const forecastValues = reportingRows.flatMap(row => {
-    const value = row.isFinal ? row.totalAchievement : row.forecastAchievement;
-    return value === null ? [] : [value];
-  });
-  const summary: DashboardSummary = {
-    average: reportingRows.length
-      ? reportingRows.reduce((sum, row) => sum + row.totalAchievement, 0) / reportingRows.length
-      : 0,
-    forecast: forecastValues.length
-      ? forecastValues.reduce((sum, forecast) => sum + forecast, 0) / forecastValues.length
-      : null,
-    revenue: rows.reduce((sum, row) => sum + row.revenue, 0),
-    previousAverage: previousAchievementRows.length
-      ? previousAchievementRows.reduce((sum, row) => sum + (row.previousAchievement ?? 0), 0) / previousAchievementRows.length
-      : null,
-    previousRevenue: previousRevenueRows.length
-      ? previousRevenueRows.reduce((sum, row) => sum + (row.previousRevenue ?? 0), 0)
-      : null,
-    allFinal: reportingRows.length > 0 && reportingRows.every(row => row.isFinal),
-    activeShops: rows.length,
-    shopsAtTarget: reportingRows.filter(row => row.totalAchievement >= 100).length,
-  };
-
-  const cursorIndex = value.cursor ? rows.findIndex(row => row.shop.id === value.cursor?.id) : -1;
-  const pageStart = cursorIndex >= 0 ? cursorIndex + 1 : 0;
-  const pageRows = rows.slice(pageStart, pageStart + value.pageSize);
-  const hasMore = pageStart + value.pageSize < rows.length;
-  const last = pageRows.at(-1);
-  return {
-    rows: pageRows,
-    total: rows.length,
-    nextCursor: hasMore && last ? { name: last.shop.name, id: last.shop.id } : null,
-    summary,
-    supervisorRows,
-  };
 }

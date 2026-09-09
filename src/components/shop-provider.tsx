@@ -3,10 +3,11 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
 import { type Shop, type Supervisor, type PerformanceData, type Target, type MetricWeightProfile, getInitialTargets } from '@/lib/types';
-import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSavePerformanceData, fetchPerformanceData, fetchPerformanceDataForMonth, fetchShopData, type ShopData } from '@/app/actions';
+import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSavePerformanceData, fetchPerformanceData, fetchShopData, type ShopData } from '@/app/actions';
+import { fetchPerformanceDataForMonth } from '@/app/dashboard-actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
-import type { AppActor } from '@/lib/access';
+import type { AppActor } from '@/lib/auth-types';
 
 type ShopContextType = {
   actor: AppActor;

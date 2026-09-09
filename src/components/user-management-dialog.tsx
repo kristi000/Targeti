@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { Loader2, Plus, ShieldCheck, Users } from "lucide-react";
-import { fetchAuthUsers, handleCreateAuthUser, handleSetUserRole, type AuthUser } from "@/app/actions";
+import { fetchAuthUsers, handleCreateAuthUser, handleSetUserRole, type AuthUser } from "@/app/auth-actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";

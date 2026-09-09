@@ -4,10 +4,13 @@
 import { LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { Children, Fragment, isValidElement, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
 import { useShop } from "@/components/shop-provider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { UserManagementDialog } from "@/components/user-management-dialog";
+import { firebaseAuth } from "@/lib/firebase-client";
+import { setCurrentClientActor } from "@/lib/client-access";
 
 type HeaderProps = {
   title: string;
@@ -20,7 +23,8 @@ export function Header({ title, actions }: HeaderProps) {
   const [isUserManagementOpen, setIsUserManagementOpen] = useState(false);
 
   const logout = async () => {
-    await fetch("/api/auth/session", { method: "DELETE" });
+    await Promise.all([fetch("/api/auth/session", { method: "DELETE" }), signOut(firebaseAuth)]);
+    setCurrentClientActor(null);
     router.replace("/login");
     router.refresh();
   };

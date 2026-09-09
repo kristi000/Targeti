@@ -77,6 +77,9 @@ import { UserManagementDialog } from "./user-management-dialog";
 import { WeightProfileManagerDialog } from "./weight-profile-manager-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleClearAllData, handleSaveAchievementOverrides } from "@/app/actions";
+import { signOut } from "firebase/auth";
+import { firebaseAuth } from "@/lib/firebase-client";
+import { setCurrentClientActor } from "@/lib/client-access";
 import { useToast } from "@/hooks/use-toast";
 import { formatReportingMonth } from "@/lib/reporting-month";
 import {
@@ -148,7 +151,8 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
 
     const logout = async () => {
-        await fetch("/api/auth/session", { method: "DELETE" });
+        await Promise.all([fetch("/api/auth/session", { method: "DELETE" }), signOut(firebaseAuth)]);
+        setCurrentClientActor(null);
         router.replace("/login");
         router.refresh();
     };

@@ -158,10 +158,12 @@ export async function createManagedUser(input: { username: string; name: string;
   });
   const mappingReference = adminDb.collection("authUsernames").doc(usernameKey(normalizedUsername));
   const userReference = adminDb.collection("authUsers").doc(userId);
+  const accessReference = adminDb.collection("accessProfiles").doc(userId);
   await adminDb.runTransaction(async transaction => {
     if ((await transaction.get(mappingReference)).exists) throw new Error("USERNAME_TAKEN");
     transaction.create(mappingReference, { userId, normalizedUsername });
     transaction.create(userReference, user);
+    transaction.create(accessReference, { username, name: user.name, role: user.role, sessionVersion: 0, updatedAt: now });
   });
   return { id: userId, ...user };
 }
@@ -176,11 +178,17 @@ export async function listManagedUsers(): Promise<StoredUser[]> {
 
 export async function setManagedUserRole(userId: string, role: z.infer<typeof managedRoleSchema>) {
   const reference = adminDb.collection("authUsers").doc(userId);
+  const accessReference = adminDb.collection("accessProfiles").doc(userId);
   return adminDb.runTransaction(async transaction => {
     const document = await transaction.get(reference);
     const user = storedUserSchema.parse(document.data());
     const validRole = managedRoleSchema.parse(role);
-    if (user.role !== validRole) transaction.update(reference, { role: validRole, sessionVersion: user.sessionVersion + 1, updatedAt: new Date().toISOString() });
+    if (user.role !== validRole) {
+      const updatedAt = new Date().toISOString();
+      const sessionVersion = user.sessionVersion + 1;
+      transaction.update(reference, { role: validRole, sessionVersion, updatedAt });
+      transaction.set(accessReference, { username: user.username, name: user.name, role: validRole, sessionVersion, updatedAt }, { merge: true });
+    }
     return { ...user, role: validRole };
   });
 }

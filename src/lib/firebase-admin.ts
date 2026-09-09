@@ -1,6 +1,7 @@
 import "server-only";
 
 import { applicationDefault, getApp, getApps, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { FieldPath, FieldValue, getFirestore, type DocumentReference } from "firebase-admin/firestore";
 
 const projectId = process.env.FIREBASE_PROJECT_ID || "perf-tracker-lmp2b";
@@ -10,6 +11,7 @@ const app = getApps().length
   : initializeApp({ credential: applicationDefault(), projectId });
 
 export const adminDb = getFirestore(app);
+export const adminAuth = getAuth(app);
 export type { DocumentReference };
 
 type QueryLike = FirebaseFirestore.Query | FirebaseFirestore.CollectionReference;

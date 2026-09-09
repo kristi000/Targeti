@@ -2,10 +2,10 @@ import "server-only";
 
 import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME } from "@/lib/auth-constants";
-import { getActorForSession, type LocalActor } from "@/lib/local-auth";
+import { getActorForSession } from "@/lib/local-auth";
+import type { AppActor } from "@/lib/auth-types";
 
-export type AppRole = LocalActor["role"];
-export type AppActor = LocalActor;
+export type { AppActor, AppRole } from "@/lib/auth-types";
 
 export async function getCurrentActor(): Promise<AppActor> {
   const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;

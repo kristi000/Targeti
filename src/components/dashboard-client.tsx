@@ -3,7 +3,7 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnDef,
   type PaginationState,
@@ -37,7 +37,8 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import { formatReportingExcelDate, formatReportingMonth } from "@/lib/reporting-month";
-import { fetchDashboardPeriods, fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSummary, type DashboardSupervisorRow } from "@/app/actions";
+import { fetchDashboardPeriods } from "@/app/actions";
+import { fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSummary, type DashboardSupervisorRow } from "@/app/dashboard-actions";
 
 type ShopPerformanceRow = DashboardRow;
 
@@ -52,6 +53,7 @@ export function DashboardClient() {
   const { shops, supervisors, loading, loadPerformanceMonth, setSelectedDatasetId } = useShop();
   const locale = useLocale();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
@@ -61,7 +63,13 @@ export function DashboardClient() {
   const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
   const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: hasRequestedSort ? searchParams.get("dir") === "desc" : true }]);
   const [pagination, setPagination] = useState<PaginationState>({ pageIndex: Math.max(Number(searchParams.get("page") ?? 1) - 1, 0), pageSize: [10, 20, 50].includes(Number(searchParams.get("size"))) ? Number(searchParams.get("size")) : 10 });
-  const initialCursor = searchParams.get("afterName") && searchParams.get("afterId") ? { name: searchParams.get("afterName")!, id: searchParams.get("afterId")! } : null;
+  const cursorValue = searchParams.get("afterValue");
+  const initialCursor = cursorValue !== null && searchParams.get("afterName") && searchParams.get("afterId") ? {
+    hasData: searchParams.get("afterHasData") === "true",
+    value: searchParams.get("afterType") === "number" ? Number(cursorValue) : cursorValue,
+    name: searchParams.get("afterName")!,
+    id: searchParams.get("afterId")!,
+  } : null;
   const [cursor, setCursor] = useState<DashboardCursor | null>(initialCursor);
   const [cursorHistory, setCursorHistory] = useState<Array<DashboardCursor | null>>(() => Array.from({ length: Math.max(Number(searchParams.get("page") ?? 1), 1) }, (_, index) => index === Math.max(Number(searchParams.get("page") ?? 1) - 1, 0) ? initialCursor : null));
   const deferredSearch = useDeferredValue(shopSearch.trim());
@@ -78,6 +86,16 @@ export function DashboardClient() {
     queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, pageSize: pagination.pageSize, cursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
     placeholderData: keepPreviousData,
   });
+
+  useEffect(() => {
+    const nextCursor = pageQuery.data?.nextCursor;
+    if (!nextCursor) return;
+    void queryClient.prefetchQuery({
+      queryKey: ["firestore-shop-performance-page", activeDatasetId, deferredSearch, pagination.pageSize, nextCursor, sorting[0]?.id, sorting[0]?.desc],
+      queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, pageSize: pagination.pageSize, cursor: nextCursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+      staleTime: 30_000,
+    });
+  }, [activeDatasetId, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, sorting]);
 
   const shopPerformances = pageQuery.data?.rows ?? [];
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
@@ -140,7 +158,13 @@ export function DashboardClient() {
     if (pagination.pageSize !== 10) parameters.set("size", String(pagination.pageSize));
     if (sorting[0]?.id && sorting[0].id !== "shop") parameters.set("sort", sorting[0].id);
     if (sorting[0]?.desc) parameters.set("dir", "desc");
-    if (cursor) { parameters.set("afterName", cursor.name); parameters.set("afterId", cursor.id); }
+    if (cursor) {
+      parameters.set("afterHasData", String(cursor.hasData));
+      parameters.set("afterType", typeof cursor.value);
+      parameters.set("afterValue", String(cursor.value));
+      parameters.set("afterName", cursor.name);
+      parameters.set("afterId", cursor.id);
+    }
     router.replace(`${pathname}?${parameters.toString()}`, { scroll: false });
     setSelectedDatasetId(activeDatasetId);
   }, [activeDatasetId, shopSearch, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, loadPerformanceMonth, setSelectedDatasetId]);
