@@ -1,4 +1,5 @@
 import { getMetricWeight } from "@/lib/data";
+import { getCustomMetricLabel } from "@/lib/metric-definitions";
 import { getMetricOrder, getQuarterKey, getShopTargetMetrics, type DailyClosingDebt, type DailyClosingTotals, type MetricSettings, type PerformanceMetric, type Shop, type Target } from "@/lib/types";
 
 export const DEFAULT_EXCHANGE_RATE = 92;
@@ -106,4 +107,43 @@ export function calculateDailyClosing(input: {
       activityContributions,
     },
   };
+}
+
+const DAILY_SUMMARY_METRIC_LABELS: Partial<Record<PerformanceMetric, string>> = {
+  newSim: "New sim",
+  newLine: "Gpon2play",
+  migrations: "Pre2post",
+  fixContractRenewal: "Sim turist",
+  mobileContractRenewal: "Mobile renewal",
+  newTv: "New TV",
+  newPostpaid: "Postpaid",
+  device: "Device",
+};
+
+export function createDailyClosingSummary(input: {
+  shopName: string;
+  boss: number;
+  invoice: number;
+  activities: Partial<Record<PerformanceMetric, number>>;
+  metrics: readonly PerformanceMetric[];
+  metricSettings?: MetricSettings;
+  performanceScore: number;
+  formatNumber: (value: number) => string;
+}) {
+  const activityLines = input.metrics.map(metric => {
+    const label = DAILY_SUMMARY_METRIC_LABELS[metric]
+      ?? getCustomMetricLabel(metric, input.metricSettings);
+    return `${label}:${input.formatNumber(input.activities[metric] ?? 0)}`;
+  });
+
+  return [
+    `Mirmbrema ${input.shopName},`,
+    "",
+    `Boss:${input.formatNumber(input.boss)}`,
+    `Invoice:${input.formatNumber(input.invoice)}`,
+    ...activityLines,
+    `Total shop ${Math.round(input.performanceScore * 100)}%`,
+    "",
+    "Naten e mirë!",
+  ].join("\n");
 }
