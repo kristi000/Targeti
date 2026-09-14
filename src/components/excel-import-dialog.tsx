@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { handleAddShop, handlePrepareRepresentativeImport, handleRegisterImport, handleSaveExcelPerformanceData, handleUndoLatestImport, handleUpdateShop } from "@/app/actions";
+import { handleAllocateShopId, handlePrepareRepresentativeImport, handleRegisterImport, handleUndoLatestImport } from "@/app/actions";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -16,6 +16,7 @@ import { importTargetWorkbook, type ImportedShopData, type ImportedWorkbookData 
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   getQuarterKey,
+  getInitialTargets,
   getMonthlyRepresentatives,
   getOverviewPerformanceData,
   type MetricSettings,
@@ -245,25 +246,36 @@ export function ExcelImportDialog({
       const importId = `excel-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       const reportDate = review.reportType === "completedMonth" ? monthEnd(review.reportMonth) : review.asOfDate;
       const quarterKey = getQuarterKey(reportDate);
-      const importChanges: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: import("@/lib/types").Shop | null; importedShop: import("@/lib/types").Shop }> = [];
+      const importChanges: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: Shop | null; importedShop: Shop; performance: PerformanceData }> = [];
 
       for (const [shopIndex, imported] of review.workbook.shops.entries()) {
         const profile = weightProfiles.find(item => item.id === review.profileSelections[shopIndex]);
         if (!profile) throw new Error(`${imported.shopName}: select a weight profile before importing.`);
         const keptMetrics = profile.metricOrder;
         const metricSettings = structuredClone(profile.metricSettings);
-        let shop = restrictToSelectedShop && selectedShop
+        const existingShop = restrictToSelectedShop && selectedShop
           ? selectedShop
           : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
-        const existedBeforeImport = Boolean(shop);
-        if (!shop) {
-          const created = await handleAddShop(imported.shopName, "Imported from Excel report");
-          if (!created.success || !created.data) throw new Error(`Could not create ${imported.shopName}.`);
-          shop = created.data;
+        const existedBeforeImport = Boolean(existingShop);
+        let shop: Shop;
+        if (existingShop) {
+          shop = existingShop;
+        } else {
+          const allocated = await handleAllocateShopId();
+          if (!allocated.success) throw new Error(`Could not prepare ${imported.shopName}.`);
+          shop = {
+            id: allocated.data,
+            name: imported.shopName,
+            description: "Imported from Excel report",
+            salesRepresentatives: [],
+            monthlyTargets: getInitialTargets(),
+          };
         }
-        const preparation = await handlePrepareRepresentativeImport(shop.id);
-        if (!preparation.success) throw new Error(preparation.error);
-        shop = { ...shop, hiddenSalesRepresentatives: preparation.hiddenSalesRepresentatives };
+        if (existedBeforeImport) {
+          const preparation = await handlePrepareRepresentativeImport(shop.id);
+          if (!preparation.success) throw new Error(preparation.error);
+          shop = { ...shop, hiddenSalesRepresentatives: preparation.hiddenSalesRepresentatives };
+        }
         const previousShop = existedBeforeImport ? structuredClone(shop) : null;
         const targets = metricRecord(imported.targets, keptMetrics);
         const achievements = metricRecord(imported.achievements, keptMetrics);
@@ -277,6 +289,9 @@ export function ExcelImportDialog({
         const visibleImportedRepresentatives = imported.representatives.filter(representative =>
           !hiddenIds.has(representative.id) && !hiddenNames.has(normalizeName(representative.name)),
         );
+        if (!visibleImportedRepresentatives.length) {
+          throw new Error(`${imported.shopName}: no visible representatives remain after applying hidden representative settings.`);
+        }
         const reps = visibleImportedRepresentatives.map(({ id, name }) => ({ id, name }));
         representativeCount += reps.length;
         hiddenRepresentativeCount += imported.representatives.length - visibleImportedRepresentatives.length;
@@ -311,7 +326,7 @@ export function ExcelImportDialog({
             [quarterKey]: { metricSettings, metricOrder: keptMetrics },
           },
         };
-        const performance: PerformanceData[] = [{
+        const performance: PerformanceData = {
           date: reportDate,
           importId,
           importName: fileName,
@@ -321,19 +336,17 @@ export function ExcelImportDialog({
           includeInOverview: review.includeInOverview,
           qualityMetrics: imported.qualityMetrics,
           targets,
+          representativeTargets,
+          metricSettings,
+          metricOrder: keptMetrics,
           revenue: collection,
           shopActuals: achievements,
           reps: visibleImportedRepresentatives.map(rep => ({ repId: rep.id, repName: rep.name, ...metricRecord(rep.achievements, keptMetrics) })),
-        }];
-        const results = await Promise.all([
-          handleUpdateShop(updatedShop),
-          handleSaveExcelPerformanceData(shop.id, performance),
-        ]);
-        if (results.some(result => !result.success)) throw new Error(`Could not save ${imported.shopName}.`);
-        importChanges.push({ shopId: shop.id, shopName: imported.shopName, performanceId: importId, previousShop, importedShop: updatedShop });
+        };
+        importChanges.push({ shopId: shop.id, shopName: imported.shopName, performanceId: importId, previousShop, importedShop: updatedShop, performance });
       }
 
-      const registration = await handleRegisterImport(importId, fileName, review.reportMonth, importChanges);
+      const registration = await handleRegisterImport(importId, fileName, review.reportMonth, reportDate, importChanges);
       if (!registration.success) throw new Error(registration.error);
 
       await reloadData();
@@ -359,7 +372,7 @@ export function ExcelImportDialog({
     setDragging(false);
     void readFile(event.dataTransfer.files[0]);
   };
-  const selectedProfileFor = (shopIndex: number): MetricWeightProfile | undefined => weightProfiles.find(profile => profile.id === review?.profileSelections[shopIndex]);
+  const selectedProfileFor = useCallback((shopIndex: number): MetricWeightProfile | undefined => weightProfiles.find(profile => profile.id === review?.profileSelections[shopIndex]), [review?.profileSelections, weightProfiles]);
   const profileSummary = useMemo(() => {
     if (!review) return [];
     const counts = new Map<string, number>();
@@ -368,7 +381,7 @@ export function ExcelImportDialog({
       counts.set(name, (counts.get(name) ?? 0) + 1);
     });
     return Array.from(counts.entries());
-  }, [review, weightProfiles]);
+  }, [review, selectedProfileFor]);
   const previewCounts = useMemo(() => {
     if (!review) return { created: 0, updated: 0, skipped: 0, invalid: 0 };
     const invalid = validation.errors.length ? review.workbook.shops.length : 0;

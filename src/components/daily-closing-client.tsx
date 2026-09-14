@@ -4,9 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
-import Link from "next/link";
 import {
-  ArrowLeft,
   Banknote,
   CalendarDays,
   CalendarRange,
@@ -36,11 +34,10 @@ import { MonthlyCellSummary } from "@/components/monthly-cell-summary";
 import { MonthlyDebts } from "@/components/monthly-debts";
 import { MonthlyUnsubscribes } from "@/components/monthly-unsubscribes";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
-import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -76,7 +73,7 @@ export function DailyClosingClient() {
   const t = useTranslations("DailyClosing");
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
-  const { selectedShop, actor } = useShop();
+  const { selectedShop, actor, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
   const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
   const [debtRevision, setDebtRevision] = useState(0);
   const [closing, setClosing] = useState<DailyClosing | null>(null);
@@ -93,6 +90,11 @@ export function DailyClosingClient() {
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("ready");
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const autosaveBaselineRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setSelectedDatasetId(view === "daily" ? date.slice(0, 7) : month);
+    setSelectedPerformanceId(null);
+  }, [date, month, view, setSelectedDatasetId, setSelectedPerformanceId]);
 
   const metricConfig = useMemo(
     () => selectedShop ? getDailyClosingMetricConfig(selectedShop, date) : { metrics: [], metricSettings: undefined, targets: undefined },
@@ -150,7 +152,7 @@ export function DailyClosingClient() {
       }
     });
     return () => { active = false; };
-  }, [selectedShop?.id, date, t, toast, debtRevision]);
+  }, [selectedShop, date, t, toast, debtRevision]);
 
   const isFinalized = closing?.status === "finalized";
   const isReadOnly = isFinalized || actor.role === "viewer";
@@ -308,13 +310,11 @@ export function DailyClosingClient() {
   const dailyActivityCard = <Card><CardHeader className="p-2.5 pb-1.5"><div className="flex flex-wrap items-center justify-between gap-2"><CardTitle className="flex items-center gap-1.5 text-sm"><CircleGauge className="h-3.5 w-3.5" />{t("dailyActivity")}</CardTitle><div className="text-right"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("dailyIncrease")}</p><p className="text-xs font-semibold">{percentFormatter.format(calculation.totals.performanceScore)}</p></div></div></CardHeader><CardContent className="p-2.5 pt-0"><div className="grid gap-1">{metrics.map(metric => <div key={metric} className="grid grid-cols-[minmax(0,1fr)_4rem_3.5rem] items-center gap-1 rounded border px-2 py-0.5"><div className="min-w-0"><p className="truncate text-xs font-medium leading-tight" title={metricLabel(metric)}>{metricLabel(metric)}</p><p className="truncate text-[10px] leading-tight text-muted-foreground">{t("targetAndWeight", { target: formatter.format(targets?.[metric] ?? 0), weight: percentFormatter.format(calculation.metricWeights[metric] ?? 0) })}</p></div><Input aria-label={`${metricLabel(metric)} ${t("quantity")}`} type="number" min={0} step="any" disabled={isReadOnly} className="h-7 px-1.5 text-right text-sm tabular-nums" value={activities[metric] ?? 0} onChange={event => setActivities(current => ({ ...current, [metric]: numericValue(event.target.value) }))} /><span className="text-right text-xs font-medium tabular-nums">{percentFormatter.format(calculation.totals.activityContributions[metric] ?? 0)}</span></div>)}</div></CardContent></Card>;
 
   return <div className="flex h-full flex-col">
-    <Header title={`${view === "daily" ? t("pageTitle") : view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={<>
-      <Link href={`/${locale}/`} className={buttonVariants({ variant: "outline", size: "sm" })}><ArrowLeft className="mr-1.5 h-4 w-4" />{t("back")}</Link>
-      <ShopPageNav shopId={selectedShop.id} active="closing" />
-      {view === "daily"
-        ? <Input aria-label={t("date")} type="date" className="h-9 w-40" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />
-        : <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-44" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />}
-    </>} />
+    <Header title={`${view === "daily" ? t("pageTitle") : view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={
+      view === "daily"
+        ? <Input aria-label={t("date")} type="date" className="h-9 w-32 sm:w-40" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />
+        : <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-32 sm:w-44" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />
+    } />
     <main className="flex-1 overflow-y-auto p-2 md:p-3">
       <div className="mx-auto w-full max-w-[1500px] space-y-2.5">
         <div className="flex gap-2" role="group" aria-label={monthlyTranslations("view")}>

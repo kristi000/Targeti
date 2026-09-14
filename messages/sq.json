@@ -6,6 +6,8 @@
   },
   "Sidebar": {
     "dashboard": "Paneli",
+    "insights": "Vështrime",
+    "reportingDate": "Data e raportimit",
     "setMonthlyTargets": "Vendos Objektivat Mujore",
     "editAchievements": "Modifiko Arritjet",
     "editShop": "Modifiko Dyqanin",

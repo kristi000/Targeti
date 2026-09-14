@@ -16,8 +16,6 @@ export type DashboardRow = {
   forecastAchievement: number | null;
   isFinal: boolean;
   hasData: boolean;
-  previousAchievement: number | null;
-  previousRevenue: number | null;
 };
 
 export type DashboardSupervisorRow = {
@@ -35,8 +33,6 @@ export type DashboardSummary = {
   average: number;
   forecast: number | null;
   revenue: number;
-  previousAverage: number | null;
-  previousRevenue: number | null;
   allFinal: boolean;
   activeShops: number;
   shopsAtTarget: number;

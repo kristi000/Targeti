@@ -20,12 +20,6 @@ import {
   FileClock,
   FileSpreadsheet,
   History,
-  Menu,
-  ChevronDown,
-  LogOut,
-  ShieldCheck,
-  UserRound,
-  Users,
   SlidersHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,14 +31,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -63,7 +49,7 @@ import {
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ManageShopsDialog } from "./manage-shops-dialog";
 import { ManageSupervisorsDialog } from "./manage-supervisors-dialog";
 import { ManageRepresentativesDialog } from "./manage-representatives-dialog";
@@ -77,9 +63,6 @@ import { UserManagementDialog } from "./user-management-dialog";
 import { WeightProfileManagerDialog } from "./weight-profile-manager-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleClearAllData, handleSaveAchievementOverrides } from "@/app/actions";
-import { signOut } from "firebase/auth";
-import { firebaseAuth } from "@/lib/firebase-client";
-import { setCurrentClientActor } from "@/lib/client-access";
 import { useToast } from "@/hooks/use-toast";
 import { formatReportingMonth } from "@/lib/reporting-month";
 import {
@@ -94,10 +77,9 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, isAdmin, actor } = useShop();
+    const { selectedShop, allPerformanceData, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, selectedPerformanceId, isAdmin, actor } = useShop();
     const { toast } = useToast();
     const pathname = usePathname();
-    const router = useRouter();
     const locale = useLocale();
     const t = useTranslations("Sidebar");
     const tDialog = useTranslations("Dialogs");
@@ -106,9 +88,10 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const isDashboard = !pathname.includes('/shop/');
     const canEdit = actor.role !== "viewer";
     
-    const performanceData = selectedShop ? allPerformanceData[selectedShop.id] || [] : [];
+    const performanceData = useMemo(() => selectedShop ? allPerformanceData[selectedShop.id] || [] : [], [allPerformanceData, selectedShop]);
     const latestDataMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
-    const activeMonth = activeMonthOverride ?? (isDashboard && selectedDatasetId ? selectedDatasetId : latestDataMonth);
+    const activeMonth = activeMonthOverride ?? (selectedDatasetId || latestDataMonth);
+    const isHistoricalReport = !isDashboard && selectedPerformanceId !== null;
     const monthlyRepresentatives = useMemo(
         () => selectedShop ? getMonthlyRepresentatives(selectedShop, activeMonth) : [],
         [selectedShop, activeMonth]
@@ -149,13 +132,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
-
-    const logout = async () => {
-        await Promise.all([fetch("/api/auth/session", { method: "DELETE" }), signOut(firebaseAuth)]);
-        setCurrentClientActor(null);
-        router.replace("/login");
-        router.refresh();
-    };
 
     const initialRepTotals = useMemo(() => {
         const totals: Record<string, Record<PerformanceMetric, number>> = {};
@@ -435,73 +411,24 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         
     return (
         <>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-1">
                 {isDashboard && (
                     <>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button type="button" size="sm" className="h-9 gap-2 px-3 shadow-sm" aria-label="Open dashboard menu">
-                                <Menu className="h-4 w-4" />
-                                <span>Menu</span>
-                                <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-64">
-                            <DropdownMenuLabel className="flex items-center gap-3">
-                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                    <UserRound className="h-4 w-4" />
-                                </span>
-                                <span className="min-w-0">
-                                    <span className="block truncate">{actor.name}</span>
-                                    <span className="block truncate text-xs font-normal text-muted-foreground">@{actor.username}</span>
-                                </span>
-                            </DropdownMenuLabel>
-                            <DropdownMenuItem disabled>
-                                <ShieldCheck className="mr-2 h-4 w-4" />
-                                <span className="capitalize">{actor.role}</span>
-                            </DropdownMenuItem>
-                            {isAdmin && <DropdownMenuItem onSelect={() => setIsUserManagementOpen(true)}>
-                                <Users className="mr-2 h-4 w-4" />Manage users
-                            </DropdownMenuItem>}
-                            {isAdmin && <DropdownMenuItem onSelect={() => setIsWeightProfileManagerOpen(true)}>
-                                <SlidersHorizontal className="mr-2 h-4 w-4" />Manage weight profiles
-                            </DropdownMenuItem>}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Dashboard actions</DropdownMenuLabel>
-                            {canEdit && <>
-                                <DropdownMenuItem onSelect={() => setIsExcelImportDialogOpen(true)}>
-                                    <FileSpreadsheet />Import Excel
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => setIsImportManagementDialogOpen(true)}>
-                                    <FileClock />Manage imports
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onSelect={handleOpenManageShops}>
-                                    <Store />{t('manageShops')}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => setIsRepresentativeDialogOpen(true)}>
-                                    <UsersRound />Manage representatives
-                                </DropdownMenuItem>
-                            </>}
-                            {isAdmin && <DropdownMenuItem onSelect={() => setIsSupervisorDialogOpen(true)}>
-                                <UserRoundCog />Manage supervisors
-                            </DropdownMenuItem>}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => setIsActivityHistoryDialogOpen(true)}>
-                                <History />Activity history
-                            </DropdownMenuItem>
-                            {isAdmin && <>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem className="text-destructive focus:text-destructive" disabled={isClearingData || !selectedShop} onSelect={() => setIsClearDialogOpen(true)}>
-                                <Trash2 className="mr-2 h-4 w-4" />Clear all data
-                            </DropdownMenuItem>
-                            </>}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => void logout()} className="text-destructive focus:text-destructive">
-                                <LogOut className="mr-2 h-4 w-4" />Sign out
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Dashboard actions</p>
+                    {canEdit && <>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsImportManagementDialogOpen(true)}><FileClock />Manage imports</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenManageShops}><Store />{t('manageShops')}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsRepresentativeDialogOpen(true)}><UsersRound />Manage representatives</Button>
+                    </>}
+                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsSupervisorDialogOpen(true)}><UserRoundCog />Manage supervisors</Button>}
+                    <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsActivityHistoryDialogOpen(true)}><History />Activity history</Button>
+                    {isAdmin && <>
+                        <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Administration</p>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsUserManagementOpen(true)}><UserRoundCog />Manage users</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsWeightProfileManagerOpen(true)}><SlidersHorizontal />Manage weight profiles</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start text-destructive hover:text-destructive" disabled={isClearingData || !selectedShop} onClick={() => setIsClearDialogOpen(true)}><Trash2 />Clear all data</Button>
+                    </>}
                     <ExcelImportDialog open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
                     <ActivityHistoryDialog open={isActivityHistoryDialogOpen} onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />
                     {isAdmin && <UserManagementDialog open={isUserManagementOpen} onOpenChange={setIsUserManagementOpen} showTrigger={false} />}
@@ -528,23 +455,11 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 )}
                 {selectedShop && !isDashboard && canEdit && (
                     <>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button type="button" variant="outline" size="sm" className="h-9 gap-2" aria-label="Open shop actions menu">
-                                    <Menu className="h-4 w-4" />
-                                    <span>Menu</span>
-                                    <ChevronDown className="h-3.5 w-3.5 opacity-70" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Shop actions</DropdownMenuLabel>
-                                <DropdownMenuItem onSelect={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet className="mr-2 h-4 w-4" />Import Excel</DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onSelect={onOpenTargetDialog}><Settings className="mr-2 h-4 w-4" />{t('setMonthlyTargets')}</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={onOpenAchievementDialog}><Pencil className="mr-2 h-4 w-4" />{t('editAchievements')}</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={handleOpenEditShop}><Edit className="mr-2 h-4 w-4" />{t('editShop')}</DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Shop actions</p>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings />{t('setMonthlyTargets')}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenAchievementDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil />{t('editAchievements')}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenEditShop}><Edit />{t('editShop')}</Button>
                         <ExcelImportDialog restrictToSelectedShop open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogContent className="sm:max-w-2xl">
@@ -709,7 +624,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y">
-                                                        {initialRepTotals[rep.id] && getMetricOrder(selectedShop.metricOrder, metrics).map((metric) => (
+                                                        {initialRepTotals[rep.id] && getMetricOrder(effectiveMetricOrder, metrics).map((metric) => (
                                                             <tr key={metric} className="hover:bg-muted/40">
                                                             <th scope="row" className="px-3 py-2 text-left font-medium">
                                                                 <span>{getSavedMetricLabel(metric)}</span>

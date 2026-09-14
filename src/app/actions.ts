@@ -3,6 +3,7 @@
 import {
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   deleteField,
   doc,
@@ -39,6 +40,7 @@ import {
   newShopSchema,
   performanceDataListSchema,
   performanceDataSchema,
+  isoDateSchema,
   metricKeySchema,
   monthSchema,
   metricWeightProfileSchema,
@@ -48,7 +50,6 @@ import {
   shopSchema,
   supervisorIdSchema,
   supervisorSchema,
-  targetSchema,
   weightProfileIdSchema,
 } from "@/lib/persistence-schemas";
 import { getInitialTargets, getOverviewPerformanceData, getQuarterKey, getShopMetrics, type ActivityEvent, type BonusSnapshot, type DailyClosing, type MetricSettings, type MetricWeightProfile, type PerformanceData, type PerformanceMetric, type RepPerformanceData, type Shop, type Supervisor, type Target } from "@/lib/types";
@@ -504,7 +505,7 @@ const achievementEditSchema = z.object({
   reps: z.array(z.object({
     repId: shopIdSchema,
     repName: z.string().trim().min(1).max(120).optional(),
-  }).catchall(z.number().finite().nonnegative())).max(500),
+  }).catchall(z.number().finite().nonnegative())).min(1, "At least one representative is required.").max(500),
 }).strict();
 
 function sumRepresentativeAchievements(reps: RepPerformanceData[]): Partial<Record<PerformanceMetric, number>> {
@@ -680,6 +681,15 @@ export async function handleAddShop(shopName: string, description?: string) {
   }
 }
 
+export async function handleAllocateShopId() {
+  try {
+    await requireEditor();
+    return { success: true as const, data: doc(collection(db, "shops")).id };
+  } catch (error) {
+    return { success: false as const, error: mutationError("prepare a shop import", error) };
+  }
+}
+
 export async function handleUpdateShop(shop: Shop) {
   try {
     const actor = await requireEditor();
@@ -830,9 +840,6 @@ export async function handlePrepareRepresentativeImport(shopId: string) {
     });
 
     const hiddenSalesRepresentatives = Array.from(hiddenById.values());
-    if (hiddenSalesRepresentatives.length !== (shop.hiddenSalesRepresentatives ?? []).length) {
-      await updateDoc(doc(db, "shops", validShopId), { hiddenSalesRepresentatives: toFirestoreData(hiddenSalesRepresentatives) });
-    }
     return { success: true as const, hiddenSalesRepresentatives };
   } catch (error) {
     if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "The shop no longer exists." };
@@ -1457,16 +1464,33 @@ const importChangeSchema = z.object({
   importedShop: shopSchema,
 }).strict();
 
-export async function handleRegisterImport(importId: string, fileName: string, month: string, changes: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: Shop | null; importedShop: Shop }>) {
+const importCommitChangeSchema = importChangeSchema.extend({
+  performance: performanceDataSchema,
+}).superRefine((change, context) => {
+  if (change.shopId !== change.importedShop.id) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Imported shop ID does not match the target shop." });
+  }
+  if (change.performanceId !== change.performance.importId) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Performance import ID does not match the import." });
+  }
+});
+
+export async function handleRegisterImport(importId: string, fileName: string, month: string, reportDate: string, changes: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: Shop | null; importedShop: Shop; performance: PerformanceData }>) {
   try {
     await requireEditor();
     const validImportId = shopIdSchema.parse(importId);
     const validFileName = z.string().trim().min(1).max(255).parse(fileName);
     const validMonth = monthSchema.parse(month);
-    const validChanges = z.array(importChangeSchema).min(1).max(150).parse(changes) as typeof changes;
+    const validReportDate = isoDateSchema.parse(reportDate);
+    if (!validReportDate.startsWith(validMonth)) throw new Error("The reporting date must be within the reporting month.");
+    const validChanges = z.array(importCommitChangeSchema).min(1).max(150).parse(changes) as unknown as typeof changes;
+    if (validChanges.some(change => change.performance.importId !== validImportId || !change.performance.date.startsWith(validMonth))) {
+      throw new Error("Every performance record must belong to the selected import and reporting month.");
+    }
     const value = {
       fileName: validFileName,
       month: validMonth,
+      reportDate: validReportDate,
       createdAt: new Date().toISOString(),
       actor: await getCurrentActor(),
       status: "active",
@@ -1474,7 +1498,14 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     };
     const batch = writeBatch(db);
     batch.set(doc(db, "imports", validImportId), toFirestoreData(value));
-    validChanges.forEach(change => batch.set(doc(db, "imports", validImportId, "changes", change.shopId), toFirestoreData(change)));
+    validChanges.forEach(change => {
+      const shopData = Object.fromEntries(Object.entries(change.importedShop).filter(([key]) => key !== "id"));
+      const performanceData = Object.fromEntries(Object.entries(change.performance).filter(([key]) => key !== "id"));
+      const historyChange = Object.fromEntries(Object.entries(change).filter(([key]) => key !== "performance"));
+      batch.set(doc(db, "shops", change.shopId), toFirestoreData(shopData));
+      batch.set(doc(db, "shops", change.shopId, "performance", change.performanceId), toFirestoreData(performanceData));
+      batch.set(doc(db, "imports", validImportId, "changes", change.shopId), toFirestoreData(historyChange));
+    });
     await batch.commit();
     await refreshDashboardSummaries({ shopIds: validChanges.map(change => change.shopId), months: [validMonth] });
     await recordActivity({
@@ -1653,7 +1684,7 @@ export async function handleUndoLatestImport() {
   }
 }
 
-export type DashboardPeriod = { month: string; importedAt: string | null };
+export type DashboardPeriod = { month: string; reportDate: string | null };
 
 export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
   await getCurrentActor();
@@ -1661,19 +1692,48 @@ export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
     getDocs(collection(db, "shops")),
     getDocs(query(collection(db, "imports"), where("status", "==", "active"), orderBy("createdAt", "desc"))),
   ]);
-  const periods = new Map<string, string | null>();
-  shops.docs.forEach(document => Object.keys(document.data().monthlyData ?? {}).forEach(month => periods.set(month, null)));
+  const periods = new Map<string, { reportDate: string | null; importedAt: string | null; importId?: string }>();
+  shops.docs.forEach(document => Object.keys(document.data().monthlyData ?? {}).forEach(month => periods.set(month, { reportDate: null, importedAt: null })));
   imports.docs.forEach(document => {
-    const parsed = z.object({ month: monthSchema, createdAt: z.string().datetime({ offset: true }) }).passthrough().safeParse(document.data());
-    if (parsed.success && !periods.get(parsed.data.month)) periods.set(parsed.data.month, parsed.data.createdAt);
+    const parsed = z.object({
+      month: monthSchema,
+      createdAt: z.string().datetime({ offset: true }),
+      reportDate: isoDateSchema.optional(),
+    }).passthrough().safeParse(document.data());
+    if (!parsed.success) return;
+    const current = periods.get(parsed.data.month);
+    if (!current?.importedAt) periods.set(parsed.data.month, {
+      reportDate: parsed.data.reportDate ?? null,
+      importedAt: parsed.data.createdAt,
+      importId: document.id,
+    });
   });
-  if (!periods.size) periods.set(format(new Date(), "yyyy-MM"), null);
-  return [...periods]
-    .map(([month, importedAt]) => ({ month, importedAt }))
+  if (!periods.size) periods.set(format(new Date(), "yyyy-MM"), { reportDate: null, importedAt: null });
+
+  // Resolve legacy imports in chunks instead of issuing two reads per period.
+  const legacyImportIds = [...periods.values()].flatMap(period => !period.reportDate && period.importId ? [period.importId] : []);
+  const legacyReportDates = new Map<string, string>();
+  for (let start = 0; start < legacyImportIds.length; start += 30) {
+    const snapshot = await getDocs(query(collectionGroup(db, "performance"), where("importId", "in", legacyImportIds.slice(start, start + 30))));
+    snapshot.docs.forEach(document => {
+      const parsed = performanceDataSchema.safeParse({ id: document.id, ...document.data() });
+      if (parsed.success && parsed.data.importId && !legacyReportDates.has(parsed.data.importId)) {
+        legacyReportDates.set(parsed.data.importId, parsed.data.asOfDate ?? parsed.data.date);
+      }
+    });
+  }
+  const resolvedPeriods = [...periods].map(([month, period]) => ({
+    month,
+    ...period,
+    reportDate: period.reportDate ?? (period.importId ? legacyReportDates.get(period.importId) ?? null : null),
+  }));
+
+  return resolvedPeriods
     .sort((left, right) => {
       if (left.importedAt && right.importedAt) return right.importedAt.localeCompare(left.importedAt) || right.month.localeCompare(left.month);
       if (left.importedAt) return -1;
       if (right.importedAt) return 1;
       return right.month.localeCompare(left.month);
-    });
+    })
+    .map(({ month, reportDate }) => ({ month, reportDate }));
 }

@@ -14,13 +14,14 @@ export function formatReportingMonth(month: string, locale: string): string {
   }).format(date);
 }
 
-export function formatReportingExcelDate(importedAt: string, locale: string): string {
-  const date = new Date(importedAt);
-  if (Number.isNaN(date.getTime())) return importedAt;
+export function formatReportingDate(reportDate: string, locale: string): string {
+  const date = new Date(`${reportDate}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return reportDate;
 
   return new Intl.DateTimeFormat(locale, {
     day: "2-digit",
     month: "long",
     year: "numeric",
+    timeZone: "UTC",
   }).format(date);
 }

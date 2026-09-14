@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,31 +14,25 @@ import {
 import { useLocale } from "next-intl";
 import {
   ArrowDown,
-  ArrowDownRight,
   ArrowUp,
   ArrowUpDown,
-  ArrowUpRight,
-  Building2,
   ChevronLeft,
   ChevronRight,
-  CircleDollarSign,
-  Gauge,
   Search,
   Store,
   UserRoundCog,
 } from "lucide-react";
 
-import { SidebarActions } from "@/components/sidebar-actions";
 import { useShop } from "@/components/shop-provider";
 import { SalesRepresentativeRanking } from "./sales-representative-ranking";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
+import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { formatReportingExcelDate, formatReportingMonth } from "@/lib/reporting-month";
+import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
 import { fetchDashboardPeriods } from "@/app/actions";
-import { fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSummary, type DashboardSupervisorRow } from "@/app/dashboard-actions";
+import { fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSupervisorRow } from "@/app/dashboard-actions";
 
 type ShopPerformanceRow = DashboardRow;
 
@@ -57,7 +51,6 @@ export function DashboardClient() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
-  const [selectedMonth, setSelectedMonth] = useState(searchParams.get("month") ?? "");
   const requestedSort = searchParams.get("sort");
   const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
   const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
@@ -77,9 +70,19 @@ export function DashboardClient() {
   const periodsQuery = useQuery({ queryKey: ["dashboard-periods"], queryFn: fetchDashboardPeriods, staleTime: 60_000 });
   const datasets = useMemo(() => (periodsQuery.data ?? []).map(period => ({
     id: period.month,
-    name: period.importedAt ? formatReportingExcelDate(period.importedAt, locale) : formatReportingMonth(period.month, locale),
+    name: period.reportDate ? formatReportingDate(period.reportDate, locale) : formatReportingMonth(period.month, locale),
   })), [periodsQuery.data, locale]);
-  const activeDatasetId = datasets.some(dataset => dataset.id === selectedMonth) ? selectedMonth : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
+  const requestedMonth = searchParams.get("month");
+  const activeDatasetId = datasets.some(dataset => dataset.id === requestedMonth) ? requestedMonth! : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
+  const previousDatasetId = useRef(activeDatasetId);
+
+  useEffect(() => {
+    if (previousDatasetId.current === activeDatasetId) return;
+    previousDatasetId.current = activeDatasetId;
+    setCursor(null);
+    setCursorHistory([null]);
+    setPagination(current => ({ ...current, pageIndex: 0 }));
+  }, [activeDatasetId]);
 
   const pageQuery = useQuery({
     queryKey: ["firestore-shop-performance-page", activeDatasetId, deferredSearch, pagination.pageSize, cursor, sorting[0]?.id, sorting[0]?.desc],
@@ -97,20 +100,8 @@ export function DashboardClient() {
     });
   }, [activeDatasetId, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, sorting]);
 
-  const shopPerformances = pageQuery.data?.rows ?? [];
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
   const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
-
-  const summary: DashboardSummary = pageQuery.data?.summary ?? {
-    average: 0,
-    forecast: null,
-    revenue: 0,
-    previousAverage: null,
-    previousRevenue: null,
-    allFinal: false,
-    activeShops: 0,
-    shopsAtTarget: 0,
-  };
 
   const table = useReactTable({
     data: pageQuery.data?.rows ?? [],
@@ -174,7 +165,7 @@ export function DashboardClient() {
   }
 
   if (shops.length === 0) {
-    return <div className="flex h-full flex-col items-center justify-center gap-3"><p className="text-muted-foreground">Add a shop to start tracking performance.</p><SidebarActions /></div>;
+    return <div className="relative flex h-full flex-col items-center justify-center gap-3"><SidebarTrigger className="absolute left-3 top-3 h-9 w-9" /><p className="text-muted-foreground">Add a shop to start tracking performance.</p></div>;
   }
 
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
@@ -185,27 +176,7 @@ export function DashboardClient() {
     <div className="flex h-svh flex-col bg-muted/20">
       <main className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4 xl:overflow-hidden">
         <div className="mx-auto flex min-h-full max-w-[1920px] flex-col gap-4 xl:h-full">
-          <div className="flex items-end gap-2">
-            {datasets.length > 0 && <label className="grid shrink-0 gap-1 text-xs text-muted-foreground">
-              <span className="hidden lg:block">Reporting Excel date</span>
-              <select aria-label="Reporting Excel date" className="h-9 w-32 rounded-md border bg-background px-2 text-sm text-foreground lg:w-auto lg:max-w-64 lg:px-3" value={activeDatasetId} onChange={event => { setSelectedMonth(event.target.value); setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 })); }}>
-                {datasets.map(dataset => <option key={dataset.id} value={dataset.id}>{dataset.name}</option>)}
-              </select>
-            </label>}
-
-            <section className="min-w-0 flex-1 overflow-x-auto">
-              <div className="grid min-w-[560px] grid-cols-4 gap-2">
-                <SummaryCard label="Overall achievement" value={`${summary.average.toFixed(1)}%`} detail="Visible locations" icon={Gauge} trend={summary.previousAverage === null ? undefined : `${formatChange(summary.average - summary.previousAverage, " pts")} vs previous month`} positive={summary.previousAverage !== null && summary.average >= summary.previousAverage} />
-                <SummaryCard label="EOM forecast" value={summary.allFinal ? "Final" : summary.forecast === null ? "—" : `${summary.forecast.toFixed(1)}%`} detail={summary.allFinal ? "Completed month" : "Based on current pace"} icon={ArrowUpRight} trend={summary.forecast === null ? undefined : `${(summary.forecast - summary.average).toFixed(1)} pts projected`} positive={summary.forecast !== null && summary.forecast >= summary.average} />
-                <SummaryCard label="Total revenue" value={currency.format(summary.revenue)} detail="Visible locations" icon={CircleDollarSign} trend={summary.previousRevenue === null ? undefined : `${formatChange(summary.revenue - summary.previousRevenue, " ALL")} vs previous month`} positive={summary.previousRevenue !== null && summary.revenue >= summary.previousRevenue} />
-                <SummaryCard label="Active shops" value={String(summary.activeShops)} detail="Matching locations" icon={Building2} trend={`${summary.shopsAtTarget} at or above 100%`} positive />
-              </div>
-            </section>
-
-            <div className="shrink-0">
-              <SidebarActions />
-            </div>
-          </div>
+          <SidebarTrigger className="h-9 w-9 shrink-0" />
 
           <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]">
           <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0">
@@ -261,9 +232,9 @@ export function DashboardClient() {
                     return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
                       <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", pagination.pageIndex * pagination.pageSize + rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</span></td>
                       <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{item.hasData ? <div>{item.totalAchievement.toFixed(1)}%<TrendIndicator change={item.previousAchievement === null ? null : item.totalAchievement - item.previousAchievement} suffix=" pts" /></div> : "—"}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</td>
                       <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.hasData ? <div>{currency.format(item.revenue)}<TrendIndicator change={item.previousRevenue === null ? null : item.revenue - item.previousRevenue} /></div> : "—"}</td>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.hasData ? currency.format(item.revenue) : "—"}</td>
                       <td className="border-b border-r border-slate-200 px-3 py-1 text-center xl:hidden">{item.hasData ? <div className="flex items-center justify-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-12 text-center font-mono text-xs font-medium text-slate-600">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-slate-500">Not imported</span>}</td>
                     </tr>;
                   })}
@@ -366,21 +337,4 @@ function TablePagination({ table, resultCount }: { table: DashboardTable; result
       <div className="flex gap-1"><Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></Button><Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} aria-label="Next page"><ChevronRight className="h-4 w-4" /></Button></div>
     </div>
   </div>;
-}
-
-type SummaryCardProps = { label: string; value: string; detail: string; icon: typeof Gauge; trend?: string; positive?: boolean };
-
-function formatChange(change: number, suffix = "") {
-  return `${change >= 0 ? "+" : ""}${change.toFixed(suffix === " pts" ? 1 : 0)}${suffix}`;
-}
-
-function TrendIndicator({ change, suffix = "" }: { change: number | null; suffix?: string }) {
-  if (change === null) return <span className="mt-0.5 block text-[10px] font-normal text-slate-400">No prior month</span>;
-  const Icon = change >= 0 ? ArrowUpRight : ArrowDownRight;
-  return <span className={cn("mt-0.5 flex items-center justify-center gap-0.5 text-[10px] font-medium", change >= 0 ? "text-emerald-700" : "text-rose-700")}><Icon className="h-3 w-3" />{formatChange(change, suffix)}</span>;
-}
-
-function SummaryCard({ label, value, detail, icon: Icon, trend, positive }: SummaryCardProps) {
-  const TrendIcon = positive ? ArrowUpRight : ArrowDownRight;
-  return <Card className="min-w-0"><CardContent className="flex min-h-16 items-center gap-2 p-2.5"><span className="rounded-md bg-primary/10 p-1.5 text-primary"><Icon className="h-3.5 w-3.5" /></span><div className="min-w-0 flex-1"><div className="flex items-baseline justify-between gap-2"><p className="truncate text-[11px] font-medium text-muted-foreground">{label}</p><p className="shrink-0 text-base font-bold tracking-tight tabular-nums">{value}</p></div><div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px]"><span className="shrink-0 text-muted-foreground">{detail}</span>{trend && <><span className="text-muted-foreground">·</span><span className={cn("truncate", positive ? "text-emerald-600" : "text-amber-600")}><TrendIcon className="mr-0.5 inline h-2.5 w-2.5" />{trend}</span></>}</div></div></CardContent></Card>;
 }

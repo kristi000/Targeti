@@ -6,6 +6,8 @@
   },
   "Sidebar": {
     "dashboard": "Dashboard",
+    "insights": "Insights",
+    "reportingDate": "Reporting date",
     "setMonthlyTargets": "Set Monthly Targets",
     "editAchievements": "Edit Achievements",
     "editShop": "Edit Shop",

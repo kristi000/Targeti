@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { performanceMetrics } from "@/lib/types";
 
-const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date in YYYY-MM-DD format");
+export const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date in YYYY-MM-DD format");
 export const monthSchema = z.string().regex(/^\d{4}-\d{2}$/, "Expected a month in YYYY-MM format");
 const documentIdSchema = z.string().trim().min(1).max(150).refine(value => !value.includes("/"), "Invalid document ID");
 export const metricKeySchema = z.string().refine(
@@ -100,6 +100,9 @@ export const performanceDataSchema = z.object({
   includeInOverview: z.boolean().optional(),
   qualityMetrics: qualityMetricsSchema.optional(),
   targets: targetSchema.optional(),
+  representativeTargets: z.record(documentIdSchema, targetSchema).optional(),
+  metricSettings: metricSettingsSchema.optional(),
+  metricOrder: metricOrderSchema.optional(),
   revenue: finiteNonNegativeNumber.optional(),
 }).strict();
 

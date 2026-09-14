@@ -2,8 +2,15 @@
 "use client";
 
 import React from "react";
+import { SidebarNav } from "@/components/sidebar-nav";
 import { useShop } from "@/components/shop-provider";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Sidebar,
+  SidebarInset,
+  SidebarProvider,
+  SidebarRail,
+} from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/toaster";
 
 function AppSkeleton() {
@@ -18,11 +25,22 @@ function AppSkeleton() {
 }
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
-    const { loading } = useShop();
+  const { loading } = useShop();
 
-    if (loading) {
-        return <AppSkeleton />;
-    }
+  if (loading) {
+    return <AppSkeleton />;
+  }
 
-    return <>{children}<Toaster /></>;
+  return (
+    <SidebarProvider>
+      <Sidebar collapsible="offcanvas">
+        <SidebarNav />
+        <SidebarRail />
+      </Sidebar>
+      <SidebarInset className="min-w-0 overflow-hidden">
+        {children}
+      </SidebarInset>
+      <Toaster />
+    </SidebarProvider>
+  );
 }

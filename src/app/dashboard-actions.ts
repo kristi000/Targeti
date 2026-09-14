@@ -1,11 +1,11 @@
 "use server";
 
-import { format, getDaysInMonth, parseISO, subMonths } from "date-fns";
 import { FieldPath } from "firebase-admin/firestore";
 import { z } from "zod";
 
 import { getCurrentActor, requireEditor } from "@/lib/access";
 import { adminDb } from "@/lib/firebase-admin";
+import { calculateForecastAchievement, getForecastDate } from "@/lib/forecast";
 import { monthSchema, performanceDataSchema, shopIdSchema, shopSchema, supervisorSchema } from "@/lib/persistence-schemas";
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getOverviewPerformanceData, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type Shop, type Supervisor } from "@/lib/types";
@@ -14,7 +14,7 @@ import type { DashboardCursor, DashboardRow, DashboardSortKey, DashboardSummary,
 export type { DashboardCursor, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 
 type ShopSummary = {
-  schemaVersion: 2;
+  schemaVersion: 3;
   shopId: string;
   shopName: string;
   normalizedShopName: string;
@@ -36,8 +36,8 @@ type ShopSummary = {
 };
 
 type MonthMeta = {
-  schemaVersion: 2;
-  summary: Omit<DashboardSummary, "previousAverage" | "previousRevenue">;
+  schemaVersion: 3;
+  summary: DashboardSummary;
   supervisorRows: DashboardSupervisorRow[];
   updatedAt: string;
 };
@@ -83,13 +83,14 @@ function performanceSummary(shop: Shop, entries: PerformanceData[]) {
   const targets = report?.targets ?? shop.monthlyData?.[report?.date.slice(0, 7) ?? ""]?.targets ?? shop.monthlyTargets;
   if (!report || !targets) return { achievement: 0, revenue: 0, forecast: 0, isFinal: false, hasData: false };
   const monthData = shop.monthlyData?.[report.date.slice(0, 7)];
-  const settings = monthData?.metricSettings ?? shop.metricSettings;
-  const metrics = getShopMetrics({ ...shop, metricSettings: settings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, targets);
+  const settings = report.metricSettings ?? monthData?.metricSettings ?? shop.metricSettings;
+  const metrics = getShopMetrics({ ...shop, metricSettings: settings, metricOrder: report.metricOrder ?? monthData?.metricOrder ?? shop.metricOrder }, targets);
   const actuals = getPerformanceShopActuals(active, metrics);
   const achievement = calculateTotalAchievement(actuals, targets, settings);
   const isFinal = report.reportType === "completedMonth";
-  const reportedDate = parseISO(report.asOfDate ?? report.date);
-  const forecast = isFinal ? achievement : achievement / Math.max(reportedDate.getDate(), 1) * getDaysInMonth(reportedDate);
+  const forecast = isFinal
+    ? achievement
+    : calculateForecastAchievement(actuals, targets, metrics, getForecastDate(report), settings);
   return { achievement, revenue: report.revenue ?? monthData?.collection ?? 0, forecast, isFinal, hasData: true };
 }
 
@@ -115,7 +116,7 @@ function createShopSummary(shop: Shop, entries: PerformanceData[], supervisors: 
   const result = performanceSummary(shop, entries);
   const supervisor = shop.supervisorId ? supervisors.get(shop.supervisorId) : undefined;
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     shopId: shop.id,
     shopName: shop.name,
     normalizedShopName: normalizeText(shop.name),
@@ -161,7 +162,7 @@ function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]
     } satisfies DashboardSupervisorRow;
   }).sort((left, right) => right.averageAchievement - left.averageAchievement || left.name.localeCompare(right.name));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     summary: {
       average: reporting.length ? reporting.reduce((sum, value) => sum + value.achievement, 0) / reporting.length : 0,
       forecast: reporting.length ? reporting.reduce((sum, value) => sum + value.forecast, 0) / reporting.length : null,
@@ -220,7 +221,7 @@ async function rebuildMonth(month: string) {
 async function ensureMonth(month: string) {
   const reference = adminDb.collection("dashboardSummaries").doc(month);
   const snapshot = await reference.get();
-  if (!snapshot.exists || snapshot.data()?.schemaVersion !== 2) await rebuildMonth(month);
+  if (!snapshot.exists || snapshot.data()?.schemaVersion !== 3) await rebuildMonth(month);
 }
 
 export async function fetchPerformanceDataForMonth(month: string): Promise<Record<string, PerformanceData[]>> {
@@ -282,21 +283,18 @@ export async function refreshDashboardSummaries(input: { shopIds: string[]; mont
   await Promise.all([...touchedMonths].map(writeMonthMeta));
 }
 
-function summaryFromDocuments(current: FirebaseFirestore.QueryDocumentSnapshot[], previous: FirebaseFirestore.DocumentSnapshot[]): DashboardSummary {
-  const currentMeta = summarizeDocuments(current).summary;
-  const previousValues = previous.filter(document => document.exists && Boolean(document.data()?.hasData)).map(document => document.data() as ShopSummary);
-  return {
-    ...currentMeta,
-    previousAverage: previousValues.length ? previousValues.reduce((sum, value) => sum + value.achievement, 0) / previousValues.length : null,
-    previousRevenue: previousValues.length ? previousValues.reduce((sum, value) => sum + value.revenue, 0) : null,
-  };
+export async function fetchDashboardInsights(month: string): Promise<DashboardSummary> {
+  await getCurrentActor();
+  const validMonth = monthSchema.parse(month);
+  await ensureMonth(validMonth);
+  const snapshot = await adminDb.collection("dashboardSummaries").doc(validMonth).get();
+  return (snapshot.data() as MonthMeta).summary;
 }
 
 export async function fetchDashboardPage(input: { month: string; search?: string; pageSize: number; cursor?: DashboardCursor | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
   await getCurrentActor();
   const value = dashboardPageSchema.parse(input);
-  const previousMonth = format(subMonths(parseISO(`${value.month}-01`), 1), "yyyy-MM");
-  await Promise.all([ensureMonth(value.month), ensureMonth(previousMonth)]);
+  await ensureMonth(value.month);
 
   const monthReference = adminDb.collection("dashboardSummaries").doc(value.month);
   let baseQuery: FirebaseFirestore.Query = monthReference.collection("shops");
@@ -345,12 +343,8 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     total = countSnapshot.data().count;
   }
   const metaSnapshot = await monthReference.get();
-  const previousReferences = pageDocuments.map(document => adminDb.collection("dashboardSummaries").doc(previousMonth).collection("shops").doc(document.id));
-  const previousDocuments = previousReferences.length ? await adminDb.getAll(...previousReferences) : [];
-  const previousById = new Map(previousDocuments.map(document => [document.id, document.data() as ShopSummary | undefined]));
   const rows = pageDocuments.map(document => {
     const summary = document.data() as ShopSummary;
-    const previous = previousById.get(document.id);
     return {
       shop: { id: document.id, name: summary.shopName, ...(summary.supervisorId ? { supervisorId: summary.supervisorId } : {}) },
       revenue: summary.revenue,
@@ -358,25 +352,16 @@ export async function fetchDashboardPage(input: { month: string; search?: string
       forecastAchievement: summary.hasData && !summary.isFinal ? summary.forecast : null,
       isFinal: summary.isFinal,
       hasData: summary.hasData,
-      previousAchievement: previous?.hasData ? previous.achievement : null,
-      previousRevenue: previous?.hasData ? previous.revenue : null,
     } satisfies DashboardRow;
   });
 
   let summary: DashboardSummary;
   if (normalizedSearch) {
     const matching = await baseQuery.get();
-    const previous = matching.empty ? [] : await adminDb.getAll(...matching.docs.map(document => adminDb.collection("dashboardSummaries").doc(previousMonth).collection("shops").doc(document.id)));
-    summary = summaryFromDocuments(matching.docs, previous);
+    summary = summarizeDocuments(matching.docs).summary;
   } else {
     const meta = metaSnapshot.data() as MonthMeta;
-    const previousMeta = (await adminDb.collection("dashboardSummaries").doc(previousMonth).get()).data() as MonthMeta | undefined;
-    const previousHasData = previousMeta !== undefined && previousMeta.summary.forecast !== null;
-    summary = {
-      ...meta.summary,
-      previousAverage: previousHasData ? previousMeta?.summary.average ?? null : null,
-      previousRevenue: previousHasData ? previousMeta?.summary.revenue ?? null : null,
-    };
+    summary = meta.summary;
   }
 
   const last = pageDocuments.at(-1);

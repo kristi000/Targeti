@@ -80,6 +80,9 @@ export type PerformanceData = {
   includeInOverview?: boolean;
   qualityMetrics?: QualityMetrics;
   targets?: Target;
+  representativeTargets?: Record<string, Target>;
+  metricSettings?: MetricSettings;
+  metricOrder?: PerformanceMetric[];
   revenue?: number;
 };
 

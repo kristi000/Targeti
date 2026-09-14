@@ -1,19 +1,61 @@
 "use client";
 
 import Link from "next/link";
-import { BarChart3, BadgeDollarSign, ClipboardCheck } from "lucide-react";
+import { ArrowLeft, BarChart3, BadgeDollarSign, ClipboardCheck, Store } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
-import { cn } from "@/lib/utils";
+import { usePathname } from "next/navigation";
+import {
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
 
-type Props = { shopId: string; active: "performance" | "bonus" | "closing" };
+type Props = { shopId: string; shopName?: string };
 
-export function ShopPageNav({ shopId, active }: Props) {
+export function ShopPageNav({ shopId, shopName }: Props) {
   const locale = useLocale();
   const t = useTranslations("DetailedDashboard");
-  const itemClass = (selected: boolean) => cn("flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:gap-2 sm:px-4 sm:py-2 sm:text-sm", selected ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground");
-  return <nav aria-label={t("shopPageNavigation")} className="grid w-full grid-cols-3 rounded-lg bg-muted p-1 sm:w-fit">
-    <Link href={`/${locale}/shop/${shopId}`} className={itemClass(active === "performance")}><BarChart3 className="h-4 w-4" />{t("performancePage")}</Link>
-    <Link href={`/${locale}/shop/${shopId}/bonus`} className={itemClass(active === "bonus")}><BadgeDollarSign className="h-4 w-4" />{t("bonusPage")}</Link>
-    <Link href={`/${locale}/shop/${shopId}/closing`} className={itemClass(active === "closing")}><ClipboardCheck className="h-4 w-4" />{t("closingPage")}</Link>
-  </nav>;
+  const pathname = usePathname();
+  const basePath = `/${locale}/shop/${shopId}`;
+  const items = [
+    { href: basePath, icon: BarChart3, label: t("performancePage") },
+    { href: `${basePath}/bonus`, icon: BadgeDollarSign, label: t("bonusPage") },
+    { href: `${basePath}/closing`, icon: ClipboardCheck, label: t("closingPage") },
+  ];
+
+  return (
+    <SidebarGroup className="px-0 py-2">
+      <SidebarGroupLabel className="h-auto px-2 pb-2">
+        <span className="flex min-w-0 items-center gap-2 text-sidebar-foreground">
+          <Store className="h-4 w-4 shrink-0 text-primary" />
+          <span className="truncate font-medium">{shopName ?? t("title")}</span>
+        </span>
+      </SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu aria-label={t("shopPageNavigation")}>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild tooltip={t("backToOverview")}>
+              <Link href={`/${locale}/`}>
+                <ArrowLeft />
+                <span>{t("backToOverview")}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          {items.map(item => (
+            <SidebarMenuItem key={item.href}>
+              <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.label}>
+                <Link href={item.href}>
+                  <item.icon />
+                  <span>{item.label}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
 }

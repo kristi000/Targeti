@@ -1,4 +1,4 @@
-import { getMessages, getLocale } from "next-intl/server";
+import { getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
 import { ClientApplication } from "@/components/client-application";
 
@@ -17,7 +17,7 @@ export default async function LocaleLayout({
    let messages;
    try {
      messages = await getMessages({locale});
-   } catch (error) {
+   } catch {
      messages = await getMessages({ locale: "en" });
    }
 

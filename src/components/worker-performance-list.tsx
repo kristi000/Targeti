@@ -15,6 +15,7 @@ type Props = {
   salesRepresentatives: SalesRepresentative[];
   performanceData: PerformanceData[];
   monthlyTargets: Target;
+  representativeTargets?: Record<string, Target>;
   metricSettings?: MetricSettings;
   metricOrder?: PerformanceMetric[];
   shopId: string;
@@ -22,7 +23,7 @@ type Props = {
 
 const statusClass = (value: number) => value >= 100 ? "text-emerald-700 dark:text-emerald-400" : value >= 70 ? "text-amber-700 dark:text-amber-400" : "text-red-700 dark:text-red-400";
 
-export function WorkerPerformanceList({ salesRepresentatives, performanceData, monthlyTargets, metricSettings, metricOrder, shopId }: Props) {
+export function WorkerPerformanceList({ salesRepresentatives, performanceData, monthlyTargets, representativeTargets, metricSettings, metricOrder, shopId }: Props) {
   const t = useTranslations("DetailedDashboard");
   const isDesktop = useMediaQuery("(min-width: 1280px)");
   const metrics = useMemo(() => getMetricOrder(metricOrder, Object.keys(monthlyTargets) as PerformanceMetric[]), [metricOrder, monthlyTargets]);
@@ -34,14 +35,14 @@ export function WorkerPerformanceList({ salesRepresentatives, performanceData, m
     performanceData.forEach(day => day.reps.forEach(rep => metrics.forEach(metric => {
       if (totals[rep.repId]) totals[rep.repId][metric] += rep[metric] || 0;
     })));
-    const targets = getEqualRepresentativeTargets(monthlyTargets, metrics, salesRepresentatives.length);
+    const equalTargets = getEqualRepresentativeTargets(monthlyTargets, metrics, salesRepresentatives.length);
     return salesRepresentatives.map(representative => ({
       ...representative,
       totals: totals[representative.id],
-      targets,
-      achievement: calculateTotalAchievement(totals[representative.id], targets, metricSettings),
+      targets: representativeTargets?.[representative.id] ?? equalTargets,
+      achievement: calculateTotalAchievement(totals[representative.id], representativeTargets?.[representative.id] ?? equalTargets, metricSettings),
     }));
-  }, [salesRepresentatives, performanceData, monthlyTargets, metricSettings, metrics]);
+  }, [salesRepresentatives, performanceData, monthlyTargets, representativeTargets, metricSettings, metrics]);
 
   return <section id="representative-bonuses" className="scroll-mt-4 space-y-2 sm:space-y-4 xl:col-span-2">
   {!isDesktop ? <section className="space-y-2 sm:space-y-4">

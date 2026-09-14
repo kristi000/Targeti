@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Gauge, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { METRIC_CONFIG } from "@/lib/data";
@@ -91,7 +91,7 @@ export function PerformanceTable({
     localStorage.setItem(storageId, JSON.stringify(next));
   };
 
-  const metricLabel = (metric: PerformanceMetric) => metric.startsWith("custom_") ? getCustomMetricLabel(metric, metricSettings) : tMetric(metric);
+  const metricLabel = useCallback((metric: PerformanceMetric) => metric.startsWith("custom_") ? getCustomMetricLabel(metric, metricSettings) : tMetric(metric), [metricSettings, tMetric]);
   const showForecast = !simplified && (Boolean(forecasts) || isFinal || !compact);
   const columns: Column[] = compact
     ? ["metric", "target", "actual", "achievement", ...(showForecast ? ["forecast" as const] : [])]
@@ -137,7 +137,7 @@ export function PerformanceTable({
         : firstValue - Number(secondValue);
       return direction === "ascending" ? comparison : -comparison;
     });
-  }, [metricOrder, preferences.sort, metricSettings, tMetric, locale, targets, actuals, forecasts]);
+  }, [metricOrder, preferences.sort, metricLabel, locale, targets, actuals, forecasts]);
   const emptyRowCount = Math.max(0, STABLE_ROW_COUNT - metrics.length);
 
   const toggleSort = (column: Column) => {
