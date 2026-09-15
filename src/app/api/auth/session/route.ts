@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { SESSION_COOKIE_NAME } from "@/lib/auth-constants"
-import { adminAuth, adminDb } from "@/lib/firebase-admin"
+import { RESTRICTED_ACCESS_COOKIE_NAME } from "@/lib/restricted-access"
 import {
   authenticate,
   createSession,
@@ -9,7 +9,6 @@ import {
   passwordSchema,
   SESSION_DURATION_MS,
   usernameSchema,
-  type LocalActor,
 } from "@/lib/local-auth"
 
 const bodySchema = z
@@ -37,25 +36,6 @@ function hasValidRequestOrigin(request: NextRequest) {
   }
 }
 
-async function createClientSession(actor: LocalActor) {
-  const updatedAt = new Date().toISOString()
-  await adminDb.collection("accessProfiles").doc(actor.id).set(
-    {
-      username: actor.username,
-      name: actor.name,
-      role: actor.role,
-      updatedAt,
-    },
-    { merge: true },
-  )
-  const firebaseToken = await adminAuth.createCustomToken(actor.id, {
-    appRole: actor.role,
-    appUsername: actor.username,
-    appName: actor.name,
-  })
-  return { firebaseToken, actor }
-}
-
 export async function GET(request: NextRequest) {
   const sessionToken = request.cookies.get(SESSION_COOKIE_NAME)?.value
   const actor = sessionToken ? await getActorForSession(sessionToken) : null
@@ -64,15 +44,7 @@ export async function GET(request: NextRequest) {
       { error: "Your session has expired." },
       { status: 401 },
     )
-  try {
-    return NextResponse.json(await createClientSession(actor))
-  } catch (error) {
-    console.error("Firebase client session creation failed:", error)
-    return NextResponse.json(
-      { error: "Could not initialize the client session." },
-      { status: 500 },
-    )
-  }
+  return NextResponse.json({ actor })
 }
 
 export async function POST(request: NextRequest) {
@@ -90,10 +62,7 @@ export async function POST(request: NextRequest) {
         { status: 401 },
       )
     const sessionToken = await createSession(actor)
-    const response = NextResponse.json({
-      success: true,
-      ...(await createClientSession(actor)),
-    })
+    const response = NextResponse.json({ success: true, actor })
     response.cookies.set(SESSION_COOKIE_NAME, sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
@@ -124,6 +93,13 @@ export async function DELETE(request: NextRequest) {
     )
   const response = NextResponse.json({ success: true })
   response.cookies.set(SESSION_COOKIE_NAME, "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  })
+  response.cookies.set(RESTRICTED_ACCESS_COOKIE_NAME, "", {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

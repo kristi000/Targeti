@@ -1,31 +1,36 @@
-"use client";
+import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 
-import { useEffect } from "react";
-import { useParams } from "next/navigation";
-import { BonusDashboardClient } from "@/components/bonus-dashboard-client";
-import { useShop } from "@/components/shop-provider";
+import { fetchBonusSnapshot } from "@/app/actions/bonus";
+import { BonusDashboardRoute } from "@/components/bonus-dashboard-route";
+import { BonusAccessGate } from "@/components/bonus-access-gate";
+import { hasRestrictedAccess } from "@/lib/restricted-access";
+import { getPerformanceMonthsByImportRecency } from "@/lib/types";
+import { bonusSnapshotQueryKey, shopPerformanceQueryKey } from "@/lib/query-keys";
+import { getShopDirectory, getShopPerformance } from "@/lib/server/dashboard-loaders";
+import { notFound } from "next/navigation";
 
-export default function BonusPage() {
-  const { shopId } = useParams<{ shopId: string }>();
-  const { shops, selectedShop, setSelectedShop, loadPerformanceForShop } = useShop();
-  useEffect(() => {
-    const shop = shops.find(item => item.id === shopId);
-    if (shop && selectedShop?.id !== shop.id) setSelectedShop(shop);
-    if (shop) void loadPerformanceForShop(shop.id);
-  }, [shops, shopId, selectedShop, setSelectedShop, loadPerformanceForShop]);
+export default async function BonusPage({ params }: { params: Promise<{ shopId: string }> }) {
+  const { shopId } = await params;
+  const directory = await getShopDirectory();
+  const shop = directory.shops.find(item => item.id === shopId);
+  if (!shop) notFound();
+  if (!await hasRestrictedAccess()) return <BonusAccessGate />;
 
-  useEffect(() => {
-    const refreshPerformance = () => void loadPerformanceForShop(shopId);
-    const refreshVisiblePerformance = () => {
-      if (document.visibilityState === "visible") refreshPerformance();
-    };
-    window.addEventListener("focus", refreshPerformance);
-    document.addEventListener("visibilitychange", refreshVisiblePerformance);
-    return () => {
-      window.removeEventListener("focus", refreshPerformance);
-      document.removeEventListener("visibilitychange", refreshVisiblePerformance);
-    };
-  }, [shopId, loadPerformanceForShop]);
+  const queryClient = new QueryClient();
+  const performance = await getShopPerformance(shopId);
+  queryClient.setQueryData(shopPerformanceQueryKey(shopId), performance);
+  const months = getPerformanceMonthsByImportRecency(performance, Object.keys(shop?.monthlyData ?? {}));
+  const month = months[0];
+  if (month) {
+    await queryClient.prefetchQuery({
+      queryKey: bonusSnapshotQueryKey(shopId, month),
+      queryFn: () => fetchBonusSnapshot(shopId, month),
+    });
+  }
 
-  return selectedShop?.id === shopId ? <BonusDashboardClient /> : null;
+  return (
+    <HydrationBoundary state={dehydrate(queryClient)}>
+      <BonusDashboardRoute shopId={shopId} />
+    </HydrationBoundary>
+  );
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { WorkBook, WorkSheet } from "xlsx";
+import type { Sheet, SheetData } from "read-excel-file/browser";
 import { EXCEL_METRIC_LABELS } from "@/lib/metric-definitions";
 import { performanceMetrics, type PerformanceMetric, type Target } from "@/lib/types";
 
@@ -45,8 +45,7 @@ export type ImportedWorkbookData = Omit<z.infer<typeof importedWorkbookSchema>, 
   detectedMetrics: PerformanceMetric[];
 };
 
-type Cell = string | number | boolean | Date | null | undefined;
-type SheetToJson = typeof import("xlsx")["utils"]["sheet_to_json"];
+type Cell = string | number | boolean | Date | typeof Date | null | undefined;
 type MetricColumns = Partial<Record<PerformanceMetric, number>>;
 type Table = {
   rows: Cell[][];
@@ -119,13 +118,16 @@ function representativeId(name: string) {
 
 function excelDate(value: Cell) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
-  if (typeof value === "number") return new Date(Date.UTC(1899, 11, 30) + Math.floor(value) * 86_400_000);
+  // The reader already converts date-formatted Excel cells to Date objects.
+  // Treating every number as an Excel serial makes ordinary KPI values look
+  // like dates (for example, a value around 63,000 lands in February 2074).
+  if (typeof value !== "string" || !value.trim()) return null;
   const parsed = new Date(String(value ?? ""));
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function rowsOf(sheet: WorkSheet, sheetToJson: SheetToJson) {
-  return sheetToJson<Cell[]>(sheet, { header: 1, raw: true, defval: null });
+function rowsOf(sheet: SheetData): Cell[][] {
+  return sheet.map(row => row.map(cell => cell ?? null));
 }
 
 function columnHeaders(rows: Cell[][], start: number, end: number) {
@@ -189,14 +191,12 @@ function dynamicMetricColumns(headers: string[], displayHeaders: string[], custo
   return { targetColumns, achievementColumns, metricLabels };
 }
 
-function findTables(workbook: WorkBook, role: "shop" | "representative", customMetricLabels: Partial<Record<PerformanceMetric, string>>, sheetToJson: SheetToJson) {
+function findTables(workbook: Sheet[], role: "shop" | "representative", customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
   const aliases = role === "shop" ? shopAliases : userAliases;
   const tables: Table[] = [];
 
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
-    const rows = rowsOf(sheet, sheetToJson);
+  for (const sheet of workbook) {
+    const rows = rowsOf(sheet.data);
     let best: (Table & { score: number }) | null = null;
 
     for (let start = 0; start < rows.length; start += 1) {
@@ -251,9 +251,12 @@ function reportDate(rows: Cell[][]) {
   };
   const month = Object.entries(months).find(([name]) => text.includes(name))?.[1];
   const year = Number(text.match(/\b20\d{2}\b/)?.[0]);
-  return month && year
-    ? new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10)
-    : new Date().toISOString().slice(0, 10);
+  const today = new Date();
+  if (month && year) {
+    const day = Math.min(today.getDate(), new Date(year, month, 0).getDate());
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 }
 
 function dataRows(table: Table) {
@@ -271,10 +274,10 @@ function dataRows(table: Table) {
   return rows;
 }
 
-function parseDetectedWorkbook(workbook: WorkBook, customMetricLabels: Partial<Record<PerformanceMetric, string>>, sheetToJson: SheetToJson) {
+function parseDetectedWorkbook(workbook: Sheet[], customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
   const warnings: string[] = [];
-  const shopTable = findTables(workbook, "shop", customMetricLabels, sheetToJson)[0];
-  const representativeTable = findTables(workbook, "representative", customMetricLabels, sheetToJson)[0];
+  const shopTable = findTables(workbook, "shop", customMetricLabels)[0];
+  const representativeTable = findTables(workbook, "representative", customMetricLabels)[0];
   if (!shopTable || !representativeTable) {
     throw new Error("Could not find the shop and representative target/achievement tables in this workbook.");
   }
@@ -358,8 +361,13 @@ function parseDetectedWorkbook(workbook: WorkBook, customMetricLabels: Partial<R
 }
 
 export async function importTargetWorkbook(file: File, customMetricLabels: Partial<Record<PerformanceMetric, string>> = {}) {
-  if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error("Please choose an Excel .xlsx or .xls file.");
-  const { read, utils } = await import("xlsx");
-  const workbook = read(await file.arrayBuffer(), { type: "array", cellDates: true });
-  return parseDetectedWorkbook(workbook, customMetricLabels, utils.sheet_to_json);
+  if (!/\.xlsx$/i.test(file.name)) throw new Error("Please choose an Excel .xlsx file.");
+  if (file.size > 10 * 1024 * 1024) throw new Error("The workbook is larger than the 10 MB import limit.");
+  const { default: readXlsxFile } = await import("read-excel-file/browser");
+  const workbook = await readXlsxFile(file, { dateFormat: "mm/dd/yyyy" });
+  const cellCount = workbook.reduce((total, sheet) => total + sheet.data.reduce((sum, row) => sum + row.length, 0), 0);
+  if (workbook.length > 25 || cellCount > 250_000) {
+    throw new Error("The workbook exceeds the import limit of 25 sheets or 250,000 cells.");
+  }
+  return parseDetectedWorkbook(workbook, customMetricLabels);
 }

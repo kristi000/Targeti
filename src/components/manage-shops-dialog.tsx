@@ -18,7 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { handleApplyMetricWeightsToShops, handleRemoveMetricFromShops, handleRestoreMetricToShops } from "@/app/actions";
+import { handleApplyMetricWeightsToShops, handleRemoveMetricFromShops, handleRestoreMetricToShops } from "@/app/actions/metric-settings";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -519,8 +519,9 @@ function getMetricLabel(metric: PerformanceMetric, metricSettings: ReturnType<ty
 }
 
 function omitMetric<T>(record: Record<PerformanceMetric, T>, metric: PerformanceMetric) {
-  const { [metric]: _removed, ...remaining } = record;
-  return remaining as Record<PerformanceMetric, T>;
+  const remaining = { ...record };
+  delete remaining[metric];
+  return remaining;
 }
 
 type BulkMetricEditorProps = {

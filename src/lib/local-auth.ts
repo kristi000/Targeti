@@ -21,6 +21,7 @@ const storedUserSchema = z.object({
   name: z.string().trim().min(1).max(120),
   passwordHash: z.string().min(1),
   role: managedRoleSchema,
+  shopIds: z.array(z.string().trim().min(1).max(150)).max(500).default([]),
   sessionVersion: z.number().int().nonnegative(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
@@ -39,11 +40,12 @@ export type LocalActor = {
   username: string;
   name: string;
   role: z.infer<typeof appRoleSchema>;
+  shopIds: string[];
 };
 
 export const ADMIN_ID = "local-admin";
 export const ADMIN_USERNAME = "admin";
-export const ADMIN_PASSWORD = "01";
+export const ADMIN_PASSWORD = "2001";
 export const SESSION_DURATION_MS = 5 * 24 * 60 * 60 * 1000;
 
 export function normalizeUsername(username: string) {
@@ -99,13 +101,13 @@ export async function findUserByUsername(username: string): Promise<StoredUser |
 export async function authenticate(username: string, password: string): Promise<LocalActor | null> {
   const normalizedUsername = normalizeUsername(username);
   if (normalizedUsername === ADMIN_USERNAME) {
-    return matchesAdminPassword(password) ? { id: ADMIN_ID, username: ADMIN_USERNAME, name: "@Kristi", role: "admin" } : null;
+    return matchesAdminPassword(password) ? { id: ADMIN_ID, username: ADMIN_USERNAME, name: "@Kristi", role: "admin", shopIds: [] } : null;
   }
 
   const user = await findUserByUsername(normalizedUsername);
   if (!user || !await verifyPassword(password, user.passwordHash)) return null;
   await adminDb.collection("authUsers").doc(user.id).update({ lastSignInAt: new Date().toISOString() });
-  return { id: user.id, username: user.username, name: user.name, role: user.role };
+  return { id: user.id, username: user.username, name: user.name, role: user.role, shopIds: user.shopIds };
 }
 
 export async function createSession(actor: LocalActor) {
@@ -130,15 +132,15 @@ export async function getActorForSession(token: string): Promise<LocalActor | nu
   catch { return null; }
   const session = sessionSchema.safeParse(decoded);
   if (!session.success || Date.parse(session.data.expiresAt) <= Date.now()) return null;
-  if (session.data.userId === ADMIN_ID) return { id: ADMIN_ID, username: ADMIN_USERNAME, name: "@Kristi", role: "admin" };
+  if (session.data.userId === ADMIN_ID) return { id: ADMIN_ID, username: ADMIN_USERNAME, name: "@Kristi", role: "admin", shopIds: [] };
 
   const userDocument = await adminDb.collection("authUsers").doc(session.data.userId).get();
   const user = storedUserSchema.safeParse(userDocument.data());
   if (!user.success || user.data.sessionVersion !== session.data.sessionVersion) return null;
-  return { id: userDocument.id, username: user.data.username, name: user.data.name, role: user.data.role };
+  return { id: userDocument.id, username: user.data.username, name: user.data.name, role: user.data.role, shopIds: user.data.shopIds };
 }
 
-export async function createManagedUser(input: { username: string; name: string; password: string; role: z.infer<typeof managedRoleSchema> }) {
+export async function createManagedUser(input: { username: string; name: string; password: string; role: z.infer<typeof managedRoleSchema>; shopIds: string[] }) {
   const username = usernameSchema.parse(input.username);
   const normalizedUsername = normalizeUsername(username);
   if (normalizedUsername === ADMIN_USERNAME) throw new Error("USERNAME_TAKEN");
@@ -151,6 +153,7 @@ export async function createManagedUser(input: { username: string; name: string;
     name: z.string().trim().min(1).max(120).parse(input.name),
     passwordHash,
     role: managedRoleSchema.parse(input.role),
+    shopIds: input.shopIds,
     sessionVersion: 0,
     createdAt: now,
     updatedAt: now,
@@ -163,7 +166,7 @@ export async function createManagedUser(input: { username: string; name: string;
     if ((await transaction.get(mappingReference)).exists) throw new Error("USERNAME_TAKEN");
     transaction.create(mappingReference, { userId, normalizedUsername });
     transaction.create(userReference, user);
-    transaction.create(accessReference, { username, name: user.name, role: user.role, sessionVersion: 0, updatedAt: now });
+    transaction.create(accessReference, { username, name: user.name, role: user.role, shopIds: user.shopIds, sessionVersion: 0, updatedAt: now });
   });
   return { id: userId, ...user };
 }
@@ -176,19 +179,20 @@ export async function listManagedUsers(): Promise<StoredUser[]> {
   });
 }
 
-export async function setManagedUserRole(userId: string, role: z.infer<typeof managedRoleSchema>) {
+export async function setManagedUserAccess(userId: string, role: z.infer<typeof managedRoleSchema>, shopIds: string[]) {
   const reference = adminDb.collection("authUsers").doc(userId);
   const accessReference = adminDb.collection("accessProfiles").doc(userId);
   return adminDb.runTransaction(async transaction => {
     const document = await transaction.get(reference);
     const user = storedUserSchema.parse(document.data());
     const validRole = managedRoleSchema.parse(role);
-    if (user.role !== validRole) {
+    const accessChanged = user.role !== validRole || user.shopIds.length !== shopIds.length || user.shopIds.some(id => !shopIds.includes(id));
+    if (accessChanged) {
       const updatedAt = new Date().toISOString();
       const sessionVersion = user.sessionVersion + 1;
-      transaction.update(reference, { role: validRole, sessionVersion, updatedAt });
-      transaction.set(accessReference, { username: user.username, name: user.name, role: validRole, sessionVersion, updatedAt }, { merge: true });
+      transaction.update(reference, { role: validRole, shopIds, sessionVersion, updatedAt });
+      transaction.set(accessReference, { username: user.username, name: user.name, role: validRole, shopIds, sessionVersion, updatedAt }, { merge: true });
     }
-    return { ...user, role: validRole };
+    return { ...user, role: validRole, shopIds };
   });
 }

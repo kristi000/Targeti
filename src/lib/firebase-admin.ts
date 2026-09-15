@@ -6,7 +6,6 @@ import {
   getApps,
   initializeApp,
 } from "firebase-admin/app"
-import { getAuth } from "firebase-admin/auth"
 import {
   FieldPath,
   FieldValue,
@@ -32,7 +31,6 @@ const app = getApps().length
     })
 
 export const adminDb = getFirestore(app)
-export const adminAuth = getAuth(app)
 export type { DocumentReference }
 
 type QueryLike = FirebaseFirestore.Query | FirebaseFirestore.CollectionReference
@@ -40,24 +38,30 @@ type QueryConstraint = (reference: QueryLike) => QueryLike
 
 const pathFrom = (segments: string[]) => segments.join("/")
 
-export const collection = (_database: typeof adminDb, ...segments: string[]) =>
-  adminDb.collection(pathFrom(segments))
-export const collectionGroup = (_database: typeof adminDb, name: string) =>
-  adminDb.collectionGroup(name)
-export const doc = (_database: typeof adminDb, ...segments: string[]) =>
-  adminDb.doc(pathFrom(segments))
+export const collection = (database: typeof adminDb, ...segments: string[]) =>
+  database.collection(pathFrom(segments))
+export const collectionGroup = (database: typeof adminDb, name: string) =>
+  database.collectionGroup(name)
+export const doc = (database: typeof adminDb, ...segments: string[]) =>
+  database.doc(pathFrom(segments))
 export const documentId = () => FieldPath.documentId()
 export const deleteField = () => FieldValue.delete()
 export const addDoc = (
   reference: FirebaseFirestore.CollectionReference,
   data: FirebaseFirestore.DocumentData,
 ) => reference.add(data)
+export const getDoc = (reference: DocumentReference) => reference.get()
+export const setDoc = (
+  reference: DocumentReference,
+  data: FirebaseFirestore.DocumentData,
+) => reference.set(data)
+export const deleteDoc = (reference: DocumentReference) => reference.delete()
 export const updateDoc = (
   reference: DocumentReference,
   data: FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData>,
 ) => reference.update(data)
 export const getDocs = (reference: QueryLike) => reference.get()
-export const writeBatch = (_database: typeof adminDb) => adminDb.batch()
+export const writeBatch = (database: typeof adminDb) => database.batch()
 export const query = (
   reference: QueryLike,
   ...constraints: QueryConstraint[]
@@ -97,6 +101,6 @@ export const getCountFromServer = (reference: QueryLike) =>
   reference.count().get()
 
 export const runTransaction = <T>(
-  _database: typeof adminDb,
+  database: typeof adminDb,
   callback: (transaction: FirebaseFirestore.Transaction) => Promise<T>,
-) => adminDb.runTransaction(callback)
+) => database.runTransaction(callback)

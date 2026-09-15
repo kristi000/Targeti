@@ -112,13 +112,30 @@ export function calculateDailyClosing(input: {
 const DAILY_SUMMARY_METRIC_LABELS: Partial<Record<PerformanceMetric, string>> = {
   newSim: "New sim",
   newLine: "Gpon2play",
-  migrations: "Pre2post",
+  migrations: "Migrime",
   fixContractRenewal: "Sim turist",
   mobileContractRenewal: "Mobile renewal",
   newTv: "New TV",
-  newPostpaid: "Postpaid",
+  newPostpaid: "New Postpaid",
   device: "Device",
 };
+
+function getDailySummaryMetricLabel(metric: PerformanceMetric, metricSettings?: MetricSettings) {
+  return DAILY_SUMMARY_METRIC_LABELS[metric]
+    || getCustomMetricLabel(metric, metricSettings);
+}
+
+function getDailySummaryMetricKey(label: string) {
+  const normalizedLabel = label
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, " ");
+
+  // These are two names used by existing configurations for the same activity.
+  return normalizedLabel === "sim turist" ? "aktivizime turist" : normalizedLabel;
+}
 
 export function createDailyClosingSummary(input: {
   shopName: string;
@@ -130,20 +147,33 @@ export function createDailyClosingSummary(input: {
   performanceScore: number;
   formatNumber: (value: number) => string;
 }) {
-  const activityLines = input.metrics.map(metric => {
-    const label = DAILY_SUMMARY_METRIC_LABELS[metric]
-      ?? getCustomMetricLabel(metric, input.metricSettings);
-    return `${label}:${input.formatNumber(input.activities[metric] ?? 0)}`;
-  });
+  const includedMetrics: PerformanceMetric[] = [];
+  const includedLabels = new Set<string>();
+
+  for (const metric of input.metrics) {
+    if ((input.activities[metric] ?? 0) <= 0) continue;
+
+    const label = getDailySummaryMetricLabel(metric, input.metricSettings);
+    const key = getDailySummaryMetricKey(label);
+    if (includedLabels.has(key)) continue;
+
+    includedLabels.add(key);
+    includedMetrics.push(metric);
+  }
+
+  const activityLines = includedMetrics.map(metric => (
+    `${getDailySummaryMetricLabel(metric, input.metricSettings)}:${input.formatNumber(input.activities[metric] ?? 0)}`
+  ));
+  const performancePercentage = (input.performanceScore * 100).toFixed(1).replace(/\.0$/, "");
 
   return [
-    `Mirmbrema ${input.shopName},`,
+    `Pershendetje ${input.shopName},`,
     "",
     `Boss:${input.formatNumber(input.boss)}`,
     `Invoice:${input.formatNumber(input.invoice)}`,
     ...activityLines,
-    `Total shop ${Math.round(input.performanceScore * 100)}%`,
+    `Total shop ${performancePercentage}%`,
     "",
-    "Naten e mirë!",
+    "Faleminderit!",
   ].join("\n");
 }

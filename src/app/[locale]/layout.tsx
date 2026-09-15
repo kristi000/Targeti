@@ -1,13 +1,56 @@
+import { Suspense, type ReactNode } from "react";
+import { redirect } from "next/navigation";
 import { getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
-import { ClientApplication } from "@/components/client-application";
+import { dehydrate, QueryClient } from "@tanstack/react-query";
+import { AppLayout, AppShellFallback } from "@/components/app-layout";
+import { QueryProvider } from "@/components/query-provider";
+import { ShopProvider } from "@/components/shop-provider";
+import { getCurrentActor } from "@/lib/access";
+import { dashboardPeriodsQueryKey } from "@/lib/query-keys";
+import { getDashboardPeriods, getShopDirectory } from "@/lib/server/dashboard-loaders";
 
 type Props = {
-  children: React.ReactNode;
+  children: ReactNode;
   params: Promise<{
     locale: string;
   }>;
 };
+
+async function AuthenticatedApplication({
+  children,
+  locale,
+}: {
+  children: ReactNode;
+  locale: string;
+}) {
+  let actor;
+  try {
+    actor = await getCurrentActor();
+  } catch (error) {
+    if (error instanceof Error && error.message === "UNAUTHENTICATED") {
+      redirect(`/login?next=/${locale}`);
+    }
+    throw error;
+  }
+
+  const queryClient = new QueryClient();
+  const [initialData] = await Promise.all([
+    getShopDirectory(),
+    queryClient.prefetchQuery({
+      queryKey: dashboardPeriodsQueryKey,
+      queryFn: getDashboardPeriods,
+    }),
+  ]);
+
+  return (
+    <QueryProvider dehydratedState={dehydrate(queryClient)}>
+      <ShopProvider initialData={initialData} actor={actor}>
+        <AppLayout>{children}</AppLayout>
+      </ShopProvider>
+    </QueryProvider>
+  );
+}
 
 export default async function LocaleLayout({
   children,
@@ -23,7 +66,11 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider locale={locale} messages={messages}>
-      <ClientApplication>{children}</ClientApplication>
+      <Suspense fallback={<AppShellFallback />}>
+        <AuthenticatedApplication locale={locale}>
+          {children}
+        </AuthenticatedApplication>
+      </Suspense>
     </NextIntlClientProvider>
   );
 }

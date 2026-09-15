@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Eye, EyeOff, Loader2, Search, UserRoundCog, Users } from "lucide-react";
 
-import { handleHideRepresentatives, handleUnhideRepresentatives } from "@/app/actions";
+import { handleHideRepresentatives, handleUnhideRepresentatives } from "@/app/actions/representatives";
 import { useShop } from "@/components/shop-provider";
 import {
   AlertDialog,
@@ -203,15 +203,15 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
 
   return <>
     <Dialog open={open} onOpenChange={handleDialogChange}>
-      <DialogContent className="max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-4xl">
-        <DialogHeader className="border-b bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
+      <DialogContent className="flex h-[calc(100vh-2rem)] max-h-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[90vh] sm:max-w-4xl">
+        <DialogHeader className="shrink-0 border-b bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
           <div className="flex items-center gap-3">
             <span className="rounded-md bg-emerald-700 p-2 text-white"><UserRoundCog className="h-5 w-5" /></span>
             <div><DialogTitle>Manage representatives</DialogTitle><DialogDescription>Hide representatives persistently or restore them for {month}.</DialogDescription></div>
           </div>
         </DialogHeader>
 
-        <div className="flex gap-2 border-b bg-slate-50 px-5 py-3 sm:px-6">
+        <div className="flex shrink-0 gap-2 border-b bg-slate-50 px-5 py-3 sm:px-6">
           <Button type="button" size="sm" variant={view === "visible" ? "default" : "outline"} onClick={() => changeView("visible")} disabled={processing}>
             <Eye className="mr-2 h-4 w-4" />Visible ({representatives.filter(representative => !representative.hidden).length})
           </Button>
@@ -220,7 +220,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
           </Button>
         </div>
 
-        <div className="flex flex-col gap-3 border-b px-5 py-3 sm:flex-row sm:items-center sm:px-6">
+        <div className="flex shrink-0 flex-col gap-3 border-b px-5 py-3 sm:flex-row sm:items-center sm:px-6">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search representatives or shops…" className="pl-9" />
@@ -233,7 +233,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
           <span className="shrink-0 text-sm text-muted-foreground">{selectedKeys.length} selected</span>
         </div>
 
-        <ScrollArea className="h-[min(58vh,520px)]">
+        <ScrollArea className="min-h-0 flex-1">
           {filteredRepresentatives.length ? <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
               <tr>
@@ -255,7 +255,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
           </table> : <div className="flex h-64 flex-col items-center justify-center gap-2 text-center text-muted-foreground"><Users className="h-8 w-8 text-slate-300" /><p className="font-medium">No representatives found</p><p className="text-sm">Try another search or reporting month.</p></div>}
         </ScrollArea>
 
-        <DialogFooter className="border-t bg-slate-50 px-5 py-4 sm:px-6">
+        <DialogFooter className="shrink-0 gap-2 border-t bg-slate-50 px-5 py-4 sm:space-x-0 sm:px-6">
           <Button type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={processing}>Close</Button>
           {view === "visible"
             ? <Button type="button" variant="destructive" onClick={() => setConfirming(true)} disabled={!selectedKeys.length || processing}><EyeOff className="mr-2 h-4 w-4" />Hide selected ({selectedKeys.length})</Button>

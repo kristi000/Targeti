@@ -1,5 +1,0 @@
-{
-  "projects": {
-    "default": "perf-tracker-lmp2b"
-  }
-}

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, CirclePlus, CopyPlus, Loader2, Save, SlidersHorizontal, Trash2 } from "lucide-react";
 
-import { handleAssignWeightProfile, handleCreateWeightProfile, handleDeleteWeightProfile, handleUpdateWeightProfile } from "@/app/actions";
+import { handleAssignWeightProfile, handleCreateWeightProfile, handleDeleteWeightProfile, handleUpdateWeightProfile } from "@/app/actions/weight-profiles";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -96,7 +96,8 @@ export function WeightProfileManagerDialog({ open, onOpenChange }: Props) {
     if (!currentDraft || !valid) return;
     setSaving(true);
     const existing = weightProfiles.find(profile => profile.id === currentDraft.id);
-    const { id: _draftId, ...newProfile } = currentDraft;
+    const { id: draftId, ...newProfile } = currentDraft;
+    void draftId;
     const result = existing
       ? await handleUpdateWeightProfile({ ...existing, ...currentDraft })
       : await handleCreateWeightProfile(newProfile);

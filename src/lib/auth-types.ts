@@ -5,4 +5,5 @@ export type AppActor = {
   username: string;
   name: string;
   role: AppRole;
+  shopIds: string[];
 };

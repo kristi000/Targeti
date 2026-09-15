@@ -4,15 +4,15 @@ import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
 import { useQueryClient } from "@tanstack/react-query";
-import { handleAllocateShopId, handlePrepareRepresentativeImport, handleRegisterImport, handleUndoLatestImport } from "@/app/actions";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { handleAllocateShopId } from "@/app/actions/shops";
+import { handlePrepareRepresentativeImport } from "@/app/actions/representatives";
+import { handleRegisterImport, handleUndoLatestImport } from "@/app/actions/imports";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { importTargetWorkbook, type ImportedShopData, type ImportedWorkbookData } from "@/lib/excel-import";
+import { importTargetWorkbook, type ImportedWorkbookData } from "@/lib/excel-import";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   getQuarterKey,
@@ -33,10 +33,8 @@ type ReviewState = {
   reportType: "midMonth" | "completedMonth";
   reportMonth: string;
   asOfDate: string;
-  includeInOverview: boolean;
   profileSelections: Record<number, string>;
   targetedRepresentatives: Record<string, boolean>;
-  skippedRecords: number;
 };
 
 const normalizeName = (value: string) => value.trim().toLocaleLowerCase();
@@ -152,14 +150,10 @@ export function ExcelImportDialog({
         throw new Error(`This workbook does not contain data for ${selectedShop?.name ?? "the selected shop"}.`);
       }
 
-      const detectedDate = workbook.shops[0].date;
       const today = format(new Date(), "yyyy-MM-dd");
-      const date = detectedDate.endsWith("-01") && detectedDate.slice(0, 7) === today.slice(0, 7)
-        ? today
-        : detectedDate;
-      const reportMonth = date.slice(0, 7);
+      const reportMonth = today.slice(0, 7);
       await loadPerformanceMonth(reportMonth);
-      const parsedDate = parseISO(date);
+      const parsedDate = parseISO(today);
       const reportType = parsedDate.getDate() >= getDaysInMonth(parsedDate) ? "completedMonth" : "midMonth";
       const profileSelections = Object.fromEntries(workbook.shops.map((imported, shopIndex) => {
         const existingShop = restrictToSelectedShop && selectedShop
@@ -174,20 +168,13 @@ export function ExcelImportDialog({
         shop.representatives.map(representative => [representativeKey(shopIndex, representative.id), true]),
       ));
 
-      setReview({ workbook, reportType, reportMonth, asOfDate: date, includeInOverview: true, profileSelections, targetedRepresentatives, skippedRecords: ignoredShopCount });
+      setReview({ workbook, reportType, reportMonth, asOfDate: today, profileSelections, targetedRepresentatives });
       setFileName(file.name);
     } catch (error) {
       toast({ variant: "destructive", title: "Import failed", description: error instanceof Error ? error.message : "The workbook could not be read." });
     } finally {
       setLoading(false);
     }
-  };
-
-  const updateShop = (shopIndex: number, updater: (shop: ImportedShopData) => ImportedShopData) => {
-    setReview(current => current ? {
-      ...current,
-      workbook: { ...current.workbook, shops: current.workbook.shops.map((shop, index) => index === shopIndex ? updater(shop) : shop) },
-    } : current);
   };
 
   const validation = useMemo(() => {
@@ -333,7 +320,7 @@ export function ExcelImportDialog({
           importedAt,
           reportType: review.reportType,
           asOfDate: reportDate,
-          includeInOverview: review.includeInOverview,
+          includeInOverview: true,
           qualityMetrics: imported.qualityMetrics,
           targets,
           representativeTargets,
@@ -382,13 +369,6 @@ export function ExcelImportDialog({
     });
     return Array.from(counts.entries());
   }, [review, selectedProfileFor]);
-  const previewCounts = useMemo(() => {
-    if (!review) return { created: 0, updated: 0, skipped: 0, invalid: 0 };
-    const invalid = validation.errors.length ? review.workbook.shops.length : 0;
-    const created = invalid ? 0 : review.workbook.shops.filter(imported => !shops.some(shop => normalizeName(shop.name) === normalizeName(imported.shopName))).length;
-    return { created, updated: invalid ? 0 : review.workbook.shops.length - created, skipped: review.skippedRecords, invalid };
-  }, [review, validation.errors.length, shops]);
-
   const undoLatestImport = async () => {
     setLoading(true);
     try {
@@ -414,40 +394,26 @@ export function ExcelImportDialog({
         <DialogTitle>{restrictToSelectedShop && selectedShop ? `Import Excel for ${selectedShop.name}` : "Import targets and achievements"}</DialogTitle>
         <DialogDescription>Upload one monthly Excel report, review the detected values, and correct anything before importing.</DialogDescription>
       </DialogHeader>
-      <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={event => void readFile(event.target.files?.[0])} />
+      <input ref={inputRef} type="file" accept=".xlsx" className="hidden" onChange={event => void readFile(event.target.files?.[0])} />
 
       {!review ? <><div role="button" tabIndex={0} onClick={() => inputRef.current?.click()} onKeyDown={event => { if (event.key === "Enter" || event.key === " ") inputRef.current?.click(); }} onDragEnter={event => { event.preventDefault(); setDragging(true); }} onDragOver={event => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={handleDrop} className={`flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-colors ${dragging ? "border-primary bg-primary/5" : "border-muted-foreground/30 hover:border-primary/60"}`}>
         {loading ? <Loader2 className="mb-3 h-8 w-8 animate-spin text-primary" /> : <Upload className="mb-3 h-8 w-8 text-muted-foreground" />}
         <p className="font-medium">{loading ? "Reading workbook…" : "Drop Excel here or click to browse"}</p>
-        <p className="mt-1 text-sm text-muted-foreground">.xlsx and .xls files · one reporting month</p>
+        <p className="mt-1 text-sm text-muted-foreground">.xlsx files up to 10 MB · one reporting month</p>
       </div><div className="flex justify-end"><Button type="button" variant="ghost" disabled={loading} onClick={() => void undoLatestImport()}><RotateCcw className="mr-2 h-4 w-4" />Undo latest import</Button></div></> : <div className="space-y-5">
-        <section aria-label="Import impact preview" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {([['Created', previewCounts.created, 'text-emerald-700'], ['Updated', previewCounts.updated, 'text-blue-700'], ['Skipped', previewCounts.skipped, 'text-amber-700'], ['Invalid', previewCounts.invalid, 'text-destructive']] as const).map(([label, count, color]) => <div key={label} className="rounded-lg border bg-background p-3"><p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p><p className={`mt-1 text-2xl font-semibold tabular-nums ${color}`}>{count}</p><p className="text-xs text-muted-foreground">records</p></div>)}
-        </section>
-        <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-3">
           <Label className="grid gap-1.5">Report type<select className="h-10 rounded-md border bg-background px-3 text-sm" value={review.reportType} onChange={event => setReview(current => current && { ...current, reportType: event.target.value as ReviewState["reportType"] })}><option value="midMonth">Mid-month update</option><option value="completedMonth">Completed month</option></select></Label>
           <Label className="grid gap-1.5">Reporting month<Input type="month" value={review.reportMonth} onChange={event => { const reportMonth = event.target.value; setReview(current => current && { ...current, reportMonth, asOfDate: reportMonth ? moveDateToMonth(current.asOfDate, reportMonth) : current.asOfDate }); }} /></Label>
           {review.reportType === "midMonth" ? <Label className="grid gap-1.5">Data as of<Input type="date" min={`${review.reportMonth}-01`} max={monthEnd(review.reportMonth)} value={review.asOfDate} onChange={event => { const asOfDate = event.target.value; setReview(current => current && { ...current, asOfDate, ...(asOfDate && { reportMonth: asOfDate.slice(0, 7) }) }); }} /><span className="text-xs font-normal text-muted-foreground">Choose the last day included in this Excel report.</span></Label> : <div className="grid content-center gap-1"><span className="text-sm font-medium">EOM status</span><span className="text-sm text-muted-foreground">Final — no forecast</span></div>}
-          <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2"><div><p className="text-sm font-medium">Show on main page</p><p className="text-xs text-muted-foreground">Otherwise shop pages only</p></div><Switch checked={review.includeInOverview} onCheckedChange={includeInOverview => setReview(current => current && { ...current, includeInOverview })} /></div>
         </div>
 
         <section className="space-y-2 rounded-lg border bg-muted/20 p-4">
-          <div><h3 className="font-semibold">Weight profiles</h3><p className="text-xs text-muted-foreground">Defaults were selected by shop for {getQuarterKey(`${review.reportMonth}-01`)}. Change a shop below only when this import should also change its future default.</p></div>
+          <div><h3 className="font-semibold">Weight profiles</h3><p className="text-xs text-muted-foreground">Defaults were selected automatically by shop for {getQuarterKey(`${review.reportMonth}-01`)}.</p></div>
           <div className="flex flex-wrap gap-2">{profileSummary.map(([name, count]) => <span key={name} className={`rounded-full border bg-background px-3 py-1 text-sm ${name === "Profile required" ? "border-destructive text-destructive" : ""}`}>{name}: {count} {count === 1 ? "shop" : "shops"}</span>)}</div>
         </section>
 
-        <section className="space-y-2"><h3 className="font-semibold">Shop data</h3><Accordion type="multiple" defaultValue={review.workbook.shops.length === 1 ? ["shop-0"] : []} className="space-y-2">{review.workbook.shops.map((shop, shopIndex) => <AccordionItem key={`${shop.shopName}-${shopIndex}`} value={`shop-${shopIndex}`} className="rounded-md border px-3"><AccordionTrigger><span className="flex flex-1 items-center justify-between pr-3"><span>{shop.shopName}</span><span className="text-xs font-normal text-muted-foreground">{shop.representatives.length} representatives</span></span></AccordionTrigger><AccordionContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3"><Label className="grid gap-1.5">Shop name<Input value={shop.shopName} disabled={restrictToSelectedShop} onChange={event => updateShop(shopIndex, current => ({ ...current, shopName: event.target.value }))} /></Label><Label className="grid gap-1.5">Revenue<Input type="number" min="0" value={shop.revenue} onChange={event => updateShop(shopIndex, current => ({ ...current, revenue: Number(event.target.value) }))} /></Label><Label className="grid gap-1.5">Weight profile<select className="h-10 rounded-md border bg-background px-3 text-sm" value={review.profileSelections[shopIndex] ?? ""} onChange={event => setReview(current => current && ({ ...current, profileSelections: { ...current.profileSelections, [shopIndex]: event.target.value } }))}><option value="">Select profile</option>{weightProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}</select></Label></div>
-          {shop.qualityMetrics && <div className="space-y-2 rounded-md border bg-muted/20 p-3"><div><p className="text-sm font-semibold">Quality indicators</p><p className="text-xs text-muted-foreground">Shown separately from weighted target metrics.</p></div><div className="grid gap-3 sm:grid-cols-3"><Label className="grid gap-1.5">Checklist score<Input type="number" min="0" value={shop.qualityMetrics.checklistScore ?? ""} onChange={event => updateShop(shopIndex, current => ({ ...current, qualityMetrics: { ...current.qualityMetrics, checklistScore: Number(event.target.value) } }))} /></Label><Label className="grid gap-1.5">NPS score<Input type="number" min="-100" max="100" value={shop.qualityMetrics.npsScore ?? ""} onChange={event => updateShop(shopIndex, current => ({ ...current, qualityMetrics: { ...current.qualityMetrics, npsScore: Number(event.target.value) } }))} /></Label><Label className="grid gap-1.5">NPS responses<Input type="number" min="0" value={shop.qualityMetrics.npsResponses ?? ""} onChange={event => updateShop(shopIndex, current => ({ ...current, qualityMetrics: { ...current.qualityMetrics, npsResponses: Number(event.target.value) } }))} /></Label></div></div>}
-          {selectedProfileFor(shopIndex) && <div className="overflow-x-auto rounded-md border"><table className="w-full min-w-[700px] text-sm"><thead className="bg-muted/60"><tr><th className="px-3 py-2 text-left">Metric</th><th className="w-28 px-3 py-2 text-right">Weight</th><th className="px-3 py-2 text-right">Target</th><th className="px-3 py-2 text-right">Shop achievement</th></tr></thead><tbody className="divide-y">{selectedProfileFor(shopIndex)!.metricOrder.map(metric => <tr key={metric}><td className="px-3 py-2 font-medium">{selectedProfileFor(shopIndex)!.metricSettings[metric]?.label ?? metric}</td><td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{(Number(selectedProfileFor(shopIndex)!.metricSettings[metric]?.weight ?? 0) * 100).toFixed(1)}%</td><td className="px-3 py-2"><Input className="text-right" type="number" min="0" value={shop.targets[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, targets: { ...current.targets, [metric]: Number(event.target.value) } }))} /></td><td className="px-3 py-2"><Input className="text-right" type="number" min="0" value={shop.achievements[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, achievements: { ...current.achievements, [metric]: Number(event.target.value) } }))} /></td></tr>)}</tbody></table></div>}
-          <Accordion type="multiple" className="rounded-md border px-3"><AccordionItem value="representatives" className="border-0"><AccordionTrigger>Representative achievements and targets</AccordionTrigger><AccordionContent className="space-y-4">{shop.representatives.map((representative, representativeIndex) => {
-            const targetKey = representativeKey(shopIndex, representative.id);
-            return <div key={representative.id} className="space-y-2 rounded-md border p-3"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><Input className="max-w-sm font-medium" value={representative.name} onChange={event => updateShop(shopIndex, current => ({ ...current, representatives: current.representatives.map((rep, index) => index === representativeIndex ? { ...rep, name: event.target.value } : rep) }))} /><div className="flex items-center gap-2"><Switch checked={Boolean(review.targetedRepresentatives[targetKey])} onCheckedChange={checked => setReview(current => current && { ...current, targetedRepresentatives: { ...current.targetedRepresentatives, [targetKey]: checked } })} /><span className="text-sm">Receives an equal share of shop targets</span></div></div><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(selectedProfileFor(shopIndex)?.metricOrder ?? []).map(metric => <Label key={metric} className="grid gap-1 text-xs"><span className="truncate">{selectedProfileFor(shopIndex)?.metricSettings[metric]?.label ?? metric}</span><Input type="number" min="0" value={representative.achievements[metric] ?? 0} onChange={event => updateShop(shopIndex, current => ({ ...current, representatives: current.representatives.map((rep, index) => index === representativeIndex ? { ...rep, achievements: { ...rep.achievements, [metric]: Number(event.target.value) } } : rep) }))} /></Label>)}</div></div>;
-          })}</AccordionContent></AccordionItem></Accordion>
-        </AccordionContent></AccordionItem>)}</Accordion></section>
-
-        {(validation.errors.length > 0 || validation.warnings.length > 0) && <div className="space-y-2">{validation.errors.length > 0 && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Fix before importing</p><ul className="list-disc space-y-1 pl-5">{validation.errors.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}{validation.warnings.length > 0 && <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-300"><p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Review recommended</p><ul className="list-disc space-y-1 pl-5">{validation.warnings.slice(0, 12).map(issue => <li key={issue}>{issue}</li>)}</ul>{validation.warnings.length > 12 && <p className="mt-1">And {validation.warnings.length - 12} more warnings.</p>}</div>}</div>}
-        {!validation.errors.length && !validation.warnings.length && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />All import checks passed.</p>}
+        {validation.errors.length > 0 && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Fix before importing</p><ul className="list-disc space-y-1 pl-5">{validation.errors.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
+        {!validation.errors.length && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />All import checks passed.</p>}
       </div>}
 
       <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>{review && <Button variant="outline" onClick={() => inputRef.current?.click()} disabled={loading}>Choose another file</Button>}<Button onClick={applyImport} disabled={!review || loading || validation.errors.length > 0}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Import reviewed data</Button></DialogFooter>

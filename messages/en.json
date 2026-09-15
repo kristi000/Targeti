@@ -12,7 +12,8 @@
     "editAchievements": "Edit Achievements",
     "editShop": "Edit Shop",
     "manageShops": "Manage Shops",
-    "viewOnGithub": "View on GitHub"
+    "viewOnGithub": "View on GitHub",
+    "logOut": "Log out"
   },
   "Dashboard": {
     "title": "Main Dashboard",
@@ -53,6 +54,7 @@
     "salesRepPerformance": "Sales Representative Performance",
     "individualPerformance": "Individual monthly performance based on an equal share of targets.",
     "shopNotFound": "Shop not found",
+    "loading": "Loading shop...",
     "noData": "No data available for this shop.",
     "managerBonus": "Manager Monthly Bonus",
     "managerBonusDescription": "{group} based on a base bonus of {base}",
@@ -204,6 +206,13 @@
     "report": "Daily closing",
     "openReport": "Open report",
     "empty": "No daily closings were recorded for this month."
+  },
+  "RestrictedAccess": {
+    "title": "Restricted access",
+    "description": "Enter the special five-digit code to view bonuses and protected monthly closing tabs. Access remains active until you sign out.",
+    "codeLabel": "Access code",
+    "automaticHint": "Access is checked automatically after the fifth digit.",
+    "verificationFailed": "Could not verify the access code. Please try again."
   },
   "DailyClosing": {
     "pageTitle": "Daily Closing",

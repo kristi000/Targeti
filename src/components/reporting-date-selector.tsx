@@ -6,10 +6,11 @@ import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchDashboardPeriods } from "@/app/actions";
+import { fetchDashboardPeriods } from "@/app/dashboard-actions";
 import { useShop } from "@/components/shop-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
+import { dashboardPeriodsQueryKey } from "@/lib/query-keys";
 
 export function ReportingDateSelector() {
   const t = useTranslations("Sidebar");
@@ -19,7 +20,7 @@ export function ReportingDateSelector() {
   const searchParams = useSearchParams();
   const { setSelectedDatasetId } = useShop();
   const periodsQuery = useQuery({
-    queryKey: ["dashboard-periods"],
+    queryKey: dashboardPeriodsQueryKey,
     queryFn: fetchDashboardPeriods,
     staleTime: 60_000,
   });

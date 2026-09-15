@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
@@ -27,12 +27,13 @@ import {
   Wallet,
 } from "lucide-react";
 
-import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions";
+import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
 import { Header } from "@/components/header";
 import { MonthlyClosingSummary } from "@/components/monthly-closing-summary";
 import { MonthlyCellSummary } from "@/components/monthly-cell-summary";
 import { MonthlyDebts } from "@/components/monthly-debts";
 import { MonthlyUnsubscribes } from "@/components/monthly-unsubscribes";
+import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
 import { useShop } from "@/components/shop-provider";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -51,6 +52,7 @@ import { cn } from "@/lib/utils";
 
 type Adjustments = { boss: number; invoice: number; unsubscribe: number };
 type AutosaveStatus = "ready" | "pending" | "saving" | "saved" | "error";
+type ClosingView = "daily" | "monthly" | "debts" | "unsubscribes" | "cell";
 
 const EMPTY_ADJUSTMENTS: Adjustments = { boss: 0, invoice: 0, unsubscribe: 0 };
 
@@ -68,7 +70,10 @@ export function DailyClosingClient() {
   const unsubscribeTranslations = useTranslations("MonthlyUnsubscribes");
   const cellTranslations = useTranslations("MonthlyCell");
   const queryClient = useQueryClient();
-  const [view, setView] = useState<"daily" | "monthly" | "debts" | "unsubscribes" | "cell">("daily");
+  const [view, setView] = useState<ClosingView>("daily");
+  const [hasRestrictedAccess, setHasRestrictedAccess] = useState(false);
+  const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
+  const pendingViewRef = useRef<Exclude<ClosingView, "daily">>("monthly");
   const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const t = useTranslations("DailyClosing");
   const metricTranslations = useTranslations("Metrics");
@@ -88,8 +93,39 @@ export function DailyClosingClient() {
   const [submitting, setSubmitting] = useState<"save" | "finalize" | "reopen" | null>(null);
   const [autosaveReady, setAutosaveReady] = useState(false);
   const [autosaveStatus, setAutosaveStatus] = useState<AutosaveStatus>("ready");
+  const [autosaveAttempt, setAutosaveAttempt] = useState(0);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
   const autosaveBaselineRef = useRef<string | null>(null);
+  const saveInFlightRef = useRef(false);
+  const activeScopeRef = useRef("");
+  const shopId = selectedShop?.id ?? "";
+  const activeScope = `${shopId}:${date}`;
+  activeScopeRef.current = activeScope;
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/restricted-access")
+      .then(response => response.ok ? response.json() as Promise<{ hasAccess: boolean }> : null)
+      .then(result => { if (active && result?.hasAccess) setHasRestrictedAccess(true); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const openView = useCallback((nextView: Exclude<ClosingView, "daily">) => {
+    if (view === "daily") setMonth(date.slice(0, 7));
+    if (hasRestrictedAccess) {
+      setView(nextView);
+      return;
+    }
+    pendingViewRef.current = nextView;
+    setIsAccessDialogOpen(true);
+  }, [date, hasRestrictedAccess, view]);
+
+  const handleRestrictedAccessGranted = useCallback(() => {
+    setHasRestrictedAccess(true);
+    setIsAccessDialogOpen(false);
+    setView(pendingViewRef.current);
+  }, []);
 
   useEffect(() => {
     setSelectedDatasetId(view === "daily" ? date.slice(0, 7) : month);
@@ -128,8 +164,10 @@ export function DailyClosingClient() {
     setAutosaveReady(false);
     setAutosaveStatus("ready");
     autosaveBaselineRef.current = null;
+    let loaded = false;
     void fetchDailyClosing(selectedShop.id, date).then(data => {
       if (!active) return;
+      loaded = true;
       setClosing(data);
       setCashCounts(data?.cashCounts ?? createEmptyCashCounts());
       setExchangeRate(data?.exchangeRate ?? DEFAULT_EXCHANGE_RATE);
@@ -148,7 +186,7 @@ export function DailyClosingClient() {
     }).finally(() => {
       if (active) {
         setLoading(false);
-        setAutosaveReady(true);
+        setAutosaveReady(loaded);
       }
     });
     return () => { active = false; };
@@ -159,8 +197,8 @@ export function DailyClosingClient() {
   const isCellReadOnly = isFinalized || actor.role !== "admin";
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   const percentFormatter = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
-  const payload = () => ({
-    shopId: selectedShop?.id ?? "",
+  const saveInput = useMemo(() => ({
+    shopId,
     date,
     expectedUpdatedAt: closing?.updatedAt ?? null,
     cashCounts,
@@ -170,7 +208,7 @@ export function DailyClosingClient() {
     debts: debts.filter(debt => debt.description.trim() || debt.amount > 0),
     unsubscribeEntries: unsubscribeEntries.filter(entry => entry.invoice.trim() || entry.msisdn.trim() || entry.amount > 0),
     activities: Object.fromEntries(metrics.map(metric => [metric, activities[metric] ?? 0])),
-  });
+  }), [shopId, date, closing?.updatedAt, cashCounts, exchangeRate, cell, effectiveAdjustments, debts, unsubscribeEntries, metrics, activities]);
 
   const autosaveSnapshot = useMemo(() => JSON.stringify({
     shopId: selectedShop?.id,
@@ -184,12 +222,13 @@ export function DailyClosingClient() {
     activities: Object.fromEntries(metrics.map(metric => [metric, activities[metric] ?? 0])),
   }), [selectedShop?.id, date, cashCounts, exchangeRate, cell, effectiveAdjustments, debts, unsubscribeEntries, metrics, activities]);
 
-  const applySavedClosing = (data: DailyClosing) => {
-    const shopId = selectedShop?.id ?? "";
-    void queryClient.invalidateQueries({ queryKey: monthlyClosingQueryKey(shopId, data.date.slice(0, 7)) });
-    void queryClient.invalidateQueries({ queryKey: monthlyDebtsQueryKey(shopId, data.date.slice(0, 7)) });
-    void queryClient.invalidateQueries({ queryKey: monthlyUnsubscribesQueryKey(shopId, data.date.slice(0, 7)) });
-    void queryClient.invalidateQueries({ queryKey: monthlyCellQueryKey(shopId, data.date.slice(0, 7)) });
+  const applySavedClosing = useCallback((data: DailyClosing, savedShopId: string) => {
+    const savedMonth = data.date.slice(0, 7);
+    void queryClient.invalidateQueries({ queryKey: monthlyClosingQueryKey(savedShopId, savedMonth) });
+    void queryClient.invalidateQueries({ queryKey: monthlyDebtsQueryKey(savedShopId, savedMonth) });
+    void queryClient.invalidateQueries({ queryKey: monthlyUnsubscribesQueryKey(savedShopId, savedMonth) });
+    void queryClient.invalidateQueries({ queryKey: monthlyCellQueryKey(savedShopId, savedMonth) });
+    if (activeScopeRef.current !== `${savedShopId}:${data.date}`) return;
     setClosing(data);
     setCashCounts(data.cashCounts);
     setExchangeRate(data.exchangeRate);
@@ -198,39 +237,72 @@ export function DailyClosingClient() {
     setDebts(data.debts);
     setUnsubscribeEntries(data.unsubscribeEntries ?? []);
     setActivities(data.activities);
-  };
+  }, [queryClient]);
+
+  const saveDraft = useCallback(async (input: typeof saveInput, snapshot: string, notify: boolean) => {
+    if (saveInFlightRef.current) return;
+    const requestScope = `${input.shopId}:${input.date}`;
+    let retry = false;
+    saveInFlightRef.current = true;
+    setAutosaveStatus("saving");
+    setSubmitting("save");
+    try {
+      const result = await handleSaveDailyClosing(input);
+      if (!result.success) {
+        if (activeScopeRef.current === requestScope) {
+          setAutosaveStatus("error");
+          toast({ variant: "destructive", title: t("saveFailed"), description: result.error });
+          retry = !notify;
+        }
+        return;
+      }
+      if (activeScopeRef.current === requestScope) {
+        autosaveBaselineRef.current = snapshot;
+        setAutosaveStatus("saved");
+        applySavedClosing(result.data, input.shopId);
+        if (notify) toast({ title: t("saved"), description: t("savedDescription") });
+      }
+    } finally {
+      saveInFlightRef.current = false;
+      setSubmitting(null);
+      if (retry && activeScopeRef.current === requestScope) setAutosaveAttempt(attempt => attempt + 1);
+    }
+  }, [applySavedClosing, t, toast]);
 
   const save = async () => {
-    setSubmitting("save");
-    const result = await handleSaveDailyClosing(payload());
-    setSubmitting(null);
-    if (!result.success) return toast({ variant: "destructive", title: t("saveFailed"), description: result.error });
-    autosaveBaselineRef.current = autosaveSnapshot;
-    setAutosaveStatus("saved");
-    applySavedClosing(result.data);
-    toast({ title: t("saved"), description: t("savedDescription") });
+    await saveDraft(saveInput, autosaveSnapshot, true);
   };
 
   const finalize = async () => {
+    if (saveInFlightRef.current) return;
+    const requestScope = activeScope;
+    saveInFlightRef.current = true;
     setSubmitting("finalize");
-    const result = await handleFinalizeDailyClosing(payload());
-    setSubmitting(null);
+    const result = await handleFinalizeDailyClosing(saveInput).finally(() => {
+      saveInFlightRef.current = false;
+      setSubmitting(null);
+    });
     if (!result.success) return toast({ variant: "destructive", title: t("finalizeFailed"), description: result.error });
-    applySavedClosing(result.data);
-    toast({ title: t("finalized"), description: t("finalizedDescription") });
+    applySavedClosing(result.data, saveInput.shopId);
+    if (activeScopeRef.current === requestScope) toast({ title: t("finalized"), description: t("finalizedDescription") });
   };
 
   const reopen = async () => {
+    if (saveInFlightRef.current) return;
+    const requestScope = activeScope;
+    saveInFlightRef.current = true;
     setSubmitting("reopen");
-    const result = await handleReopenDailyClosing(selectedShop?.id ?? "", date);
-    setSubmitting(null);
+    const result = await handleReopenDailyClosing(shopId, date).finally(() => {
+      saveInFlightRef.current = false;
+      setSubmitting(null);
+    });
     if (!result.success) return toast({ variant: "destructive", title: t("reopenFailed"), description: result.error });
-    applySavedClosing(result.data);
-    toast({ title: t("reopened"), description: t("reopenedDescription") });
+    applySavedClosing(result.data, shopId);
+    if (activeScopeRef.current === requestScope) toast({ title: t("reopened"), description: t("reopenedDescription") });
   };
 
   useEffect(() => {
-    if (!selectedShop || !autosaveReady || loading || isFinalized || actor.role === "viewer") return;
+    if (!selectedShop || !autosaveReady || loading || isFinalized || actor.role === "viewer" || saveInFlightRef.current) return;
 
     if (autosaveBaselineRef.current === null) {
       autosaveBaselineRef.current = autosaveSnapshot;
@@ -241,26 +313,11 @@ export function DailyClosingClient() {
 
     setAutosaveStatus("pending");
     const timer = window.setTimeout(() => {
-      if (submitting !== null) return;
-
-      void (async () => {
-        setAutosaveStatus("saving");
-        setSubmitting("save");
-        const result = await handleSaveDailyClosing(payload());
-        setSubmitting(null);
-        if (!result.success) {
-          setAutosaveStatus("error");
-          toast({ variant: "destructive", title: t("saveFailed"), description: result.error });
-          return;
-        }
-        autosaveBaselineRef.current = autosaveSnapshot;
-        setAutosaveStatus("saved");
-        applySavedClosing(result.data);
-      })();
+      void saveDraft(saveInput, autosaveSnapshot, false);
     }, 10_000);
 
     return () => window.clearTimeout(timer);
-  }, [actor.role, autosaveReady, autosaveSnapshot, isFinalized, loading, selectedShop, submitting]);
+  }, [actor.role, autosaveAttempt, autosaveReady, autosaveSnapshot, isFinalized, loading, saveDraft, saveInput, selectedShop]);
 
   if (!selectedShop) return null;
 
@@ -319,10 +376,10 @@ export function DailyClosingClient() {
       <div className="mx-auto w-full max-w-[1500px] space-y-2.5">
         <div className="flex gap-2" role="group" aria-label={monthlyTranslations("view")}>
           <Button size="sm" variant={view === "daily" ? "default" : "outline"} aria-pressed={view === "daily"} onClick={() => setView("daily")}><CalendarDays className="mr-1.5 h-4 w-4" />{monthlyTranslations("daily")}</Button>
-          <Button size="sm" variant={view === "monthly" ? "default" : "outline"} aria-pressed={view === "monthly"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("monthly"); }}><CalendarRange className="mr-1.5 h-4 w-4" />{monthlyTranslations("monthly")}</Button>
-          <Button size="sm" variant={view === "debts" ? "default" : "outline"} aria-pressed={view === "debts"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("debts"); }}><Wallet className="mr-1.5 h-4 w-4" />{debtTranslations("title")}</Button>
-          <Button size="sm" variant={view === "unsubscribes" ? "default" : "outline"} aria-pressed={view === "unsubscribes"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("unsubscribes"); }}><UserMinus className="mr-1.5 h-4 w-4" />{unsubscribeTranslations("title")}</Button>
-          <Button size="sm" variant={view === "cell" ? "default" : "outline"} aria-pressed={view === "cell"} onClick={() => { if (view === "daily") setMonth(date.slice(0, 7)); setView("cell"); }}><Smartphone className="mr-1.5 h-4 w-4" />{cellTranslations("tab")}</Button>
+          <Button size="sm" variant={view === "monthly" ? "default" : "outline"} aria-pressed={view === "monthly"} onClick={() => openView("monthly")}><CalendarRange className="mr-1.5 h-4 w-4" />{monthlyTranslations("monthly")}</Button>
+          <Button size="sm" variant={view === "debts" ? "default" : "outline"} aria-pressed={view === "debts"} onClick={() => openView("debts")}><Wallet className="mr-1.5 h-4 w-4" />{debtTranslations("title")}</Button>
+          <Button size="sm" variant={view === "unsubscribes" ? "default" : "outline"} aria-pressed={view === "unsubscribes"} onClick={() => openView("unsubscribes")}><UserMinus className="mr-1.5 h-4 w-4" />{unsubscribeTranslations("title")}</Button>
+          <Button size="sm" variant={view === "cell" ? "default" : "outline"} aria-pressed={view === "cell"} onClick={() => openView("cell")}><Smartphone className="mr-1.5 h-4 w-4" />{cellTranslations("tab")}</Button>
         </div>
         {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} />}
         {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
@@ -392,6 +449,7 @@ export function DailyClosingClient() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        <RestrictedAccessDialog open={isAccessDialogOpen} onOpenChange={setIsAccessDialogOpen} onGranted={handleRestrictedAccessGranted} />
       </div>
     </main>
   </div>;

@@ -7,86 +7,26 @@ import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { calculateTotalAchievement, cn } from "@/lib/utils";
-import { calculateForecastAchievement, getForecastDate } from "@/lib/forecast";
-import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
-import {
-  getMonthlyRepresentatives,
-  getOverviewPerformanceData,
-  getShopMetrics,
-  type PerformanceMetric,
-} from "@/lib/types";
-import { useShop } from "./shop-provider";
+import { cn } from "@/lib/utils";
+import type { DashboardRepresentativeRow } from "@/lib/dashboard-types";
 
-export function SalesRepresentativeRanking() {
+export function SalesRepresentativeRanking({ rows }: { rows: DashboardRepresentativeRow[] }) {
   const t = useTranslations("Dashboard");
   const locale = useLocale();
-  const { shops, allPerformanceData, allMonthlyTargets, selectedDatasetId } = useShop();
   const [query, setQuery] = useState("");
   const [shopId, setShopId] = useState("all");
   const [expanded, setExpanded] = useState(false);
-
-  const rankedSalesReps = useMemo(() => {
-    if (shops.length === 0) return [];
-    const allReps: { id: string; name: string; shopId: string; shopName: string; achievement: number; forecastAchievement: number | null }[] = [];
-    const availableEntries = Object.values(allPerformanceData).flatMap(getOverviewPerformanceData);
-    const latestEntry = [...availableEntries].sort((left, right) => (right.importedAt ?? right.date).localeCompare(left.importedAt ?? left.date))[0];
-    const activeDatasetId = availableEntries.some(entry => entry.date.startsWith(selectedDatasetId))
-      ? selectedDatasetId
-      : latestEntry?.date.slice(0, 7) ?? "";
-
-    shops.forEach(shop => {
-      const performanceData = getOverviewPerformanceData(allPerformanceData[shop.id] || []).filter(entry => entry.date.startsWith(activeDatasetId));
-      const selectedEntry = performanceData[0];
-      if (!selectedEntry) return;
-      const latestMonth = selectedEntry.date.slice(0, 7);
-      const representatives = getMonthlyRepresentatives(shop, latestMonth);
-      const monthlyTargets = selectedEntry.targets ?? shop.monthlyData?.[latestMonth]?.targets ?? allMonthlyTargets[shop.id];
-      if (!monthlyTargets || representatives.length === 0) return;
-
-      const monthData = shop.monthlyData?.[latestMonth];
-      const metricSettings = monthData?.metricSettings ?? shop.metricSettings;
-      const metrics = getShopMetrics({ ...shop, metricSettings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, monthlyTargets);
-      const equalRepresentativeTargets = getEqualRepresentativeTargets(monthlyTargets, metrics, representatives.length);
-      const forecastDate = getForecastDate(selectedEntry);
-      const totalsByRepresentative = new Map<string, Record<PerformanceMetric, number>>();
-      performanceData.forEach(entry => entry.reps.forEach(rep => {
-        const totals = totalsByRepresentative.get(rep.repId)
-          ?? Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>;
-        metrics.forEach(metric => { totals[metric] += rep[metric] ?? 0; });
-        totalsByRepresentative.set(rep.repId, totals);
-      }));
-
-      representatives.forEach(representative => {
-        const totals = totalsByRepresentative.get(representative.id)
-          ?? Object.fromEntries(metrics.map(metric => [metric, 0])) as Record<PerformanceMetric, number>;
-        const representativeTargets = monthData?.representativeTargets?.[representative.id] ?? equalRepresentativeTargets;
-        const achievement = calculateTotalAchievement(totals, representativeTargets, metricSettings);
-        allReps.push({
-          id: representative.id,
-          name: representative.name,
-          shopId: shop.id,
-          shopName: shop.name,
-          achievement,
-          forecastAchievement: selectedEntry.reportType === "completedMonth"
-            ? null
-            : calculateForecastAchievement(totals, representativeTargets, metrics, forecastDate, metricSettings),
-        });
-      });
-    });
-
-    return allReps
-      .sort((left, right) => right.achievement - left.achievement)
-      .map((representative, index) => ({ ...representative, rank: index + 1 }));
-  }, [shops, allPerformanceData, allMonthlyTargets, selectedDatasetId]);
+  const shops = useMemo(() => Array.from(
+    new Map(rows.map(row => [row.shopId, { id: row.shopId, name: row.shopName }])).values(),
+  ).sort((left, right) => left.name.localeCompare(right.name, locale)), [rows, locale]);
 
   const filteredRepresentatives = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase(locale);
-    return rankedSalesReps.filter(rep =>
+    return rows.filter(rep =>
       (shopId === "all" || rep.shopId === shopId)
       && (!normalizedQuery || `${rep.name} ${rep.shopName}`.toLocaleLowerCase(locale).includes(normalizedQuery))
     );
-  }, [rankedSalesReps, query, shopId, locale]);
+  }, [rows, query, shopId, locale]);
   const visibleRepresentatives = expanded ? filteredRepresentatives : filteredRepresentatives.slice(0, 5);
 
   return (
@@ -97,7 +37,7 @@ export function SalesRepresentativeRanking() {
           <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search representatives…" aria-label="Search representatives" className="h-9 bg-white pl-9" /></div>
           <select value={shopId} onChange={event => { setShopId(event.target.value); setExpanded(false); }} aria-label="Filter representatives by shop" className="h-9 min-w-0 max-w-32 rounded-md border bg-white px-2 text-sm">
             <option value="all">All shops</option>
-            {[...shops].sort((left, right) => left.name.localeCompare(right.name, locale)).map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
+            {shops.map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
           </select>
         </div>
       </div>

@@ -3,8 +3,8 @@
 import { z } from "zod";
 import { adminDb } from "@/lib/firebase-admin";
 import { getCurrentActor, requireAdmin } from "@/lib/access";
-import { createManagedUser, listManagedUsers, managedRoleSchema, setManagedUserRole, usernameSchema } from "@/lib/local-auth";
-import { activityEventSchema } from "@/lib/persistence-schemas";
+import { createManagedUser, listManagedUsers, managedRoleSchema, setManagedUserAccess, usernameSchema } from "@/lib/local-auth";
+import { activityEventSchema, shopIdSchema } from "@/lib/persistence-schemas";
 import type { ActivityEvent } from "@/lib/types";
 
 export type AuthUser = {
@@ -13,6 +13,7 @@ export type AuthUser = {
   name: string;
   role: "admin" | "editor" | "viewer";
   lastSignInAt: string | null;
+  shopIds: string[];
 };
 
 const createAuthUserSchema = z.object({
@@ -20,7 +21,16 @@ const createAuthUserSchema = z.object({
   name: z.string().trim().min(1).max(120),
   password: z.string().min(2).max(128),
   role: managedRoleSchema,
+  shopIds: z.array(shopIdSchema).max(500).refine(ids => new Set(ids).size === ids.length, "Each shop can only be assigned once."),
 }).strict();
+
+async function validateShopAssignments(shopIds: string[]) {
+  const validShopIds = createAuthUserSchema.shape.shopIds.parse(shopIds);
+  const shops = await adminDb.collection("shops").get();
+  const namesById = new Map(shops.docs.map(document => [document.id, String(document.data().name ?? document.id)]));
+  if (validShopIds.some(shopId => !namesById.has(shopId))) throw new Error("SHOP_NOT_FOUND");
+  return { shopIds: validShopIds, shopNames: validShopIds.map(shopId => namesById.get(shopId)!) };
+}
 
 function validationMessage(error: z.ZodError) {
   return error.issues[0]?.message ?? "Invalid data.";
@@ -57,32 +67,37 @@ export async function fetchAuthUsers(): Promise<AuthUser[]> {
   await requireAdmin();
   const users = await listManagedUsers();
   return [
-    { id: "local-admin", username: "admin", name: "@Kristi", role: "admin", lastSignInAt: null },
-    ...users.map(user => ({ id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt })),
+    { id: "local-admin", username: "admin", name: "@Kristi", role: "admin", lastSignInAt: null, shopIds: [] },
+    ...users.map(user => ({ id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt, shopIds: user.shopIds })),
   ];
 }
 
-export async function handleCreateAuthUser(input: { username: string; name: string; password: string; role: "editor" | "viewer" }) {
+export async function handleCreateAuthUser(input: { username: string; name: string; password: string; role: "editor" | "viewer"; shopIds: string[] }) {
   try {
     await requireAdmin();
-    const user = await createManagedUser(createAuthUserSchema.parse(input));
-    await recordActivity({ action: "user_created", summary: `Created ${user.role} profile ${user.username}.`, shopIds: [], shopNames: [], metadata: { userId: user.id, role: user.role } });
-    return { success: true as const, user: { id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt } satisfies AuthUser };
+    const value = createAuthUserSchema.parse(input);
+    const assignments = await validateShopAssignments(value.shopIds);
+    const user = await createManagedUser(value);
+    await recordActivity({ action: "user_created", summary: `Created ${user.role} profile ${user.username}.`, ...assignments, metadata: { userId: user.id, role: user.role, shopCount: assignments.shopIds.length } });
+    return { success: true as const, user: { id: user.id, username: user.username, name: user.name, role: user.role, lastSignInAt: user.lastSignInAt, shopIds: user.shopIds } satisfies AuthUser };
   } catch (error) {
     if (error instanceof Error && error.message === "USERNAME_TAKEN") return { success: false as const, error: "That username is already in use." };
+    if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more assigned shops no longer exist." };
     return { success: false as const, error: mutationError("create the user profile", error) };
   }
 }
 
-export async function handleSetUserRole(userId: string, role: "editor" | "viewer") {
+export async function handleSetUserAccess(userId: string, role: "editor" | "viewer", shopIds: string[]) {
   try {
     await requireAdmin();
     const validUserId = z.string().uuid().parse(userId);
     const validRole = managedRoleSchema.parse(role);
-    const user = await setManagedUserRole(validUserId, validRole);
-    await recordActivity({ action: "user_role_changed", summary: `Changed ${user.username} to ${validRole}.`, shopIds: [], shopNames: [], metadata: { userId: validUserId, role: validRole } });
-    return { success: true as const, role: validRole };
+    const assignments = await validateShopAssignments(shopIds);
+    const user = await setManagedUserAccess(validUserId, validRole, assignments.shopIds);
+    await recordActivity({ action: "user_access_changed", summary: `Updated access for ${user.username}.`, ...assignments, metadata: { userId: validUserId, role: validRole, shopCount: assignments.shopIds.length } });
+    return { success: true as const, role: validRole, shopIds: assignments.shopIds };
   } catch (error) {
+    if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more assigned shops no longer exist." };
     return { success: false as const, error: mutationError("change the user role", error) };
   }
 }

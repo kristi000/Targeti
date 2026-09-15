@@ -29,6 +29,16 @@ export type DashboardSupervisorRow = {
   revenue: number;
 };
 
+export type DashboardRepresentativeRow = {
+  id: string;
+  name: string;
+  shopId: string;
+  shopName: string;
+  achievement: number;
+  forecastAchievement: number | null;
+  rank: number;
+};
+
 export type DashboardSummary = {
   average: number;
   forecast: number | null;

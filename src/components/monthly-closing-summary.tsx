@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { RefreshCw } from "lucide-react";
 
-import { fetchMonthlyClosingSummary } from "@/app/actions";
+import { fetchMonthlyClosingSummary } from "@/app/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";
 import { monthlyClosingQueryKey } from "@/lib/monthly-closing";

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw, Search, Pencil, CheckCircle2, RotateCcw, Save } from "lucide-react";
-import { fetchMonthlyDebts, handleUpdateDebt } from "@/app/actions";
+import { fetchMonthlyDebts, handleUpdateDebt } from "@/app/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";

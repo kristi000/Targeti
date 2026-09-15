@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BriefcaseBusiness, CalendarCheck, CheckCircle2, CircleDollarSign, Store, Users, UserX } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
-import { fetchBonusSnapshot, saveBonusSnapshot } from "@/app/actions";
+import { fetchBonusSnapshot, saveBonusSnapshot } from "@/app/actions/bonus";
 import { Header } from "@/components/header";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
@@ -19,6 +19,7 @@ import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } fro
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceMetric } from "@/lib/types";
 import { formatReportingMonth } from "@/lib/reporting-month";
+import { bonusSnapshotQueryKey } from "@/lib/query-keys";
 
 export function BonusDashboardClient() {
   const { selectedShop, allPerformanceData, allMonthlyTargets, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
@@ -41,7 +42,7 @@ export function BonusDashboardClient() {
     setSelectedPerformanceId(null);
   }, [selectedMonth, setSelectedDatasetId, setSelectedPerformanceId]);
   const snapshotQuery = useQuery({
-    queryKey: ["bonus-snapshot", selectedShop?.id, selectedMonth],
+    queryKey: bonusSnapshotQueryKey(selectedShop?.id ?? "", selectedMonth),
     queryFn: () => fetchBonusSnapshot(selectedShop!.id, selectedMonth),
     enabled: Boolean(selectedShop && selectedMonth),
     staleTime: 60_000,
@@ -93,7 +94,7 @@ export function BonusDashboardClient() {
     try {
       const result = await saveBonusSnapshot(selectedShop.id, nextSnapshot);
       if (!result.success) throw new Error(result.error);
-      queryClient.setQueryData(["bonus-snapshot", selectedShop.id, selectedMonth], nextSnapshot);
+      queryClient.setQueryData(bonusSnapshotQueryKey(selectedShop.id, selectedMonth), nextSnapshot);
       toast({ title: "Month finalized", description: `${formatReportingMonth(selectedMonth, locale)} is now locked for payroll.` });
     } catch (error) { toast({ variant: "destructive", title: "Finalization failed", description: error instanceof Error ? error.message : "Could not save the payroll snapshot." }); }
     finally { setFinalizing(false); }

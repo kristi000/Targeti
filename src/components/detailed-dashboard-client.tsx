@@ -16,7 +16,7 @@ import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getForecastDate } from "@/lib/forecast";
 import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceMetric } from "@/lib/types";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
-import { handleRevertAchievementOverrides } from "@/app/actions";
+import { handleRevertAchievementOverrides } from "@/app/actions/achievements";
 import { useToast } from "@/hooks/use-toast";
 
 export function DetailedDashboardClient() {

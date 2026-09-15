@@ -12,7 +12,8 @@
     "editAchievements": "Modifiko Arritjet",
     "editShop": "Modifiko Dyqanin",
     "manageShops": "Menaxho Dyqanet",
-    "viewOnGithub": "Shiko në GitHub"
+    "viewOnGithub": "Shiko në GitHub",
+    "logOut": "Dil"
   },
   "Dashboard": {
     "title": "Paneli Kryesor",
@@ -53,6 +54,7 @@
     "salesRepPerformance": "Performanca e Përfaqësuesit të Shitjeve",
     "individualPerformance": "Performanca individuale mujore bazuar në një pjesë të barabartë të objektivave.",
     "shopNotFound": "Dyqani nuk u gjet",
+    "loading": "Duke ngarkuar dyqanin...",
     "noData": "Nuk ka të dhëna për këtë dyqan.",
     "managerBonus": "Bonusi Mujor i Menaxherit",
     "managerBonusDescription": "{group} bazuar në bonusin bazë prej {base}",
@@ -205,6 +207,13 @@
     "openReport": "Hap raportin",
     "empty": "Nuk ka mbyllje ditore te regjistruara per kete muaj."
   },
+  "RestrictedAccess": {
+    "title": "Akses i kufizuar",
+    "description": "Vendosni kodin special me pese shifra per te pare bonuset dhe skedat mujore te mbrojtura. Aksesi qendron aktiv deri sa te dilni nga llogaria.",
+    "codeLabel": "Kodi i aksesit",
+    "automaticHint": "Kodi kontrollohet automatikisht pas shifres se peste.",
+    "verificationFailed": "Kodi i aksesit nuk mund te verifikohej. Provoni perseri."
+  },
   "DailyClosing": {
     "pageTitle": "Mbyllja Ditore",
     "back": "Kthehu te pasqyra",
@@ -325,6 +334,7 @@
     "newShopNamePlaceholder": "p.sh., Qendra e Qytetit",
     "newShopDescriptionPlaceholder": "Një përshkrim i shkurtër i dyqanit të ri.",
     "addShop": "Shto Dyqan",
+    "adding": "Duke shtuar...",
     "deleteConfirmationTitle": "Jeni absolutisht të sigurt?",
     "deleteConfirmationDescription": "Ky veprim nuk mund të kthehet pas. Kjo do të fshijë përgjithmonë dyqanin dhe të gjitha të dhënat e lidhura me të.",
     "continue": "Vazhdo",

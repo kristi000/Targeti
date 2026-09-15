@@ -21,6 +21,7 @@ import {
   Search,
   Store,
   UserRoundCog,
+  X,
 } from "lucide-react";
 
 import { useShop } from "@/components/shop-provider";
@@ -31,7 +32,8 @@ import { Progress } from "@/components/ui/progress";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
-import { fetchDashboardPeriods } from "@/app/actions";
+import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
+import { fetchDashboardPeriods } from "@/app/dashboard-actions";
 import { fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSupervisorRow } from "@/app/dashboard-actions";
 
 type ShopPerformanceRow = DashboardRow;
@@ -44,13 +46,14 @@ const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
 ];
 
 export function DashboardClient() {
-  const { shops, supervisors, loading, loadPerformanceMonth, setSelectedDatasetId } = useShop();
+  const { shops, supervisors, loading, setSelectedDatasetId } = useShop();
   const locale = useLocale();
   const router = useRouter();
   const queryClient = useQueryClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string | null>(searchParams.get("supervisor"));
   const requestedSort = searchParams.get("sort");
   const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
   const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
@@ -67,7 +70,7 @@ export function DashboardClient() {
   const [cursorHistory, setCursorHistory] = useState<Array<DashboardCursor | null>>(() => Array.from({ length: Math.max(Number(searchParams.get("page") ?? 1), 1) }, (_, index) => index === Math.max(Number(searchParams.get("page") ?? 1) - 1, 0) ? initialCursor : null));
   const deferredSearch = useDeferredValue(shopSearch.trim());
 
-  const periodsQuery = useQuery({ queryKey: ["dashboard-periods"], queryFn: fetchDashboardPeriods, staleTime: 60_000 });
+  const periodsQuery = useQuery({ queryKey: dashboardPeriodsQueryKey, queryFn: fetchDashboardPeriods, staleTime: 60_000 });
   const datasets = useMemo(() => (periodsQuery.data ?? []).map(period => ({
     id: period.month,
     name: period.reportDate ? formatReportingDate(period.reportDate, locale) : formatReportingMonth(period.month, locale),
@@ -85,8 +88,16 @@ export function DashboardClient() {
   }, [activeDatasetId]);
 
   const pageQuery = useQuery({
-    queryKey: ["firestore-shop-performance-page", activeDatasetId, deferredSearch, pagination.pageSize, cursor, sorting[0]?.id, sorting[0]?.desc],
-    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, pageSize: pagination.pageSize, cursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+    queryKey: dashboardPageQueryKey({
+      month: activeDatasetId,
+      search: deferredSearch,
+      supervisorId: selectedSupervisorId,
+      pageSize: pagination.pageSize,
+      cursor,
+      sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey,
+      sortDescending: Boolean(sorting[0]?.desc),
+    }),
+    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, pageSize: pagination.pageSize, cursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
     placeholderData: keepPreviousData,
   });
 
@@ -94,11 +105,19 @@ export function DashboardClient() {
     const nextCursor = pageQuery.data?.nextCursor;
     if (!nextCursor) return;
     void queryClient.prefetchQuery({
-      queryKey: ["firestore-shop-performance-page", activeDatasetId, deferredSearch, pagination.pageSize, nextCursor, sorting[0]?.id, sorting[0]?.desc],
-      queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, pageSize: pagination.pageSize, cursor: nextCursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+      queryKey: dashboardPageQueryKey({
+        month: activeDatasetId,
+        search: deferredSearch,
+        supervisorId: selectedSupervisorId,
+        pageSize: pagination.pageSize,
+        cursor: nextCursor,
+        sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey,
+        sortDescending: Boolean(sorting[0]?.desc),
+      }),
+      queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, pageSize: pagination.pageSize, cursor: nextCursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
       staleTime: 30_000,
     });
-  }, [activeDatasetId, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, sorting]);
+  }, [activeDatasetId, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, selectedSupervisorId, sorting]);
 
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
   const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
@@ -140,11 +159,18 @@ export function DashboardClient() {
     setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
   };
 
+  const selectSupervisor = (supervisorId: string) => {
+    const isSelected = selectedSupervisorId === supervisorId;
+    setSelectedSupervisorId(isSelected ? null : supervisorId);
+    if (!isSelected) setShopSearch("");
+    setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
+  };
+
   useEffect(() => {
-    void loadPerformanceMonth(activeDatasetId);
     const parameters = new URLSearchParams();
     if (activeDatasetId) parameters.set("month", activeDatasetId);
     if (shopSearch.trim()) parameters.set("q", shopSearch.trim());
+    if (selectedSupervisorId) parameters.set("supervisor", selectedSupervisorId);
     if (pagination.pageIndex) parameters.set("page", String(pagination.pageIndex + 1));
     if (pagination.pageSize !== 10) parameters.set("size", String(pagination.pageSize));
     if (sorting[0]?.id && sorting[0].id !== "shop") parameters.set("sort", sorting[0].id);
@@ -158,7 +184,7 @@ export function DashboardClient() {
     }
     router.replace(`${pathname}?${parameters.toString()}`, { scroll: false });
     setSelectedDatasetId(activeDatasetId);
-  }, [activeDatasetId, shopSearch, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, loadPerformanceMonth, setSelectedDatasetId]);
+  }, [activeDatasetId, shopSearch, selectedSupervisorId, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, setSelectedDatasetId]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-muted-foreground">Loading dashboard…</div>;
@@ -171,6 +197,7 @@ export function DashboardClient() {
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
   const visibleRows = table.getRowModel().rows;
   const resultCount = pageQuery.data?.total ?? 0;
+  const selectedSupervisor = supervisors.find(supervisor => supervisor.id === selectedSupervisorId);
 
   return (
     <div className="flex h-svh flex-col bg-muted/20">
@@ -183,7 +210,8 @@ export function DashboardClient() {
             <div className="flex flex-col gap-3 border-b border-slate-300 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <span className="rounded bg-emerald-700 p-1.5 text-white"><Store className="h-4 w-4" /></span>
-                <div><h3 className="font-semibold text-slate-900">All shops</h3><p className="text-xs text-slate-500">{resultCount} matching locations</p></div>
+                <div><h3 className="font-semibold text-slate-900">{selectedSupervisor ? `${selectedSupervisor.name}'s shops` : "All shops"}</h3><p className="text-xs text-slate-500">{resultCount} matching locations</p></div>
+                {selectedSupervisor && <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-slate-500" onClick={() => selectSupervisor(selectedSupervisor.id)} aria-label={`Show all shops instead of ${selectedSupervisor.name}'s shops`}><X className="h-4 w-4" /></Button>}
               </div>
               <div className="flex w-full gap-2 sm:max-w-md">
                 <div className="relative min-w-0 flex-1">
@@ -269,9 +297,9 @@ export function DashboardClient() {
             <TablePagination table={table} resultCount={resultCount} />
           </section>
 
-          <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} />
+          <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} selectedSupervisorId={selectedSupervisorId} onSelectSupervisor={selectSupervisor} />
 
-          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0"><SalesRepresentativeRanking /></section>
+          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0"><SalesRepresentativeRanking rows={pageQuery.data?.representativeRows ?? []} /></section>
           </div>
         </div>
       </main>
@@ -279,7 +307,7 @@ export function DashboardClient() {
   );
 }
 
-function SupervisorPerformanceTable({ rows, currency }: { rows: DashboardSupervisorRow[]; currency: Intl.NumberFormat }) {
+function SupervisorPerformanceTable({ rows, currency, selectedSupervisorId, onSelectSupervisor }: { rows: DashboardSupervisorRow[]; currency: Intl.NumberFormat; selectedSupervisorId: string | null; onSelectSupervisor: (supervisorId: string) => void }) {
   return <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0" aria-labelledby="supervisor-performance-heading">
     <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-50 px-4 py-3">
       <span className="rounded bg-indigo-700 p-1.5 text-white"><UserRoundCog className="h-4 w-4" /></span>
@@ -294,20 +322,20 @@ function SupervisorPerformanceTable({ rows, currency }: { rows: DashboardSupervi
           <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-center">Forecast</th>
           <th className="border-b border-r border-slate-300 px-3 py-2 text-center xl:hidden">Revenue</th>
         </tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.id} className="bg-white even:bg-slate-50/70">
+        <tbody>{rows.map((row, index) => <tr key={row.id} className={cn("bg-white even:bg-slate-50/70", selectedSupervisorId === row.id && "bg-indigo-50 even:bg-indigo-50")}>
           <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", index < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{index + 1}</span></td>
-          <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{row.name}</span><span className="block text-[11px] font-normal text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></th>
+          <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><button type="button" aria-pressed={selectedSupervisorId === row.id} className="text-left hover:text-indigo-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600" onClick={() => onSelectSupervisor(row.id)}><span className="block whitespace-nowrap text-[13px] font-medium underline-offset-2 hover:underline">{row.name}</span><span className="block text-[11px] font-normal text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></button></th>
           <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
           <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
           <td className="border-b border-r border-slate-200 px-3 py-0.5 text-center leading-tight tabular-nums text-slate-700 xl:hidden">{currency.format(row.revenue)}</td>
         </tr>)}</tbody>
       </table>
     </div>
-    <div className="divide-y md:hidden">{rows.map((row, index) => <div key={row.id} className="flex items-center gap-3 p-2">
+    <div className="divide-y md:hidden">{rows.map((row, index) => <button type="button" key={row.id} aria-pressed={selectedSupervisorId === row.id} onClick={() => onSelectSupervisor(row.id)} className={cn("flex w-full items-center gap-3 p-2 text-left transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600", selectedSupervisorId === row.id && "bg-indigo-50")}>
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span>
       <div className="min-w-0 flex-1"><p className="truncate font-medium text-slate-900">{row.name}</p><p className="text-xs text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</p></div>
       <div className="shrink-0 text-right"><p className="font-semibold tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</p><p className="text-xs tabular-nums text-slate-500">EOM {row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</p></div>
-    </div>)}</div>
+    </button>)}</div>
     {!rows.length && <div className="px-4 py-10 text-center text-sm text-slate-500">No supervisors have assigned shops.</div>}
   </section>;
 }

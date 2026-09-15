@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import dynamic from "next/dynamic";
 import {
   Settings,
   Check,
@@ -50,34 +51,41 @@ import {
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
 import { usePathname } from "next/navigation";
-import { ManageShopsDialog } from "./manage-shops-dialog";
-import { ManageSupervisorsDialog } from "./manage-supervisors-dialog";
-import { ManageRepresentativesDialog } from "./manage-representatives-dialog";
-import { ManageImportsDialog } from "./manage-imports-dialog";
 import { useLocale, useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { ScrollArea } from "./ui/scroll-area";
-import { ExcelImportDialog } from "./excel-import-dialog";
-import { ActivityHistoryDialog } from "./activity-history-dialog";
-import { UserManagementDialog } from "./user-management-dialog";
-import { WeightProfileManagerDialog } from "./weight-profile-manager-dialog";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { handleClearAllData, handleSaveAchievementOverrides } from "@/app/actions";
+import { handleSaveAchievementOverrides } from "@/app/actions/achievements";
 import { useToast } from "@/hooks/use-toast";
 import { formatReportingMonth } from "@/lib/reporting-month";
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+
+const ManageShopsDialog = dynamic(() =>
+    import("./manage-shops-dialog").then(module => module.ManageShopsDialog)
+);
+const ManageSupervisorsDialog = dynamic(() =>
+    import("./manage-supervisors-dialog").then(module => module.ManageSupervisorsDialog)
+);
+const ManageRepresentativesDialog = dynamic(() =>
+    import("./manage-representatives-dialog").then(module => module.ManageRepresentativesDialog)
+);
+const ManageImportsDialog = dynamic(() =>
+    import("./manage-imports-dialog").then(module => module.ManageImportsDialog)
+);
+const ExcelImportDialog = dynamic(() =>
+    import("./excel-import-dialog").then(module => module.ExcelImportDialog)
+);
+const ActivityHistoryDialog = dynamic(() =>
+    import("./activity-history-dialog").then(module => module.ActivityHistoryDialog)
+);
+const UserManagementDialog = dynamic(() =>
+    import("./user-management-dialog").then(module => module.UserManagementDialog)
+);
+const WeightProfileManagerDialog = dynamic(() =>
+    import("./weight-profile-manager-dialog").then(module => module.WeightProfileManagerDialog)
+);
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, reloadData, selectedDatasetId, selectedPerformanceId, isAdmin, actor } = useShop();
+    const { selectedShop, allPerformanceData, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, selectedDatasetId, selectedPerformanceId, isAdmin, actor } = useShop();
     const { toast } = useToast();
     const pathname = usePathname();
     const locale = useLocale();
@@ -118,8 +126,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isSaving, setIsSaving] = useState(false);
     const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
     const [isAchievementDialogOpen, setIsAchievementDialogOpen] = useState(false);
-    const [isClearingData, setIsClearingData] = useState(false);
-    const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [isSupervisorDialogOpen, setIsSupervisorDialogOpen] = useState(false);
@@ -391,24 +397,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         }
     }
 
-    const clearAllData = async () => {
-        setIsClearingData(true);
-        try {
-            const result = await handleClearAllData();
-            if (!result.success) throw new Error(result.error);
-            await reloadData();
-            toast({ title: "All data cleared", description: "All shops, targets, achievements, and bonus snapshots were deleted." });
-        } catch (error) {
-            toast({
-                variant: "destructive",
-                title: "Could not clear data",
-                description: error instanceof Error ? error.message : "Please try again.",
-            });
-        } finally {
-            setIsClearingData(false);
-        }
-    };
-        
     return (
         <>
             <div className="flex flex-col gap-1">
@@ -417,40 +405,21 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                     <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Dashboard actions</p>
                     {canEdit && <>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsImportManagementDialogOpen(true)}><FileClock />Manage imports</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenManageShops}><Store />{t('manageShops')}</Button>
+                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsImportManagementDialogOpen(true)}><FileClock />Manage imports</Button>}
+                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenManageShops}><Store />{t('manageShops')}</Button>}
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsRepresentativeDialogOpen(true)}><UsersRound />Manage representatives</Button>
                     </>}
                     {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsSupervisorDialogOpen(true)}><UserRoundCog />Manage supervisors</Button>}
-                    <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsActivityHistoryDialogOpen(true)}><History />Activity history</Button>
+                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsActivityHistoryDialogOpen(true)}><History />Activity history</Button>}
                     {isAdmin && <>
                         <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Administration</p>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsUserManagementOpen(true)}><UserRoundCog />Manage users</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsWeightProfileManagerOpen(true)}><SlidersHorizontal />Manage weight profiles</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start text-destructive hover:text-destructive" disabled={isClearingData || !selectedShop} onClick={() => setIsClearDialogOpen(true)}><Trash2 />Clear all data</Button>
                     </>}
-                    <ExcelImportDialog open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
-                    <ActivityHistoryDialog open={isActivityHistoryDialogOpen} onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />
-                    {isAdmin && <UserManagementDialog open={isUserManagementOpen} onOpenChange={setIsUserManagementOpen} showTrigger={false} />}
-                    {isAdmin && <WeightProfileManagerDialog open={isWeightProfileManagerOpen} onOpenChange={setIsWeightProfileManagerOpen} />}
-                    {isAdmin && <>
-                    <AlertDialog open={isClearDialogOpen} onOpenChange={setIsClearDialogOpen}>
-                        <AlertDialogContent>
-                            <AlertDialogHeader>
-                                <AlertDialogTitle>Clear all application data?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                    This permanently deletes every shop, target, achievement, representative, and finalized bonus snapshot. This action cannot be undone.
-                                </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { setIsClearDialogOpen(false); void clearAllData(); }}>
-                                    <Trash2 className="mr-2 h-4 w-4" />Delete everything
-                                </AlertDialogAction>
-                            </AlertDialogFooter>
-                        </AlertDialogContent>
-                    </AlertDialog>
-                    </>}
+                    {isExcelImportDialogOpen && <ExcelImportDialog open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
+                    {isActivityHistoryDialogOpen && <ActivityHistoryDialog open onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />}
+                    {isAdmin && isUserManagementOpen && <UserManagementDialog open onOpenChange={setIsUserManagementOpen} showTrigger={false} />}
+                    {isAdmin && isWeightProfileManagerOpen && <WeightProfileManagerDialog open onOpenChange={setIsWeightProfileManagerOpen} />}
                     </>
                 )}
                 {selectedShop && !isDashboard && canEdit && (
@@ -460,7 +429,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings />{t('setMonthlyTargets')}</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenAchievementDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil />{t('editAchievements')}</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenEditShop}><Edit />{t('editShop')}</Button>
-                        <ExcelImportDialog restrictToSelectedShop open={isExcelImportDialogOpen} onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />
+                        {isExcelImportDialogOpen && <ExcelImportDialog restrictToSelectedShop open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogContent className="sm:max-w-2xl">
                             <DialogHeader>
@@ -670,7 +639,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 )}
             </div>
             
-            <ManageShopsDialog
+            {isManagementDialogOpen && <ManageShopsDialog
                 isManagementDialogOpen={isManagementDialogOpen}
                 onManagementDialogChange={(open) => {
                     if (!open) setEditingShop(null);
@@ -682,10 +651,10 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 onDelete={handleDeleteShop}
                 representativeMonth={activeMonthOverride}
                 settingsMonth={activeMonth}
-            />
-            {isAdmin && <ManageSupervisorsDialog open={isSupervisorDialogOpen} onOpenChange={setIsSupervisorDialogOpen} />}
-            <ManageRepresentativesDialog open={isRepresentativeDialogOpen} onOpenChange={setIsRepresentativeDialogOpen} month={activeMonth} />
-            <ManageImportsDialog open={isImportManagementDialogOpen} onOpenChange={setIsImportManagementDialogOpen} />
+            />}
+            {isAdmin && isSupervisorDialogOpen && <ManageSupervisorsDialog open onOpenChange={setIsSupervisorDialogOpen} />}
+            {isRepresentativeDialogOpen && <ManageRepresentativesDialog open onOpenChange={setIsRepresentativeDialogOpen} month={activeMonth} />}
+            {isImportManagementDialogOpen && <ManageImportsDialog open onOpenChange={setIsImportManagementDialogOpen} />}
         </>
     );
 }

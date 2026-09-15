@@ -6,7 +6,7 @@ import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tan
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowUpRight, ChevronLeft, ChevronRight, Download, FileSpreadsheet, RefreshCw, Search } from "lucide-react";
 
-import { fetchMonthlyUnsubscribes } from "@/app/actions";
+import { fetchMonthlyUnsubscribes } from "@/app/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";
@@ -18,6 +18,12 @@ class UnsubscribeLoadError extends Error {
   constructor(readonly reason: "invalidData" | "invalidRequest" | "sessionExpired" | "loadFailed", readonly date?: string) {
     super(reason);
   }
+}
+
+function csvCell(value: string | number) {
+  const text = String(value);
+  const safe = typeof value === "string" && /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
 export function MonthlyUnsubscribes({ shopId, month, onOpenReport }: { shopId: string; month: string; onOpenReport: (date: string) => void }) {
@@ -44,34 +50,27 @@ export function MonthlyUnsubscribes({ shopId, month, onOpenReport }: { shopId: s
     try {
       const result = await fetchMonthlyUnsubscribes(shopId, { month, search, pageIndex: 0, pageSize: 3100 });
       if (!result.success) throw new UnsubscribeLoadError(result.error, result.date);
-      const XLSX = await import("xlsx");
       const amountHeader = `${t("amount")} (Lek)`;
-      const rows = result.data.rows.map(entry => ({
-        [t("date")]: entry.date,
-        [t("invoice")]: entry.invoice,
-        [t("msisdn")]: entry.msisdn,
-        [amountHeader]: entry.amount,
-      }));
-      const worksheet = XLSX.utils.json_to_sheet(rows, { header: [t("date"), t("invoice"), t("msisdn"), amountHeader] });
-      worksheet["!cols"] = [{ wch: 12 }, { wch: 24 }, { wch: 18 }, { wch: 16 }];
-      for (let row = 2; row <= rows.length + 1; row += 1) {
-        const amountCell = worksheet[`D${row}`];
-        if (amountCell) amountCell.z = "#,##0.00";
-      }
       const fileName = `unsubscribes-${month}.${format}`;
       if (format === "xlsx") {
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, t("sheetName").slice(0, 31));
-        XLSX.writeFile(workbook, fileName, { compression: true });
+        const { default: writeXlsxFile } = await import("write-excel-file/browser");
+        await writeXlsxFile([
+          [t("date"), t("invoice"), t("msisdn"), amountHeader].map(value => ({ value, fontWeight: "bold" as const })),
+          ...result.data.rows.map(entry => [
+            { value: entry.date },
+            { value: entry.invoice },
+            { value: entry.msisdn },
+            { value: entry.amount, type: Number, format: "#,##0.00" },
+          ]),
+        ], {
+          columns: [{ width: 12 }, { width: 24 }, { width: 18 }, { width: 16 }],
+          sheet: t("sheetName").slice(0, 31),
+        }).toFile(fileName);
       } else {
-        const csvRows = result.data.rows.map(entry => ({
-          [t("date")]: entry.date,
-          [t("invoice")]: /^[=+\-@\t\r]/.test(entry.invoice) ? `'${entry.invoice}` : entry.invoice,
-          [t("msisdn")]: /^[=+\-@\t\r]/.test(entry.msisdn) ? `'${entry.msisdn}` : entry.msisdn,
-          [amountHeader]: entry.amount,
-        }));
-        const csvSheet = XLSX.utils.json_to_sheet(csvRows, { header: [t("date"), t("invoice"), t("msisdn"), amountHeader] });
-        const csv = `\uFEFF${XLSX.utils.sheet_to_csv(csvSheet)}`;
+        const csv = `\uFEFF${[
+          [t("date"), t("invoice"), t("msisdn"), amountHeader],
+          ...result.data.rows.map(entry => [entry.date, entry.invoice, entry.msisdn, entry.amount]),
+        ].map(row => row.map(csvCell).join(",")).join("\r\n")}`;
         const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
         const link = document.createElement("a");
         link.href = url;

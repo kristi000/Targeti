@@ -26,3 +26,21 @@ export async function requireEditor() {
   if (actor.role === "viewer") throw new Error("EDITOR_REQUIRED");
   return actor;
 }
+
+export function canAccessShop(actor: AppActor, shopId: string) {
+  return actor.role === "admin" || actor.shopIds.includes(shopId);
+}
+
+export async function requireShopAccess(shopId: string) {
+  const actor = await getCurrentActor();
+  if (!canAccessShop(actor, shopId)) throw new Error("SHOP_ACCESS_REQUIRED");
+  return actor;
+}
+
+export async function requireEditorForShops(shopIds: string[]) {
+  const actor = await requireEditor();
+  if (actor.role !== "admin" && shopIds.some(shopId => !actor.shopIds.includes(shopId))) {
+    throw new Error("SHOP_ACCESS_REQUIRED");
+  }
+  return actor;
+}

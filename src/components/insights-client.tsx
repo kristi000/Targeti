@@ -14,13 +14,14 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { fetchDashboardPeriods } from "@/app/actions";
+import { fetchDashboardPeriods } from "@/app/dashboard-actions";
 import { fetchDashboardInsights, type DashboardSummary } from "@/app/dashboard-actions";
 import { useShop } from "@/components/shop-provider";
 import { Card, CardContent } from "@/components/ui/card";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
+import { dashboardInsightsQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
 
 const EMPTY_SUMMARY: DashboardSummary = {
   average: 0,
@@ -36,7 +37,7 @@ export function InsightsClient() {
   const locale = useLocale();
   const searchParams = useSearchParams();
 
-  const periodsQuery = useQuery({ queryKey: ["dashboard-periods"], queryFn: fetchDashboardPeriods, staleTime: 60_000 });
+  const periodsQuery = useQuery({ queryKey: dashboardPeriodsQueryKey, queryFn: fetchDashboardPeriods, staleTime: 60_000 });
   const periods = useMemo(() => (periodsQuery.data ?? []).map(period => ({
     id: period.month,
     name: period.reportDate ? formatReportingDate(period.reportDate, locale) : formatReportingMonth(period.month, locale),
@@ -47,7 +48,7 @@ export function InsightsClient() {
     : periods[0]?.id ?? new Date().toISOString().slice(0, 7);
 
   const insightsQuery = useQuery({
-    queryKey: ["dashboard-insights", activeMonth],
+    queryKey: dashboardInsightsQueryKey(activeMonth),
     queryFn: () => fetchDashboardInsights(activeMonth),
     enabled: shops.length > 0,
   });

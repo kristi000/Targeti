@@ -1,13 +1,17 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useMemo, useCallback, useRef } from 'react';
-import { type Shop, type Supervisor, type PerformanceData, type Target, type MetricWeightProfile } from '@/lib/types';
-import { handleAddShop, handleDeleteShop, handleUpdateShop, handleSavePerformanceData, fetchPerformanceData, fetchShopData, type ShopData } from '@/app/actions';
+import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { type Shop, type Supervisor, type PerformanceData, type Target, type MetricWeightProfile, type ShopData } from '@/lib/types';
+import { handleAddShop, handleDeleteShop, handleUpdateShop } from "@/app/actions/shops";
+import { handleSavePerformanceData } from "@/app/actions/performance";
+import { fetchPerformanceData, fetchShopData } from "@/app/actions/shop-data";
 import { fetchPerformanceDataForMonth } from '@/app/dashboard-actions';
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 import type { AppActor } from '@/lib/auth-types';
+import { shopPerformanceQueryKey } from '@/lib/query-keys';
 
 type ShopContextType = {
   actor: AppActor;
@@ -38,6 +42,7 @@ type ShopContextType = {
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
 
 export function ShopProvider({ children, initialData, actor }: { children: React.ReactNode; initialData: ShopData; actor: AppActor }) {
+  const queryClient = useQueryClient();
   const [shops, setShops] = useState<Shop[]>(initialData.shops);
   const [supervisors, setSupervisors] = useState<Supervisor[]>(initialData.supervisors);
   const [weightProfiles, setWeightProfiles] = useState<MetricWeightProfile[]>(initialData.weightProfiles);
@@ -47,10 +52,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   const [loading, setLoading] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [selectedPerformanceId, setSelectedPerformanceId] = useState<string | null>(null);
-  const loadedMonths = useRef(new Set<string>());
-  const shopRequests = useRef(new Map<string, Promise<PerformanceData[]>>());
-  const loadedShopsAt = useRef(new Map<string, number>());
-  const monthRequests = useRef(new Map<string, Promise<Record<string, PerformanceData[]>>>());
 
   const { toast } = useToast();
   const t = useTranslations("Toasts");
@@ -63,7 +64,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
         setSupervisors(data.supervisors);
         setWeightProfiles(data.weightProfiles);
         setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
-        loadedShopsAt.current.set(shopId, Date.now());
+        queryClient.setQueryData(shopPerformanceQueryKey(shopId), performanceData);
         setAllMonthlyTargets(data.monthlyTargets);
         if (shop) setSelectedShop(shop);
     } catch (error) {
@@ -74,29 +75,24 @@ export function ShopProvider({ children, initialData, actor }: { children: React
             description: `Failed to refresh data for the shop.`
         });
     }
-  }, [toast, t]);
+  }, [queryClient, toast, t]);
 
   const loadPerformanceForShop = useCallback(async (shopId: string) => {
-    const loadedAt = loadedShopsAt.current.get(shopId) ?? 0;
-    if (Date.now() - loadedAt < 60_000) return;
-    const request = shopRequests.current.get(shopId) ?? fetchPerformanceData(shopId);
-    shopRequests.current.set(shopId, request);
-    try {
-      const performanceData = await request;
-      setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
-      loadedShopsAt.current.set(shopId, Date.now());
-    } finally {
-      shopRequests.current.delete(shopId);
-    }
-  }, []);
+    const performanceData = await queryClient.fetchQuery({
+      queryKey: shopPerformanceQueryKey(shopId),
+      queryFn: () => fetchPerformanceData(shopId),
+      staleTime: 60_000,
+    });
+    setAllPerformanceData(current => ({ ...current, [shopId]: performanceData }));
+  }, [queryClient]);
 
   const loadPerformanceMonth = useCallback(async (month: string) => {
-    if (!month || loadedMonths.current.has(month)) return;
-    const request = monthRequests.current.get(month) ?? fetchPerformanceDataForMonth(month);
-    monthRequests.current.set(month, request);
-    try {
-      const performanceByShop = await request;
-      loadedMonths.current.add(month);
+    if (!month) return;
+    const performanceByShop = await queryClient.fetchQuery({
+      queryKey: ["performance", "month", month],
+      queryFn: () => fetchPerformanceDataForMonth(month),
+      staleTime: 60_000,
+    });
       setAllPerformanceData(current => {
         const next = { ...current };
         const shopIds = new Set([...Object.keys(current), ...Object.keys(performanceByShop)]);
@@ -107,10 +103,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
         });
         return next;
       });
-    } finally {
-      monthRequests.current.delete(month);
-    }
-  }, []);
+  }, [queryClient]);
 
   const loadInitialData = useCallback(async () => {
     setLoading(true);
@@ -123,8 +116,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       setAllMonthlyTargets(monthlyTargets);
       
       setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
-      loadedMonths.current.clear();
-      loadedShopsAt.current.clear();
+      queryClient.removeQueries({ queryKey: ["performance"] });
       if (selectedShop?.id) await loadPerformanceForShop(selectedShop.id);
       if (selectedDatasetId) await loadPerformanceMonth(selectedDatasetId);
       
@@ -138,7 +130,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     } finally {
       setLoading(false);
     }
-  }, [toast, t, selectedShop?.id, selectedDatasetId, loadPerformanceForShop, loadPerformanceMonth]);
+  }, [toast, t, selectedShop?.id, selectedDatasetId, loadPerformanceForShop, loadPerformanceMonth, queryClient]);
 
   const refreshShopDirectory = useCallback(async () => {
     const { shops, supervisors, weightProfiles, monthlyTargets } = await fetchShopData();
@@ -152,7 +144,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   const addShop = useCallback(async (shopName: string, description?: string) => {
     setLoading(true);
     try {
-        console.log("Adding shop in provider:", shopName);
         const result = await handleAddShop(shopName, description);
         if (result.success && result.data) {
             const newShop = result.data;
@@ -162,6 +153,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
                 setAllMonthlyTargets(prev => ({...prev, [newShop.id]: targets}));
             }
             setAllPerformanceData(prev => ({...prev, [newShop.id]: []}));
+            queryClient.setQueryData(shopPerformanceQueryKey(newShop.id), []);
             
             toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
         } else {
@@ -174,7 +166,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     } finally {
         setLoading(false);
     }
-  }, [toast, t]);
+  }, [queryClient, toast, t]);
 
   const updateShop = useCallback(async (updatedShop: Shop) => {
     const result = await handleUpdateShop(updatedShop);
@@ -206,6 +198,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
         delete newData[shopId];
         return newData;
       });
+      queryClient.removeQueries({ queryKey: shopPerformanceQueryKey(shopId) });
       setAllMonthlyTargets(prev => {
         const newTargets = {...prev};
         delete newTargets[shopId];
@@ -215,7 +208,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     } else {
       toast({ variant: "destructive", title: t('error'), description: t('deleteShopFailed') });
     }
-  }, [selectedShop?.id, toast, t]);
+  }, [queryClient, selectedShop?.id, toast, t]);
 
   const handleSetSelectedShop = useCallback((shop: Shop | null) => {
     setSelectedShop(shop);
@@ -225,8 +218,10 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       const result = await handleSavePerformanceData(shopId, data);
       if (result.success && result.data) {
         setAllPerformanceData(prev => ({...prev, [shopId]: result.data!}));
+        queryClient.setQueryData(shopPerformanceQueryKey(shopId), result.data);
+        void queryClient.invalidateQueries({ queryKey: ["performance", "month"] });
       }
-  }, []);
+  }, [queryClient]);
 
   const contextValue = useMemo(() => ({
     actor,

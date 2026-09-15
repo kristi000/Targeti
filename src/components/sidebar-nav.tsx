@@ -7,6 +7,7 @@ import {
   TrendingUp,
   Github,
   Languages,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -63,6 +64,12 @@ export function SidebarNav() {
     router.refresh();
   };
 
+  const handleLogout = async () => {
+    await fetch("/api/auth/session", { method: "DELETE" });
+    router.replace("/login");
+    router.refresh();
+  };
+
   return (
     <>
       <SidebarHeader>
@@ -105,6 +112,15 @@ export function SidebarNav() {
         )}
       </SidebarContent>
       <SidebarFooter>
+         <Button
+           type="button"
+           variant="ghost"
+           className="w-full justify-start gap-2 text-destructive hover:text-destructive"
+           onClick={() => void handleLogout()}
+         >
+           <LogOut />
+           <span>{t('logOut')}</span>
+         </Button>
          <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="w-full justify-start gap-2">

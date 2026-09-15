@@ -218,6 +218,13 @@ export type Shop = {
   quarterSettings?: Record<string, QuarterMetricSettings>;
 };
 
+export type ShopData = {
+  shops: Shop[];
+  supervisors: Supervisor[];
+  weightProfiles: MetricWeightProfile[];
+  monthlyTargets: Record<string, Target>;
+};
+
 export type QuarterMetricSettings = {
   metricSettings: MetricSettings;
   metricOrder: PerformanceMetric[];
@@ -287,7 +294,8 @@ export type ActivityAction =
   | "daily_closing_reopened"
   | "all_data_deleted"
   | "user_created"
-  | "user_role_changed";
+  | "user_role_changed"
+  | "user_access_changed";
 
 export type ActivityEvent = {
   id: string;
