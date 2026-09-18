@@ -6,31 +6,19 @@ import { useTranslations } from "next-intl";
 
 import { BonusDashboardClient } from "@/components/bonus-dashboard-client";
 import { useShop } from "@/components/shop-provider";
+import { useShopPerformance } from "@/hooks/use-shop-performance";
 
 export function BonusDashboardRoute({ shopId }: { shopId: string }) {
-  const { shops, selectedShop, setSelectedShop, loadPerformanceForShop } = useShop();
+  const { shops, selectedShop, setSelectedShop } = useShop();
   const t = useTranslations("DetailedDashboard");
   const routeShop = shops.find(shop => shop.id === shopId);
+  const performanceQuery = useShopPerformance(shopId, Boolean(routeShop));
 
   useEffect(() => {
     if (routeShop && selectedShop?.id !== routeShop.id) setSelectedShop(routeShop);
-    if (routeShop) void loadPerformanceForShop(routeShop.id);
-  }, [routeShop, selectedShop?.id, setSelectedShop, loadPerformanceForShop]);
+  }, [routeShop, selectedShop?.id, setSelectedShop]);
 
-  useEffect(() => {
-    const refreshPerformance = () => void loadPerformanceForShop(shopId);
-    const refreshVisiblePerformance = () => {
-      if (document.visibilityState === "visible") refreshPerformance();
-    };
-    window.addEventListener("focus", refreshPerformance);
-    document.addEventListener("visibilitychange", refreshVisiblePerformance);
-    return () => {
-      window.removeEventListener("focus", refreshPerformance);
-      document.removeEventListener("visibilitychange", refreshVisiblePerformance);
-    };
-  }, [shopId, loadPerformanceForShop]);
-
-  if (selectedShop?.id === shopId) return <BonusDashboardClient />;
+  if (selectedShop?.id === shopId && performanceQuery.data) return <BonusDashboardClient allData={performanceQuery.data} />;
   return (
     <div className="flex min-h-64 items-center justify-center p-6">
       {routeShop

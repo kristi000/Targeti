@@ -17,17 +17,16 @@ import { useToast } from "@/hooks/use-toast";
 import { calculateManagerBonus, MANAGER_PAYOUT_TABLE_VERSION } from "@/lib/manager-bonus";
 import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } from "@/lib/sales-representative-bonus";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceMetric } from "@/lib/types";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceData, type PerformanceMetric } from "@/lib/types";
 import { formatReportingMonth } from "@/lib/reporting-month";
 import { bonusSnapshotQueryKey } from "@/lib/query-keys";
 
-export function BonusDashboardClient() {
-  const { selectedShop, allPerformanceData, allMonthlyTargets, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
+export function BonusDashboardClient({ allData }: { allData: PerformanceData[] }) {
+  const { selectedShop, allMonthlyTargets, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const allData = useMemo(() => selectedShop ? allPerformanceData[selectedShop.id] ?? [] : [], [allPerformanceData, selectedShop]);
   const months = useMemo(
     () => getPerformanceMonthsByImportRecency(allData, Object.keys(selectedShop?.monthlyData ?? {})),
     [allData, selectedShop?.monthlyData],

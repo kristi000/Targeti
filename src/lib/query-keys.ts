@@ -26,5 +26,6 @@ export function dashboardPageQueryKey(input: {
 export const dashboardInsightsQueryKey = (month: string) => ["dashboard-insights", month] as const;
 
 export const shopPerformanceQueryKey = (shopId: string) => ["performance", "shop", shopId] as const;
+export const performanceMonthQueryKey = (month: string) => ["performance", "month", month] as const;
 
 export const bonusSnapshotQueryKey = (shopId: string, month: string) => ["bonus-snapshot", shopId, month] as const;

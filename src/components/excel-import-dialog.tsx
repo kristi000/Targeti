@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { handleAllocateShopId } from "@/app/actions/shops";
 import { handlePrepareRepresentativeImport } from "@/app/actions/representatives";
 import { handleRegisterImport, handleUndoLatestImport } from "@/app/actions/imports";
@@ -27,6 +27,7 @@ import {
   type Target,
 } from "@/lib/types";
 import { useShop } from "./shop-provider";
+import { performanceMonthQueryOptions } from "@/lib/performance-queries";
 
 type ReviewState = {
   workbook: ImportedWorkbookData;
@@ -96,7 +97,7 @@ export function ExcelImportDialog({
   onOpenChange,
   showTrigger = true,
 }: ExcelImportDialogProps) {
-  const { selectedShop, shops, weightProfiles, allPerformanceData, loadPerformanceMonth, reloadData } = useShop();
+  const { selectedShop, shops, weightProfiles, reloadData } = useShop();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -105,6 +106,11 @@ export function ExcelImportDialog({
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState("");
   const [review, setReview] = useState<ReviewState | null>(null);
+  const performanceQuery = useQuery({
+    ...performanceMonthQueryOptions(review?.reportMonth ?? ""),
+    enabled: Boolean(review?.reportMonth),
+  });
+  const performanceByShop = performanceQuery.data;
 
   const reset = () => {
     setReview(null);
@@ -152,7 +158,7 @@ export function ExcelImportDialog({
 
       const today = format(new Date(), "yyyy-MM-dd");
       const reportMonth = today.slice(0, 7);
-      await loadPerformanceMonth(reportMonth);
+      await queryClient.fetchQuery(performanceMonthQueryOptions(reportMonth));
       const parsedDate = parseISO(today);
       const reportType = parsedDate.getDate() >= getDaysInMonth(parsedDate) ? "completedMonth" : "midMonth";
       const profileSelections = Object.fromEntries(workbook.shops.map((imported, shopIndex) => {
@@ -204,7 +210,7 @@ export function ExcelImportDialog({
       const existingShop = restrictToSelectedShop && selectedShop
         ? selectedShop
         : shops.find(item => normalizeName(item.name) === normalizeName(shop.shopName));
-      if (existingShop && (allPerformanceData[existingShop.id] ?? []).some(entry => entry.date.startsWith(review.reportMonth))) {
+      if (existingShop && (performanceByShop?.[existingShop.id] ?? []).some(entry => entry.date.startsWith(review.reportMonth))) {
         warnings.push(`${shop.shopName}: this month already has data. This file will be retained as a new version and become the active monthly snapshot.`);
       }
       const representativeNames = shop.representatives.map(rep => normalizeName(rep.name));
@@ -221,10 +227,10 @@ export function ExcelImportDialog({
       });
     });
     return { errors: Array.from(new Set(errors)), warnings: Array.from(new Set(warnings)) };
-  }, [review, restrictToSelectedShop, selectedShop, shops, weightProfiles, allPerformanceData]);
+  }, [review, restrictToSelectedShop, selectedShop, shops, weightProfiles, performanceByShop]);
 
   const applyImport = async () => {
-    if (!review || validation.errors.length) return;
+    if (!review || !performanceByShop || performanceQuery.isFetching || performanceQuery.isError || validation.errors.length) return;
     setLoading(true);
     try {
       let representativeCount = 0;
@@ -269,7 +275,7 @@ export function ExcelImportDialog({
         const hiddenSalesRepresentatives = hiddenRepresentativesForImport(
           shop,
           review.reportMonth,
-          allPerformanceData[shop.id] ?? [],
+          performanceByShop[shop.id] ?? [],
         );
         const hiddenIds = new Set(hiddenSalesRepresentatives.map(representative => representative.id));
         const hiddenNames = new Set(hiddenSalesRepresentatives.map(representative => normalizeName(representative.name)));
@@ -413,10 +419,12 @@ export function ExcelImportDialog({
         </section>
 
         {validation.errors.length > 0 && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Fix before importing</p><ul className="list-disc space-y-1 pl-5">{validation.errors.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-        {!validation.errors.length && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />All import checks passed.</p>}
+        {performanceQuery.isFetching && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking existing month data…</p>}
+        {performanceQuery.isError && <div role="alert" className="flex items-center gap-2 text-sm text-destructive">Could not load existing month data.<Button type="button" size="sm" variant="outline" onClick={() => void performanceQuery.refetch()}><RotateCcw className="mr-2 h-4 w-4" />Retry</Button></div>}
+        {!validation.errors.length && performanceByShop && !performanceQuery.isFetching && !performanceQuery.isError && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />All import checks passed.</p>}
       </div>}
 
-      <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>{review && <Button variant="outline" onClick={() => inputRef.current?.click()} disabled={loading}>Choose another file</Button>}<Button onClick={applyImport} disabled={!review || loading || validation.errors.length > 0}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Import reviewed data</Button></DialogFooter>
+      <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>{review && <Button variant="outline" onClick={() => inputRef.current?.click()} disabled={loading}>Choose another file</Button>}<Button onClick={applyImport} disabled={!review || !performanceByShop || performanceQuery.isFetching || performanceQuery.isError || loading || validation.errors.length > 0}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Import reviewed data</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

@@ -6,7 +6,6 @@ export type MonthlyClosingAmounts = {
   boss: number;
   invoice: number;
   unsubscribe: number;
-  debt: number;
   net: number;
 };
 
@@ -37,24 +36,13 @@ export const monthlyDebtsInputSchema = z.object({
   search: z.string().trim().max(200),
   status: z.enum(["all", "unpaid", "paid"]).default("all"),
   pageIndex: z.number().int().min(0).max(3100),
-  groupPageIndex: z.number().int().min(0).max(3100),
-  pageSize: z.literal(20),
+  pageSize: z.union([z.literal(20), z.literal(3100)]),
 });
 
 export type MonthlyDebtRow = { id: string; debtId: string; date: string; description: string; amount: number; paidAt?: string; finalized: boolean; updatedAt: string };
-export type MonthlyDebtGroupRow = {
-  id: string;
-  description: string;
-  count: number;
-  totalAmount: number;
-  unpaidAmount: number;
-  paidAmount: number;
-};
 export type MonthlyDebtsPage = {
   rows: MonthlyDebtRow[];
   rowCount: number;
-  groupRows: MonthlyDebtGroupRow[];
-  groupRowCount: number;
   totalCount: number;
   totalAmount: number;
   unpaidAmount: number;

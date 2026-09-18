@@ -14,13 +14,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getForecastDate } from "@/lib/forecast";
-import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceMetric } from "@/lib/types";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceMetric } from "@/lib/types";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
 import { handleRevertAchievementOverrides } from "@/app/actions/achievements";
 import { useToast } from "@/hooks/use-toast";
 
-export function DetailedDashboardClient() {
-  const { selectedShop, allPerformanceData, allMonthlyTargets, refreshDataForShop, actor, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
+export function DetailedDashboardClient({ allData }: { allData: PerformanceData[] }) {
+  const { selectedShop, allMonthlyTargets, refreshDataForShop, actor, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
   const [monthSelection, setMonthSelection] = useState({ shopId: "", month: "" });
@@ -28,7 +28,6 @@ export function DetailedDashboardClient() {
   const [isRevertingAchievements, setIsRevertingAchievements] = useState(false);
   const { toast } = useToast();
 
-  const allData = useMemo(() => selectedShop ? allPerformanceData[selectedShop.id] || [] : [], [allPerformanceData, selectedShop]);
   const now = new Date();
   const currentMonth = format(now, "yyyy-MM");
   const availableMonths = useMemo(() => {

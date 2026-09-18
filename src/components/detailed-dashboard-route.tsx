@@ -8,33 +8,21 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { DetailedDashboardClient } from "@/components/detailed-dashboard-client";
 import { useShop } from "@/components/shop-provider";
 import { buttonVariants } from "@/components/ui/button";
+import { useShopPerformance } from "@/hooks/use-shop-performance";
 import { cn } from "@/lib/utils";
 
 export function DetailedDashboardRoute({ shopId }: { shopId: string }) {
-  const { shops, selectedShop, setSelectedShop, loadPerformanceForShop } = useShop();
+  const { shops, selectedShop, setSelectedShop } = useShop();
   const locale = useLocale();
   const t = useTranslations("DetailedDashboard");
   const routeShop = shops.find(shop => shop.id === shopId);
+  const performanceQuery = useShopPerformance(shopId, Boolean(routeShop));
 
   useEffect(() => {
     if (routeShop && selectedShop?.id !== routeShop.id) setSelectedShop(routeShop);
-    if (routeShop) void loadPerformanceForShop(routeShop.id);
-  }, [routeShop, selectedShop?.id, setSelectedShop, loadPerformanceForShop]);
+  }, [routeShop, selectedShop?.id, setSelectedShop]);
 
-  useEffect(() => {
-    const refreshPerformance = () => void loadPerformanceForShop(shopId);
-    const refreshVisiblePerformance = () => {
-      if (document.visibilityState === "visible") refreshPerformance();
-    };
-    window.addEventListener("focus", refreshPerformance);
-    document.addEventListener("visibilitychange", refreshVisiblePerformance);
-    return () => {
-      window.removeEventListener("focus", refreshPerformance);
-      document.removeEventListener("visibilitychange", refreshVisiblePerformance);
-    };
-  }, [shopId, loadPerformanceForShop]);
-
-  if (selectedShop?.id === shopId) return <DetailedDashboardClient />;
+  if (selectedShop?.id === shopId && performanceQuery.data) return <DetailedDashboardClient allData={performanceQuery.data} />;
 
   return (
     <div className="flex h-full flex-col p-4 md:p-6 lg:p-8">

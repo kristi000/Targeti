@@ -69,7 +69,7 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
     if (existing?.status === "finalized") throw new Error("CLOSING_FINALIZED");
     if ((existing?.updatedAt ?? null) !== value.expectedUpdatedAt) throw new Error("CLOSING_CONFLICT");
     const existingCell = existing?.cell ?? { amount: 0, note: "" };
-    if (actor.role !== "admin" && (value.cell.amount !== existingCell.amount || value.cell.note !== existingCell.note)) {
+    if (actor.role !== "admin" && value.cell.note !== existingCell.note) {
       throw new Error("ADMIN_REQUIRED");
     }
     closing = dailyClosingSchema.parse({
@@ -146,26 +146,9 @@ export async function fetchMonthlyDebts(shopId: string, input: z.infer<typeof mo
   const filtered = debts.filter(debt => debt.description.toLowerCase().includes(search)
     && (value.status === "all" || (value.status === "paid" ? !!debt.paidAt : !debt.paidAt)));
   const start = value.pageIndex * value.pageSize;
-  const grouped = new Map<string, MonthlyDebtsPage["groupRows"][number]>();
-  for (const debt of debts) {
-    const description = debt.description.trim().replace(/\s+/g, " ");
-    const id = description.toLowerCase();
-    const existing = grouped.get(id) ?? { id, description, count: 0, totalAmount: 0, unpaidAmount: 0, paidAmount: 0 };
-    existing.count += 1;
-    existing.totalAmount += debt.amount;
-    if (debt.paidAt) existing.paidAmount += debt.amount;
-    else existing.unpaidAmount += debt.amount;
-    grouped.set(id, existing);
-  }
-  const matchingGroups = [...grouped.values()]
-    .filter(group => group.description.toLowerCase().includes(search))
-    .sort((left, right) => right.unpaidAmount - left.unpaidAmount || right.totalAmount - left.totalAmount || left.description.localeCompare(right.description));
-  const groupStart = value.groupPageIndex * value.pageSize;
   return { success: true, data: {
     rows: filtered.slice(start, start + value.pageSize),
     rowCount: filtered.length,
-    groupRows: matchingGroups.slice(groupStart, groupStart + value.pageSize),
-    groupRowCount: matchingGroups.length,
     totalCount: debts.length,
     totalAmount: debts.reduce((sum, debt) => sum + debt.amount, 0),
     unpaidAmount: debts.reduce((sum, debt) => sum + (debt.paidAt ? 0 : debt.amount), 0),
@@ -278,22 +261,20 @@ export async function fetchMonthlyClosingSummary(shopId: string, month: string):
   const closings = await loadMonthlyClosings(shopId, month);
   const rows = closings.map(({ date, data }) => {
     // Fail visibly on invalid records instead of presenting incomplete monthly totals.
-    const closing = dailyClosingInputSchema.pick({ adjustments: true, debts: true, unsubscribeEntries: true }).strip().parse(data);
+    const closing = dailyClosingInputSchema.pick({ adjustments: true, unsubscribeEntries: true }).strip().parse(data);
     const boss = closing.adjustments.boss;
     const invoice = closing.adjustments.invoice;
     const unsubscribe = closing.unsubscribeEntries.length
       ? closing.unsubscribeEntries.reduce((sum, entry) => sum + entry.amount, 0)
       : closing.adjustments.unsubscribe;
-    const debt = closing.debts.reduce((sum, entry) => sum + entry.amount, 0);
-    return { date, boss, invoice, unsubscribe, debt, net: boss + invoice - unsubscribe - debt };
+    return { date, boss, invoice, unsubscribe, net: boss + invoice - unsubscribe };
   });
   const totals = rows.reduce((sum, row) => ({
     boss: sum.boss + row.boss,
     invoice: sum.invoice + row.invoice,
     unsubscribe: sum.unsubscribe + row.unsubscribe,
-    debt: sum.debt + row.debt,
     net: sum.net + row.net,
-  }), { boss: 0, invoice: 0, unsubscribe: 0, debt: 0, net: 0 });
+  }), { boss: 0, invoice: 0, unsubscribe: 0, net: 0 });
   return { rows, totals };
 }
 

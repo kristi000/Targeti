@@ -4,10 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Banknote,
-  CalendarDays,
-  CalendarRange,
   CheckCircle2,
   ClipboardCopy,
   CircleAlert,
@@ -23,8 +22,6 @@ import {
   Scale,
   Smartphone,
   Trash2,
-  UserMinus,
-  Wallet,
 } from "lucide-react";
 
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
@@ -45,15 +42,15 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useRestrictedAccess } from "@/hooks/use-restricted-access";
 import { calculateDailyClosing, CASH_DENOMINATIONS, createDailyClosingSummary, createEmptyCashCounts, DEFAULT_EXCHANGE_RATE, EURO_DENOMINATION_KEY, getDailyClosingMetricConfig } from "@/lib/daily-closing";
+import { getClosingView, type ClosingView } from "@/lib/closing-navigation";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
 import { type DailyClosing, type DailyClosingDebt, type DailyClosingUnsubscribeEntry, type PerformanceMetric } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type Adjustments = { boss: number; invoice: number; unsubscribe: number };
 type AutosaveStatus = "ready" | "pending" | "saving" | "saved" | "error";
-type ClosingView = "daily" | "monthly" | "debts" | "unsubscribes" | "cell";
-
 const EMPTY_ADJUSTMENTS: Adjustments = { boss: 0, invoice: 0, unsubscribe: 0 };
 
 const primaryAmountInputClassName = "h-9 border-primary/40 bg-primary/[0.06] pr-10 text-right text-base font-semibold tabular-nums shadow-sm focus-visible:ring-primary/40 dark:bg-primary/10";
@@ -65,15 +62,20 @@ function numericValue(value: string) {
 
 export function DailyClosingClient() {
   const locale = useLocale();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const monthlyTranslations = useTranslations("MonthlyClosing");
   const debtTranslations = useTranslations("MonthlyDebts");
   const unsubscribeTranslations = useTranslations("MonthlyUnsubscribes");
   const cellTranslations = useTranslations("MonthlyCell");
   const queryClient = useQueryClient();
-  const [view, setView] = useState<ClosingView>("daily");
-  const [hasRestrictedAccess, setHasRestrictedAccess] = useState(false);
+  const accessQuery = useRestrictedAccess();
+  const requestedView = getClosingView(searchParams.get("view"));
+  const hasRestrictedAccess = accessQuery.data === true;
+  const accessChecked = !accessQuery.isPending;
   const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
-  const pendingViewRef = useRef<Exclude<ClosingView, "daily">>("monthly");
+  const previousViewRef = useRef<ClosingView>("daily");
+  const view = requestedView === "daily" || hasRestrictedAccess ? requestedView : "daily";
   const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const t = useTranslations("DailyClosing");
   const metricTranslations = useTranslations("Metrics");
@@ -99,32 +101,27 @@ export function DailyClosingClient() {
   const saveInFlightRef = useRef(false);
   const activeScopeRef = useRef("");
   const shopId = selectedShop?.id ?? "";
+  const closingPath = `/${locale}/shop/${shopId}/closing`;
   const activeScope = `${shopId}:${date}`;
   activeScopeRef.current = activeScope;
 
   useEffect(() => {
-    let active = true;
-    void fetch("/api/auth/restricted-access")
-      .then(response => response.ok ? response.json() as Promise<{ hasAccess: boolean }> : null)
-      .then(result => { if (active && result?.hasAccess) setHasRestrictedAccess(true); })
-      .catch(() => undefined);
-    return () => { active = false; };
-  }, []);
+    if (requestedView !== "daily" && previousViewRef.current === "daily") setMonth(date.slice(0, 7));
+    previousViewRef.current = requestedView;
+  }, [requestedView, date]);
 
-  const openView = useCallback((nextView: Exclude<ClosingView, "daily">) => {
-    if (view === "daily") setMonth(date.slice(0, 7));
-    if (hasRestrictedAccess) {
-      setView(nextView);
-      return;
-    }
-    pendingViewRef.current = nextView;
-    setIsAccessDialogOpen(true);
-  }, [date, hasRestrictedAccess, view]);
+  useEffect(() => {
+    if (requestedView === "daily" || hasRestrictedAccess) setIsAccessDialogOpen(false);
+    else if (accessChecked) setIsAccessDialogOpen(true);
+  }, [accessChecked, requestedView, hasRestrictedAccess]);
+
+  const handleAccessDialogChange = (open: boolean) => {
+    setIsAccessDialogOpen(open);
+    if (!open && !hasRestrictedAccess) router.replace(closingPath);
+  };
 
   const handleRestrictedAccessGranted = useCallback(() => {
-    setHasRestrictedAccess(true);
     setIsAccessDialogOpen(false);
-    setView(pendingViewRef.current);
   }, []);
 
   useEffect(() => {
@@ -374,17 +371,10 @@ export function DailyClosingClient() {
     } />
     <main className="flex-1 overflow-y-auto p-2 md:p-3">
       <div className="mx-auto w-full max-w-[1500px] space-y-2.5">
-        <div className="flex gap-2" role="group" aria-label={monthlyTranslations("view")}>
-          <Button size="sm" variant={view === "daily" ? "default" : "outline"} aria-pressed={view === "daily"} onClick={() => setView("daily")}><CalendarDays className="mr-1.5 h-4 w-4" />{monthlyTranslations("daily")}</Button>
-          <Button size="sm" variant={view === "monthly" ? "default" : "outline"} aria-pressed={view === "monthly"} onClick={() => openView("monthly")}><CalendarRange className="mr-1.5 h-4 w-4" />{monthlyTranslations("monthly")}</Button>
-          <Button size="sm" variant={view === "debts" ? "default" : "outline"} aria-pressed={view === "debts"} onClick={() => openView("debts")}><Wallet className="mr-1.5 h-4 w-4" />{debtTranslations("title")}</Button>
-          <Button size="sm" variant={view === "unsubscribes" ? "default" : "outline"} aria-pressed={view === "unsubscribes"} onClick={() => openView("unsubscribes")}><UserMinus className="mr-1.5 h-4 w-4" />{unsubscribeTranslations("title")}</Button>
-          <Button size="sm" variant={view === "cell" ? "default" : "outline"} aria-pressed={view === "cell"} onClick={() => openView("cell")}><Smartphone className="mr-1.5 h-4 w-4" />{cellTranslations("tab")}</Button>
-        </div>
         {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} />}
-        {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
-        {view === "unsubscribes" && <MonthlyUnsubscribes key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
-        {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} onOpenReport={reportDate => { setDate(reportDate); setView("daily"); }} />}
+        {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
+        {view === "unsubscribes" && <MonthlyUnsubscribes key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
+        {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
         <div hidden={view !== "daily"} className="space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold leading-tight md:text-xl">{t("heading")}</h2>
@@ -409,7 +399,7 @@ export function DailyClosingClient() {
                 {dailyActivityCard}
 
                 <Card><CardHeader className="px-3 py-2"><CardTitle className="flex items-center gap-1.5 text-sm"><Smartphone className="h-3.5 w-3.5" />{t("cell")}</CardTitle></CardHeader><CardContent className="space-y-2 px-3 pb-3 pt-0">
-                  <div className="grid grid-cols-[1fr_9.5rem] items-center gap-3"><Label className="text-sm font-medium" htmlFor="cell-amount">{t("cellAmount")}</Label><div className="relative"><Input id="cell-amount" aria-label={t("cellAmount")} type="number" min={0} step={1} disabled={isCellReadOnly} className={primaryAmountInputClassName} value={cell.amount} onChange={event => setCell(current => ({ ...current, amount: numericValue(event.target.value) }))} /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Lek</span></div></div>
+                  <div className="grid grid-cols-[1fr_9.5rem] items-center gap-3"><Label className="text-sm font-medium" htmlFor="cell-amount">{t("cellAmount")}</Label><div className="relative"><Input id="cell-amount" aria-label={t("cellAmount")} type="number" min={0} step={1} disabled={isReadOnly} className={primaryAmountInputClassName} value={cell.amount} onChange={event => setCell(current => ({ ...current, amount: numericValue(event.target.value) }))} /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground">Lek</span></div></div>
                   <div className="space-y-1"><Label className="text-sm" htmlFor="cell-note">{t("cellNote")}</Label><Input id="cell-note" aria-label={t("cellNote")} maxLength={500} disabled={isCellReadOnly} className="h-8" placeholder={t("cellNotePlaceholder")} value={cell.note} onChange={event => setCell(current => ({ ...current, note: event.target.value }))} /></div>
                 </CardContent></Card>
                 </div>
@@ -449,7 +439,7 @@ export function DailyClosingClient() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-        <RestrictedAccessDialog open={isAccessDialogOpen} onOpenChange={setIsAccessDialogOpen} onGranted={handleRestrictedAccessGranted} />
+        <RestrictedAccessDialog open={isAccessDialogOpen} onOpenChange={handleAccessDialogChange} onGranted={handleRestrictedAccessGranted} />
       </div>
     </main>
   </div>;

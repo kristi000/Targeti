@@ -57,35 +57,55 @@ import { ScrollArea } from "./ui/scroll-area";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleSaveAchievementOverrides } from "@/app/actions/achievements";
 import { useToast } from "@/hooks/use-toast";
+import { useShopPerformance } from "@/hooks/use-shop-performance";
 import { formatReportingMonth } from "@/lib/reporting-month";
 
+function SidebarDialogLoading() {
+    const t = useTranslations("Sidebar");
+
+    return (
+        <div role="status" className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            <span>{t("loadingAction")}</span>
+        </div>
+    );
+}
+
 const ManageShopsDialog = dynamic(() =>
-    import("./manage-shops-dialog").then(module => module.ManageShopsDialog)
+    import("./manage-shops-dialog").then(module => module.ManageShopsDialog),
+    { loading: SidebarDialogLoading }
 );
 const ManageSupervisorsDialog = dynamic(() =>
-    import("./manage-supervisors-dialog").then(module => module.ManageSupervisorsDialog)
+    import("./manage-supervisors-dialog").then(module => module.ManageSupervisorsDialog),
+    { loading: SidebarDialogLoading }
 );
 const ManageRepresentativesDialog = dynamic(() =>
-    import("./manage-representatives-dialog").then(module => module.ManageRepresentativesDialog)
+    import("./manage-representatives-dialog").then(module => module.ManageRepresentativesDialog),
+    { loading: SidebarDialogLoading }
 );
 const ManageImportsDialog = dynamic(() =>
-    import("./manage-imports-dialog").then(module => module.ManageImportsDialog)
+    import("./manage-imports-dialog").then(module => module.ManageImportsDialog),
+    { loading: SidebarDialogLoading }
 );
 const ExcelImportDialog = dynamic(() =>
-    import("./excel-import-dialog").then(module => module.ExcelImportDialog)
+    import("./excel-import-dialog").then(module => module.ExcelImportDialog),
+    { loading: SidebarDialogLoading }
 );
 const ActivityHistoryDialog = dynamic(() =>
-    import("./activity-history-dialog").then(module => module.ActivityHistoryDialog)
+    import("./activity-history-dialog").then(module => module.ActivityHistoryDialog),
+    { loading: SidebarDialogLoading }
 );
 const UserManagementDialog = dynamic(() =>
-    import("./user-management-dialog").then(module => module.UserManagementDialog)
+    import("./user-management-dialog").then(module => module.UserManagementDialog),
+    { loading: SidebarDialogLoading }
 );
 const WeightProfileManagerDialog = dynamic(() =>
-    import("./weight-profile-manager-dialog").then(module => module.WeightProfileManagerDialog)
+    import("./weight-profile-manager-dialog").then(module => module.WeightProfileManagerDialog),
+    { loading: SidebarDialogLoading }
 );
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allPerformanceData, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, selectedDatasetId, selectedPerformanceId, isAdmin, actor } = useShop();
+    const { selectedShop, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, selectedDatasetId, selectedPerformanceId, isAdmin, actor } = useShop();
     const { toast } = useToast();
     const pathname = usePathname();
     const locale = useLocale();
@@ -95,8 +115,8 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
 
     const isDashboard = !pathname.includes('/shop/');
     const canEdit = actor.role !== "viewer";
-    
-    const performanceData = useMemo(() => selectedShop ? allPerformanceData[selectedShop.id] || [] : [], [allPerformanceData, selectedShop]);
+    const performanceQuery = useShopPerformance(selectedShop?.id ?? "", Boolean(selectedShop) && isDashboard);
+    const performanceData = useMemo(() => performanceQuery.data ?? [], [performanceQuery.data]);
     const latestDataMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
     const activeMonth = activeMonthOverride ?? (selectedDatasetId || latestDataMonth);
     const isHistoricalReport = !isDashboard && selectedPerformanceId !== null;

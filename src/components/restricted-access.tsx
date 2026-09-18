@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Loader2, LockKeyhole } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { restrictedAccessQueryKey } from "@/hooks/use-restricted-access";
 
 type AccessCodeFormProps = { onGranted: () => void };
 
 function AccessCodeForm({ onGranted }: AccessCodeFormProps) {
+  const queryClient = useQueryClient();
   const t = useTranslations("RestrictedAccess");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
@@ -29,13 +32,15 @@ function AccessCodeForm({ onGranted }: AccessCodeFormProps) {
     }).then(async response => {
       const result = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(result.error || t("verificationFailed"));
+      await queryClient.cancelQueries({ queryKey: restrictedAccessQueryKey });
+      queryClient.setQueryData(restrictedAccessQueryKey, true);
       onGranted();
     }).catch(error => {
       setError(error instanceof Error ? error.message : t("verificationFailed"));
       setCode("");
       submittedCodeRef.current = "";
     }).finally(() => setLoading(false));
-  }, [code, onGranted, t]);
+  }, [code, onGranted, queryClient, t]);
 
   return <div className="space-y-3">
     <div className="space-y-2">

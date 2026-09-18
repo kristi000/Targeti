@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, Loader2, Search, UserRoundCog, Users } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Eye, EyeOff, Loader2, RotateCcw, Search, UserRoundCog, Users } from "lucide-react";
 
 import { handleHideRepresentatives, handleUnhideRepresentatives } from "@/app/actions/representatives";
 import { useShop } from "@/components/shop-provider";
@@ -24,6 +25,7 @@ import { useToast } from "@/hooks/use-toast";
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { getMonthlyRepresentatives, getOverviewPerformanceData, getShopMetrics, type PerformanceMetric } from "@/lib/types";
+import { performanceMonthQueryOptions } from "@/lib/performance-queries";
 
 type Props = {
   open: boolean;
@@ -42,7 +44,9 @@ type RepresentativeRow = {
 };
 
 export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props) {
-  const { shops, allPerformanceData, allMonthlyTargets, loadPerformanceMonth, reloadData } = useShop();
+  const { shops, allMonthlyTargets, reloadData } = useShop();
+  const performanceQuery = useQuery({ ...performanceMonthQueryOptions(month), enabled: open && Boolean(month) });
+  const performanceByShop = performanceQuery.data;
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "performance-desc" | "performance-asc">("name");
@@ -51,13 +55,9 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
   const [confirming, setConfirming] = useState(false);
   const [processing, setProcessing] = useState(false);
 
-  useEffect(() => {
-    if (open) void loadPerformanceMonth(month);
-  }, [open, month, loadPerformanceMonth]);
-
   const representatives = useMemo<RepresentativeRow[]>(() => shops.flatMap(shop => {
     const monthlyRepresentatives = getMonthlyRepresentatives(shop, month);
-    const performanceData = getOverviewPerformanceData(allPerformanceData[shop.id] ?? []).filter(entry => entry.date.startsWith(month));
+    const performanceData = getOverviewPerformanceData(performanceByShop?.[shop.id] ?? []).filter(entry => entry.date.startsWith(month));
     const report = performanceData.at(-1);
     const monthData = shop.monthlyData?.[month];
     const monthlyTargets = report?.targets ?? monthData?.targets ?? allMonthlyTargets[shop.id];
@@ -98,7 +98,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         hidden: representative.hidden,
       };
     });
-  }), [shops, month, allPerformanceData, allMonthlyTargets]);
+  }), [shops, month, performanceByShop, allMonthlyTargets]);
 
   const filteredRepresentatives = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -234,7 +234,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         </div>
 
         <ScrollArea className="min-h-0 flex-1">
-          {filteredRepresentatives.length ? <table className="w-full border-collapse text-sm">
+          {performanceQuery.isPending ? <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading performance…</div> : performanceQuery.isError ? <div role="alert" className="flex h-64 items-center justify-center gap-2 text-sm text-destructive">Could not load performance data.<Button type="button" size="sm" variant="outline" onClick={() => void performanceQuery.refetch()}><RotateCcw className="mr-2 h-4 w-4" />Retry</Button></div> : filteredRepresentatives.length ? <table className="w-full border-collapse text-sm">
             <thead className="sticky top-0 z-10 bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
               <tr>
                 <th className="w-14 border-b border-r border-slate-300 px-3 py-2 text-center"><Checkbox checked={allFilteredSelected} onCheckedChange={value => toggleFiltered(Boolean(value))} aria-label="Select all visible representatives" /></th>
@@ -258,8 +258,8 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
         <DialogFooter className="shrink-0 gap-2 border-t bg-slate-50 px-5 py-4 sm:space-x-0 sm:px-6">
           <Button type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={processing}>Close</Button>
           {view === "visible"
-            ? <Button type="button" variant="destructive" onClick={() => setConfirming(true)} disabled={!selectedKeys.length || processing}><EyeOff className="mr-2 h-4 w-4" />Hide selected ({selectedKeys.length})</Button>
-            : <Button type="button" onClick={() => void unhideSelected()} disabled={!selectedKeys.length || processing}>{processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Unhide selected ({selectedKeys.length})</Button>}
+            ? <Button type="button" variant="destructive" onClick={() => setConfirming(true)} disabled={!selectedKeys.length || processing || !performanceByShop}><EyeOff className="mr-2 h-4 w-4" />Hide selected ({selectedKeys.length})</Button>
+            : <Button type="button" onClick={() => void unhideSelected()} disabled={!selectedKeys.length || processing || !performanceByShop}>{processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Eye className="mr-2 h-4 w-4" />}Unhide selected ({selectedKeys.length})</Button>}
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -29,6 +29,10 @@ service cloud.firestore {
       return canAccessShop(shopId) && canEdit();
     }
 
+    function validCellAmount(cell) {
+      return cell.amount is number && cell.amount >= 0 && cell.amount <= 1000000000;
+    }
+
     match /accessProfiles/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
       allow write: if false;
@@ -62,10 +66,12 @@ service cloud.firestore {
       match /dailyClosings/{closingId} {
         allow read: if canAccessShop(shopId);
         allow create: if canEditShop(shopId)
-          && (isAdmin() || request.resource.data.cell == { 'amount': 0, 'note': '' });
+          && (isAdmin() || (validCellAmount(request.resource.data.cell)
+            && request.resource.data.cell == { 'amount': request.resource.data.cell.amount, 'note': '' }));
         allow update: if isAdmin() || (canEditShop(shopId)
           && resource.data.status != 'finalized'
-          && request.resource.data.cell == resource.data.cell);
+          && validCellAmount(request.resource.data.cell)
+          && request.resource.data.cell == { 'amount': request.resource.data.cell.amount, 'note': resource.data.cell.note });
         allow delete: if isAdmin();
       }
     }
