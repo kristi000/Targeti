@@ -26,11 +26,17 @@ export function calculateForecastAchievement(
   asOfDate: Date,
   metricSettings?: MetricSettings,
 ) {
+  return calculateTotalAchievement(projectMetrics(actuals, metrics, asOfDate), targets, metricSettings);
+}
+
+export function projectMetrics(
+  actuals: Record<string, number>,
+  metrics: readonly PerformanceMetric[],
+  asOfDate: Date,
+): Record<PerformanceMetric, number> {
   const elapsedDays = Math.max(asOfDate.getDate(), 1);
   const daysInMonth = new Date(asOfDate.getFullYear(), asOfDate.getMonth() + 1, 0).getDate();
-  const projectedActuals = Object.fromEntries(
+  return Object.fromEntries(
     metrics.map(metric => [metric, ((actuals[metric] ?? 0) / elapsedDays) * daysInMonth]),
-  );
-
-  return calculateTotalAchievement(projectedActuals, targets, metricSettings);
+  ) as Record<PerformanceMetric, number>;
 }

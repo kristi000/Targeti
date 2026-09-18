@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Banknote, ClipboardCheck, Loader2, MessageSquareText, RotateCcw, TrendingUp, Trophy, Users } from "lucide-react";
-import { format, getDaysInMonth, isSameMonth, parseISO } from "date-fns";
+import { format, isSameMonth, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
 import { PerformanceTable } from "@/components/performance-table";
@@ -13,8 +13,8 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
-import { getForecastDate } from "@/lib/forecast";
-import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceMetric } from "@/lib/types";
+import { getForecastDate, projectMetrics } from "@/lib/forecast";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData } from "@/lib/types";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
 import { handleRevertAchievementOverrides } from "@/app/actions/achievements";
 import { useToast } from "@/hooks/use-toast";
@@ -89,12 +89,7 @@ export function DetailedDashboardClient({ allData }: { allData: PerformanceData[
   const hasForecast = !isFinal && (excelReport?.reportType === "midMonth" || (isSameMonth(parseISO(`${selectedMonth}-01`), now) && performanceData.length >= 2));
   const forecastData = useMemo(() => {
     if (!hasForecast) return undefined;
-    const dayOfMonth = forecastDate.getDate();
-    const daysInMonth = getDaysInMonth(forecastDate);
-    return metrics.reduce((forecast, metric) => {
-      forecast[metric] = dayOfMonth > 0 ? ((monthlyTotals[metric] || 0) / dayOfMonth) * daysInMonth : 0;
-      return forecast;
-    }, {} as Record<PerformanceMetric, number>);
+    return projectMetrics(monthlyTotals, metrics, forecastDate);
   }, [hasForecast, monthlyTotals, metrics, forecastDate]);
   const totalPerformanceForecast = forecastData
     ? calculateTotalAchievement(forecastData, monthlyTargets, metricSettings)
@@ -187,7 +182,7 @@ export function DetailedDashboardClient({ allData }: { allData: PerformanceData[
 
           {qualityMetrics && <Card className="overflow-hidden"><CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3"><CardTitle className="text-sm sm:text-base">Quality indicators</CardTitle><CardDescription className="hidden sm:block">Reported separately from weighted target metrics</CardDescription></CardHeader><CardContent className="grid grid-cols-3 gap-2 px-3 pb-3 sm:gap-3 sm:px-4 sm:pb-4 xl:grid-cols-1 2xl:grid-cols-3">{qualityMetrics.checklistScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><ClipboardCheck className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Checklist</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.checklistScore.toFixed(1)}</p></div>}{qualityMetrics.npsScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><MessageSquareText className="h-3.5 w-3.5 shrink-0" />NPS</p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsScore.toFixed(1)}</p></div>}{qualityMetrics.npsResponses !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><Users className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Responses</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsResponses}</p></div>}</CardContent></Card>}
 
-          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} representativeTargets={representativeTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} /> : null}
+          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} representativeTargets={representativeTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} forecastDate={hasForecast ? forecastDate : undefined} forecastAsOf={hasForecast ? format(forecastDate, "PP") : undefined} isFinal={isFinal} /> : null}
           </div>
         </div>
       </div>
