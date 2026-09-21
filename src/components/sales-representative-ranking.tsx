@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DashboardRepresentativeRow } from "@/lib/dashboard-types";
 
-export function SalesRepresentativeRanking({ rows }: { rows: DashboardRepresentativeRow[] }) {
+export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRepresentativeRow[]; month: string }) {
   const t = useTranslations("Dashboard");
   const locale = useLocale();
   const [query, setQuery] = useState("");
@@ -44,7 +44,7 @@ export function SalesRepresentativeRanking({ rows }: { rows: DashboardRepresenta
 
       <div className="min-h-0 flex-1 divide-y overflow-y-auto">
         {visibleRepresentatives.map(rep => {
-          return <Link key={`${rep.shopId}-${rep.id}`} href={`/${locale}/shop/${rep.shopId}#representative-bonuses`} className="flex items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/50">
+          return <Link key={`${rep.shopId}-${rep.id}`} href={`/${locale}/shop/${rep.shopId}?month=${month}#representative-bonuses`} className="flex items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/50">
             <div className="flex min-w-0 items-center gap-3"><span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold", rep.rank <= 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{rep.rank}</span><div className="min-w-0"><p className="truncate font-medium">{rep.name}</p><p className="truncate text-xs text-muted-foreground">{rep.shopName}</p></div></div>
             <div className="shrink-0 text-right"><p className="font-semibold tabular-nums">{rep.achievement.toFixed(1)}%</p><p className="text-xs text-muted-foreground">EOM: {rep.forecastAchievement === null ? "Final" : `${rep.forecastAchievement.toFixed(1)}%`}</p></div>
           </Link>;

@@ -39,6 +39,7 @@ import {
   type PerformanceMetric,
   performanceMetrics,
   type RepPerformanceData,
+  type PerformanceData,
   Shop,
   type MetricSettings,
   getMetricOrder,
@@ -56,8 +57,8 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./
 import { ScrollArea } from "./ui/scroll-area";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { handleSaveAchievementOverrides } from "@/app/actions/achievements";
+import { fetchShopPerformanceForMonth } from "@/app/actions/shop-data";
 import { useToast } from "@/hooks/use-toast";
-import { useShopPerformance } from "@/hooks/use-shop-performance";
 import { formatReportingMonth } from "@/lib/reporting-month";
 
 function SidebarDialogLoading() {
@@ -70,6 +71,8 @@ function SidebarDialogLoading() {
         </div>
     );
 }
+
+const EMPTY_PERFORMANCE_DATA: PerformanceData[] = [];
 
 const ManageShopsDialog = dynamic(() =>
     import("./manage-shops-dialog").then(module => module.ManageShopsDialog),
@@ -115,10 +118,12 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
 
     const isDashboard = !pathname.includes('/shop/');
     const canEdit = actor.role !== "viewer";
-    const performanceQuery = useShopPerformance(selectedShop?.id ?? "", Boolean(selectedShop) && isDashboard);
-    const performanceData = useMemo(() => performanceQuery.data ?? [], [performanceQuery.data]);
-    const latestDataMonth = useMemo(() => performanceData.map(item => item.date.slice(0, 7)).sort().at(-1) ?? new Date().toISOString().slice(0, 7), [performanceData]);
+    const [loadedPerformance, setLoadedPerformance] = useState<{ shopId: string; month: string; data: PerformanceData[] } | null>(null);
+    const latestDataMonth = Object.keys(selectedShop?.monthlyData ?? {}).sort().at(-1) ?? new Date().toISOString().slice(0, 7);
     const activeMonth = activeMonthOverride ?? (selectedDatasetId || latestDataMonth);
+    const performanceData = loadedPerformance && loadedPerformance.shopId === selectedShop?.id && loadedPerformance.month === activeMonth
+        ? loadedPerformance.data
+        : EMPTY_PERFORMANCE_DATA;
     const isHistoricalReport = !isDashboard && selectedPerformanceId !== null;
     const monthlyRepresentatives = useMemo(
         () => selectedShop ? getMonthlyRepresentatives(selectedShop, activeMonth) : [],
@@ -146,6 +151,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [isSaving, setIsSaving] = useState(false);
     const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
     const [isAchievementDialogOpen, setIsAchievementDialogOpen] = useState(false);
+    const [isLoadingAchievements, setIsLoadingAchievements] = useState(false);
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [isSupervisorDialogOpen, setIsSupervisorDialogOpen] = useState(false);
@@ -159,7 +165,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
 
-    const initialRepTotals = useMemo(() => {
+    const getInitialRepTotals = (data: PerformanceData[]) => {
         const totals: Record<string, Record<PerformanceMetric, number>> = {};
         monthlyRepresentatives.forEach(rep => {
             totals[rep.id] = metrics.reduce((acc, metric) => {
@@ -168,7 +174,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             }, {} as Record<PerformanceMetric, number>);
         });
 
-        getActivePerformanceData(performanceData).filter(day => day.date.startsWith(activeMonth)).forEach(day => {
+        getActivePerformanceData(data).forEach(day => {
             day.reps.forEach(repData => {
                 if (totals[repData.repId]) {
                     metrics.forEach(metric => {
@@ -178,7 +184,8 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             });
         });
         return totals;
-    }, [performanceData, monthlyRepresentatives, metrics, activeMonth]);
+    };
+    const initialRepTotals = getInitialRepTotals(performanceData);
 
     const [editingRepTotals, setEditingRepTotals] = useState<Record<string, Record<PerformanceMetric, number>>>({});
     const importedRepTotals = useMemo(() => {
@@ -313,9 +320,23 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         }));
     };
 
-    const onOpenAchievementDialog = () => {
-        setEditingRepTotals(initialRepTotals);
-        setIsAchievementDialogOpen(true);
+    const onOpenAchievementDialog = async () => {
+        if (!selectedShop) return;
+        setIsLoadingAchievements(true);
+        try {
+            const data = await fetchShopPerformanceForMonth(selectedShop.id, activeMonth);
+            setLoadedPerformance({ shopId: selectedShop.id, month: activeMonth, data });
+            setEditingRepTotals(getInitialRepTotals(data));
+            setIsAchievementDialogOpen(true);
+        } catch (error) {
+            toast({
+                variant: "destructive",
+                title: tDialog("achievementSaveFailed"),
+                description: error instanceof Error ? error.message : tDialog("tryAgain"),
+            });
+        } finally {
+            setIsLoadingAchievements(false);
+        }
     };
 
     const onSaveAchievements = async () => {
@@ -447,7 +468,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                         <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Shop actions</p>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings />{t('setMonthlyTargets')}</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenAchievementDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil />{t('editAchievements')}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenAchievementDialog} disabled={isHistoricalReport || isLoadingAchievements} title={isHistoricalReport ? "Historical imports are read-only" : undefined}>{isLoadingAchievements ? <Loader2 className="animate-spin" /> : <Pencil />}{t('editAchievements')}</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenEditShop}><Edit />{t('editShop')}</Button>
                         {isExcelImportDialogOpen && <ExcelImportDialog restrictToSelectedShop open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>

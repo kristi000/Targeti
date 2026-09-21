@@ -3,15 +3,13 @@
 
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { type Shop, type Supervisor, type PerformanceData, type Target, type MetricWeightProfile, type ShopData } from '@/lib/types';
+import { type Shop, type Supervisor, type Target, type MetricWeightProfile, type ShopData } from '@/lib/types';
 import { handleAddShop, handleDeleteShop, handleUpdateShop } from "@/app/actions/shops";
-import { handleSavePerformanceData } from "@/app/actions/performance";
 import { fetchShopData } from "@/app/actions/shop-data";
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 import type { AppActor } from '@/lib/auth-types';
 import { shopPerformanceQueryKey } from '@/lib/query-keys';
-import { shopPerformanceQueryOptions } from '@/lib/performance-queries';
 
 type ShopContextType = {
   actor: AppActor;
@@ -25,7 +23,6 @@ type ShopContextType = {
   updateShop: (shop: Shop) => Promise<void>;
   deleteShop: (shopId: string) => Promise<void>;
   allMonthlyTargets: Record<string, Target>;
-  updatePerformanceData: (shopId: string, data: PerformanceData[]) => void;
   loading: boolean;
   refreshDataForShop: (shopId: string) => Promise<void>;
   refreshShopDirectory: () => Promise<void>;
@@ -54,15 +51,15 @@ export function ShopProvider({ children, initialData, actor }: { children: React
 
   const refreshDataForShop = useCallback(async (shopId: string) => {
     try {
-        const [data] = await Promise.all([
-          fetchShopData(),
-          queryClient.fetchQuery({ ...shopPerformanceQueryOptions(shopId), staleTime: 0 }),
-        ]);
+        const data = await fetchShopData();
         const shop = data.shops.find(item => item.id === shopId);
         setShops(data.shops);
         setSupervisors(data.supervisors);
         setWeightProfiles(data.weightProfiles);
-        await queryClient.invalidateQueries({ queryKey: ["performance", "month"] });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: shopPerformanceQueryKey(shopId) }),
+          queryClient.invalidateQueries({ queryKey: ["performance", "month"] }),
+        ]);
         setAllMonthlyTargets(data.monthlyTargets);
         if (shop) setSelectedShop(shop);
     } catch (error) {
@@ -120,7 +117,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
                 const targets = newShop.monthlyTargets as Target;
                 setAllMonthlyTargets(prev => ({...prev, [newShop.id]: targets}));
             }
-            queryClient.setQueryData(shopPerformanceQueryKey(newShop.id), []);
             
             toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
         } else {
@@ -128,12 +124,12 @@ export function ShopProvider({ children, initialData, actor }: { children: React
             toast({ variant: "destructive", title: t('error'), description: result.error || t('addShopFailed') });
         }
     } catch (error) {
-        console.error("Unexpected error adding shop:", error);
+            console.error("Unexpected error adding shop:", error);
         toast({ variant: "destructive", title: t('error'), description: t('addShopFailed') });
     } finally {
         setLoading(false);
     }
-  }, [queryClient, toast, t]);
+  }, [toast, t]);
 
   const updateShop = useCallback(async (updatedShop: Shop) => {
     const result = await handleUpdateShop(updatedShop);
@@ -175,14 +171,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     setSelectedShop(shop);
   }, []);
   
-  const updatePerformanceData = useCallback(async (shopId: string, data: PerformanceData[]) => {
-      const result = await handleSavePerformanceData(shopId, data);
-      if (result.success && result.data) {
-        queryClient.setQueryData(shopPerformanceQueryKey(shopId), result.data);
-        void queryClient.invalidateQueries({ queryKey: ["performance", "month"] });
-      }
-  }, [queryClient]);
-
   const contextValue = useMemo(() => ({
     actor,
     isAdmin: actor.role === "admin",
@@ -195,7 +183,6 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     updateShop,
     deleteShop,
     allMonthlyTargets,
-    updatePerformanceData,
     loading,
     refreshDataForShop,
     refreshShopDirectory,
@@ -204,7 +191,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     setSelectedDatasetId,
     selectedPerformanceId,
     setSelectedPerformanceId,
-  }), [actor, shops, supervisors, weightProfiles, selectedShop, handleSetSelectedShop, addShop, updateShop, deleteShop, allMonthlyTargets, updatePerformanceData, loading, refreshDataForShop, refreshShopDirectory, loadInitialData, selectedDatasetId, selectedPerformanceId]);
+  }), [actor, shops, supervisors, weightProfiles, selectedShop, handleSetSelectedShop, addShop, updateShop, deleteShop, allMonthlyTargets, loading, refreshDataForShop, refreshShopDirectory, loadInitialData, selectedDatasetId, selectedPerformanceId]);
   
   return (
     <ShopContext.Provider value={contextValue}>

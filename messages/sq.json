@@ -61,6 +61,8 @@
     "managerBonusDescription": "{group} bazuar në bonusin bazë prej {base}",
     "managerBonusMissingCollection": "Importoni ose vendosni arkëtimin mujor të dyqanit për të llogaritur bonusin e menaxherit.",
     "estimatedBonus": "Bonusi i parashikuar",
+    "eomBonusForecast": "Parashikimi i bonusit në fund të muajit",
+    "eomBonusForecastBasis": "Bazuar në rezultatet dhe arkëtimin deri më {date}. Grupi i parashikuar i arkëtimit: {group}.",
     "category": "Kategoria",
     "weight": "Pesha",
     "payoutRate": "Norma e pagesës",

@@ -8,6 +8,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { closingViewHref, getClosingView, type ClosingView } from "@/lib/closing-navigation";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { useRestrictedAccess } from "@/hooks/use-restricted-access";
+import { useShop } from "@/components/shop-provider";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -31,13 +32,15 @@ export function ShopPageNav({ shopId, shopName }: Props) {
   const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const { selectedDatasetId } = useShop();
   const basePath = `/${locale}/shop/${shopId}`;
+  const monthQuery = /^\d{4}-\d{2}$/.test(selectedDatasetId) ? `?month=${selectedDatasetId}` : "";
   const closingPath = `${basePath}/closing`;
   const closingView = getClosingView(searchParams.get("view"));
   const items = [
-    { href: basePath, icon: BarChart3, label: t("performancePage") },
-    { href: `${basePath}/bonus`, icon: BadgeDollarSign, label: t("bonusPage") },
-    { href: closingPath, icon: ClipboardCheck, label: t("closingPage") },
+    { path: basePath, href: `${basePath}${monthQuery}`, icon: BarChart3, label: t("performancePage") },
+    { path: `${basePath}/bonus`, href: `${basePath}/bonus${monthQuery}`, icon: BadgeDollarSign, label: t("bonusPage") },
+    { path: closingPath, href: closingPath, icon: ClipboardCheck, label: t("closingPage") },
   ];
   const protectedItems: { view: Exclude<ClosingView, "daily">; icon: typeof CalendarRange; label: string }[] = [
     { view: "monthly", icon: CalendarRange, label: monthly("title") },
@@ -66,7 +69,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
           </SidebarMenuItem>
           {items.map(item => (
             <SidebarMenuItem key={item.href}>
-              <SidebarMenuButton asChild isActive={pathname === item.href && (item.href !== closingPath || closingView === "daily")} tooltip={item.label}>
+              <SidebarMenuButton asChild isActive={pathname === item.path && (item.path !== closingPath || closingView === "daily")} tooltip={item.label}>
                 <Link href={item.href}>
                   <item.icon />
                   <span>{item.label}</span>

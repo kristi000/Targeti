@@ -24,6 +24,7 @@ async function savePerformanceData(shopId: string, data: PerformanceData[], useI
   await refreshDashboardSummaries({
     shopIds: [validShopId],
     months: [...new Set(validData.map(entry => entry.date.slice(0, 7)))],
+    performanceChanged: true,
   });
   return validData;
 }

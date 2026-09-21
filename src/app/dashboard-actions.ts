@@ -4,9 +4,11 @@ import { FieldPath } from "firebase-admin/firestore";
 import { z } from "zod";
 
 import { getCurrentActor, requireAdmin, requireEditorForShops } from "@/lib/access";
+import { markPerformanceIndexesDirty, syncPerformanceIndexes } from "@/lib/performance-index";
+import { loadDashboardPeriodSources, markDashboardPeriodIndexDirty, syncDashboardPeriodIndex } from "@/lib/dashboard-period-index";
 import { adminDb } from "@/lib/firebase-admin";
 import { calculateForecastAchievement, getForecastDate } from "@/lib/forecast";
-import { isoDateSchema, monthSchema, performanceDataSchema, shopIdSchema, shopSchema, supervisorIdSchema, supervisorSchema } from "@/lib/persistence-schemas";
+import { monthSchema, performanceDataSchema, shopIdSchema, shopSchema, supervisorIdSchema, supervisorSchema } from "@/lib/persistence-schemas";
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getMonthlyRepresentatives, getOverviewPerformanceData, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceMetric, type Shop, type Supervisor } from "@/lib/types";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
@@ -14,11 +16,6 @@ import type { DashboardCursor, DashboardRepresentativeRow, DashboardRow, Dashboa
 
 export type { DashboardCursor, DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 export type DashboardPeriod = { month: string; reportDate: string | null };
-
-const importChangeReferenceSchema = z.object({
-  shopId: shopIdSchema,
-  performanceId: shopIdSchema,
-}).passthrough();
 
 type ShopSummary = {
   schemaVersion: 4;
@@ -43,11 +40,44 @@ type ShopSummary = {
   updatedAt: string;
 };
 
+type SearchEntry = Pick<ShopSummary,
+  "shopId" | "shopName" | "normalizedShopName" | "supervisorId" | "supervisorName"
+  | "achievement" | "achievementAsc" | "achievementDesc" | "forecast" | "forecastAsc"
+  | "forecastDesc" | "revenue" | "revenueAsc" | "revenueDesc" | "isFinal" | "hasData"
+>;
+
+const searchEntrySchema = z.object({
+  shopId: shopIdSchema,
+  shopName: z.string().min(1).max(120),
+  normalizedShopName: z.string().min(1).max(120),
+  supervisorId: supervisorIdSchema.nullable(),
+  supervisorName: z.string().nullable(),
+  achievement: z.number().finite(),
+  achievementAsc: z.number().finite(),
+  achievementDesc: z.number().finite(),
+  forecast: z.number().finite(),
+  forecastAsc: z.number().finite(),
+  forecastDesc: z.number().finite(),
+  revenue: z.number().finite(),
+  revenueAsc: z.number().finite(),
+  revenueDesc: z.number().finite(),
+  isFinal: z.boolean(),
+  hasData: z.boolean(),
+});
+const searchIndexSchema = z.object({
+  schemaVersion: z.literal(1),
+  updatedAt: z.string().datetime({ offset: true }),
+  entries: z.array(searchEntrySchema).max(5000),
+});
+const MAX_SEARCH_INDEX_BYTES = 750_000;
+
 type MonthMeta = {
   schemaVersion: 4;
   summary: DashboardSummary;
+  searchIndexAvailable?: boolean;
+  supervisorSummaries?: Record<string, DashboardSummary>;
   supervisorRows: DashboardSupervisorRow[];
-  representativeRows: DashboardRepresentativeRow[];
+  representativeRows: Array<DashboardRepresentativeRow & { supervisorId?: string | null }>;
   updatedAt: string;
 };
 
@@ -69,6 +99,8 @@ const dashboardPageSchema = z.object({
 const refreshSchema = z.object({
   shopIds: z.array(shopIdSchema).min(1).max(500),
   months: z.array(monthSchema).max(120).optional(),
+  performanceChanged: z.boolean().optional(),
+  periodsChanged: z.boolean().optional(),
 }).strict();
 
 function normalizeText(value: string) {
@@ -85,6 +117,25 @@ function searchPrefixes(...values: Array<string | null>) {
     });
   });
   return [...prefixes];
+}
+
+function searchEntryMatches(entry: SearchEntry, search: string) {
+  return [entry.shopName, entry.supervisorName].some(value => {
+    if (!value) return false;
+    const normalized = normalizeText(value);
+    return normalized.startsWith(search) || normalized.split(" ").some(word => word.startsWith(search));
+  });
+}
+
+function compareSearchEntries(left: SearchEntry, right: SearchEntry, sortBy: DashboardSortKey, direction: "asc" | "desc") {
+  const field = sortBy === "shop" ? "normalizedShopName" : `${sortBy}${direction === "asc" ? "Asc" : "Desc"}` as keyof SearchEntry;
+  const leftValue = left[field];
+  const rightValue = right[field];
+  const comparison = typeof leftValue === "string" && typeof rightValue === "string"
+    ? leftValue.localeCompare(rightValue)
+    : Number(leftValue) - Number(rightValue);
+  if (comparison) return comparison * (direction === "asc" ? 1 : -1);
+  return left.normalizedShopName.localeCompare(right.normalizedShopName) || left.shopId.localeCompare(right.shopId);
 }
 
 function performanceSummary(shop: Shop, entries: PerformanceData[]) {
@@ -162,22 +213,6 @@ async function loadSupervisors() {
   });
 }
 
-async function loadLegacyImportReportDate(importId: string) {
-  const changes = await adminDb.collection("imports").doc(importId).collection("changes").limit(1).get();
-  const change = changes.docs[0];
-  if (!change) return null;
-  const reference = importChangeReferenceSchema.safeParse(change.data());
-  if (!reference.success) return null;
-  const performance = await adminDb.collection("shops")
-    .doc(reference.data.shopId)
-    .collection("performance")
-    .doc(reference.data.performanceId)
-    .get();
-  if (!performance.exists) return null;
-  const parsed = performanceDataSchema.safeParse({ id: performance.id, ...performance.data() });
-  return parsed.success ? parsed.data.asOfDate ?? parsed.data.date : null;
-}
-
 function createShopSummary(shop: Shop, entries: PerformanceData[], supervisors: Map<string, Supervisor>): ShopSummary {
   const result = performanceSummary(shop, entries);
   const supervisor = shop.supervisorId ? supervisors.get(shop.supervisorId) : undefined;
@@ -205,17 +240,29 @@ function createShopSummary(shop: Shop, entries: PerformanceData[], supervisors: 
   };
 }
 
-function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]): MonthMeta {
-  const values = documents.map(document => document.data() as ShopSummary);
+type SummaryValue = Pick<ShopSummary, "supervisorId" | "supervisorName" | "achievement" | "forecast" | "revenue" | "isFinal" | "hasData">;
+
+function summarizeValues(values: SummaryValue[]): DashboardSummary {
   const reporting = values.filter(value => value.hasData);
-  const supervisors = new Map<string, { name: string; values: ShopSummary[] }>();
+  return {
+    average: reporting.length ? reporting.reduce((sum, value) => sum + value.achievement, 0) / reporting.length : 0,
+    forecast: reporting.length ? reporting.reduce((sum, value) => sum + value.forecast, 0) / reporting.length : null,
+    revenue: values.reduce((sum, value) => sum + value.revenue, 0),
+    allFinal: reporting.length > 0 && reporting.every(value => value.isFinal),
+    activeShops: values.length,
+    shopsAtTarget: reporting.filter(value => value.achievement >= 100).length,
+  };
+}
+
+function summarizeSupervisorRows(values: SummaryValue[]): DashboardSupervisorRow[] {
+  const supervisors = new Map<string, { name: string; values: SummaryValue[] }>();
   values.forEach(value => {
-    if (!value.supervisorId || !value.supervisorName) return;
-    const current = supervisors.get(value.supervisorId) ?? { name: value.supervisorName, values: [] };
+    if (!value.supervisorId) return;
+    const current = supervisors.get(value.supervisorId) ?? { name: value.supervisorName ?? value.supervisorId, values: [] };
     current.values.push(value);
     supervisors.set(value.supervisorId, current);
   });
-  const supervisorRows = [...supervisors].map(([id, group]) => {
+  return [...supervisors].map(([id, group]) => {
     const active = group.values.filter(value => value.hasData);
     return {
       id,
@@ -228,20 +275,26 @@ function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]
       revenue: active.reduce((sum, value) => sum + value.revenue, 0),
     } satisfies DashboardSupervisorRow;
   }).sort((left, right) => right.averageAchievement - left.averageAchievement || left.name.localeCompare(right.name));
+}
+
+function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]): MonthMeta {
+  const values = documents.map(document => document.data() as ShopSummary);
+  const supervisorRows = summarizeSupervisorRows(values);
+  const supervisors = new Map<string, ShopSummary[]>();
+  values.forEach(value => {
+    if (!value.supervisorId) return;
+    const group = supervisors.get(value.supervisorId) ?? [];
+    group.push(value);
+    supervisors.set(value.supervisorId, group);
+  });
   const representativeRows = values
-    .flatMap(value => value.representativeRows ?? [])
+    .flatMap(value => (value.representativeRows ?? []).map(row => ({ ...row, supervisorId: value.supervisorId })))
     .sort((left, right) => right.achievement - left.achievement)
     .map((representative, index) => ({ ...representative, rank: index + 1 }));
   return {
     schemaVersion: 4,
-    summary: {
-      average: reporting.length ? reporting.reduce((sum, value) => sum + value.achievement, 0) / reporting.length : 0,
-      forecast: reporting.length ? reporting.reduce((sum, value) => sum + value.forecast, 0) / reporting.length : null,
-      revenue: values.reduce((sum, value) => sum + value.revenue, 0),
-      allFinal: reporting.length > 0 && reporting.every(value => value.isFinal),
-      activeShops: values.length,
-      shopsAtTarget: reporting.filter(value => value.achievement >= 100).length,
-    },
+    summary: summarizeValues(values),
+    supervisorSummaries: Object.fromEntries([...supervisors].map(([id, group]) => [id, summarizeValues(group)])),
     supervisorRows,
     representativeRows,
     updatedAt: new Date().toISOString(),
@@ -249,10 +302,58 @@ function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]
 }
 
 async function writeMonthMeta(month: string) {
-  const shops = await adminDb.collection("dashboardSummaries").doc(month).collection("shops").get();
-  const meta = summarizeDocuments(shops.docs);
-  await adminDb.collection("dashboardSummaries").doc(month).set(meta);
+  const monthReference = adminDb.collection("dashboardSummaries").doc(month);
+  const shops = await monthReference.collection("shops").get();
+  const searchEntries: SearchEntry[] = shops.docs.map(document => {
+    const summary = document.data() as ShopSummary;
+    return {
+      shopId: document.id,
+      shopName: summary.shopName,
+      normalizedShopName: summary.normalizedShopName,
+      supervisorId: summary.supervisorId,
+      supervisorName: summary.supervisorName,
+      achievement: summary.achievement,
+      achievementAsc: summary.achievementAsc,
+      achievementDesc: summary.achievementDesc,
+      forecast: summary.forecast,
+      forecastAsc: summary.forecastAsc,
+      forecastDesc: summary.forecastDesc,
+      revenue: summary.revenue,
+      revenueAsc: summary.revenueAsc,
+      revenueDesc: summary.revenueDesc,
+      isFinal: summary.isFinal,
+      hasData: summary.hasData,
+    };
+  });
+  const canIndexSearch = searchEntries.length <= 5000
+    && Buffer.byteLength(JSON.stringify(searchEntries), "utf8") <= MAX_SEARCH_INDEX_BYTES
+    && searchEntries.every(entry => searchEntrySchema.safeParse(entry).success);
+  const meta = { ...summarizeDocuments(shops.docs), searchIndexAvailable: canIndexSearch };
+  const batch = adminDb.batch();
+  batch.set(monthReference, meta);
+  const indexReference = monthReference.collection("metadata").doc("searchIndex");
+  if (canIndexSearch) batch.set(indexReference, { schemaVersion: 1, updatedAt: meta.updatedAt, entries: searchEntries });
+  else batch.delete(indexReference);
+  await batch.commit();
   return meta;
+}
+
+async function loadSearchIndex(month: string, initialMeta: MonthMeta) {
+  let meta = initialMeta;
+  if (meta.searchIndexAvailable === undefined) {
+    try {
+      meta = await writeMonthMeta(month);
+    } catch (error) {
+      console.warn("Dashboard search index could not be built; using matching summary reads.", error);
+      return null;
+    }
+  }
+  if (!meta.searchIndexAvailable) return null;
+  const reference = adminDb.collection("dashboardSummaries").doc(month).collection("metadata").doc("searchIndex");
+  const snapshot = await reference.get();
+  const parsed = searchIndexSchema.safeParse(snapshot.data());
+  if (!parsed.success || parsed.data.updatedAt !== meta.updatedAt) return null;
+  return { meta, entries: parsed.data.entries as SearchEntry[] };
 }
 
 async function rebuildMonth(month: string) {
@@ -302,13 +403,20 @@ async function ensureMonth(month: string) {
 export async function fetchPerformanceDataForMonth(month: string): Promise<Record<string, PerformanceData[]>> {
   const actor = await getCurrentActor();
   const validMonth = monthSchema.parse(month);
-  const snapshot = await adminDb.collectionGroup("performance")
-    .where("date", ">=", `${validMonth}-01`)
-    .where("date", "<=", `${validMonth}-31`)
-    .orderBy("date", "asc")
-    .get();
+  const scopedShopIds = actor.role !== "admin" ? [...new Set(actor.shopIds)] : [];
+  const snapshots = actor.role !== "admin" && scopedShopIds.length <= 10
+    ? await Promise.all(scopedShopIds.map(shopId => adminDb.collection("shops").doc(shopId).collection("performance")
+      .where("date", ">=", `${validMonth}-01`)
+      .where("date", "<=", `${validMonth}-31`)
+      .orderBy("date", "asc")
+      .get()))
+    : [await adminDb.collectionGroup("performance")
+      .where("date", ">=", `${validMonth}-01`)
+      .where("date", "<=", `${validMonth}-31`)
+      .orderBy("date", "asc")
+      .get()];
   const performanceData: Record<string, PerformanceData[]> = {};
-  snapshot.docs.forEach(document => {
+  snapshots.flatMap(snapshot => snapshot.docs).forEach(document => {
     const shopId = document.ref.parent.parent?.id;
     const entry = parsePerformance(document);
     if (!shopId || !entry || (actor.role !== "admin" && !actor.shopIds.includes(shopId))) return;
@@ -319,35 +427,24 @@ export async function fetchPerformanceDataForMonth(month: string): Promise<Recor
 
 export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
   const actor = await getCurrentActor();
-  const [shops, imports] = await Promise.all([
-    adminDb.collection("shops").get(),
-    adminDb.collection("imports").where("status", "==", "active").orderBy("createdAt", "desc").get(),
-  ]);
-  const periods = new Map<string, { reportDate: string | null; importedAt: string | null; importId?: string }>();
-  const accessibleShopIds = new Set(actor.role === "admin" ? shops.docs.map(document => document.id) : actor.shopIds);
-  shops.docs.filter(document => accessibleShopIds.has(document.id)).forEach(document => Object.keys(document.data().monthlyData ?? {}).forEach(month => periods.set(month, { reportDate: null, importedAt: null })));
-  imports.docs.forEach(document => {
-    const parsed = z.object({ month: monthSchema, createdAt: z.string().datetime({ offset: true }), reportDate: isoDateSchema.optional(), shopIds: z.array(shopIdSchema).optional() }).passthrough().safeParse(document.data());
-    if (!parsed.success) return;
-    if (actor.role !== "admin" && !parsed.data.shopIds?.some(shopId => accessibleShopIds.has(shopId))) return;
-    const current = periods.get(parsed.data.month);
-    if (!current?.importedAt) periods.set(parsed.data.month, {
-      reportDate: parsed.data.reportDate ?? null,
-      importedAt: parsed.data.createdAt,
-      importId: document.id,
+  const sources = await loadDashboardPeriodSources();
+  const assignedShopIds = new Set(actor.shopIds);
+  const accessibleShops = sources.shopMonths.filter(shop => actor.role === "admin" || assignedShopIds.has(shop.shopId));
+  const accessibleShopIds = new Set(accessibleShops.map(shop => shop.shopId));
+  const periods = new Map<string, { reportDate: string | null; importedAt: string | null }>();
+  accessibleShops.forEach(shop => shop.months.forEach(month => periods.set(month, { reportDate: null, importedAt: null })));
+  sources.imports.forEach(item => {
+    if (actor.role !== "admin" && !item.shopIds?.some(shopId => accessibleShopIds.has(shopId))) return;
+    const current = periods.get(item.month);
+    if (!current?.importedAt) periods.set(item.month, {
+      reportDate: item.reportDate,
+      importedAt: item.createdAt,
     });
   });
   if (!periods.size) periods.set(new Date().toISOString().slice(0, 7), { reportDate: null, importedAt: null });
-
-  const legacyImportIds = [...periods.values()].flatMap(period => !period.reportDate && period.importId ? [period.importId] : []);
-  const legacyReportDates = new Map((await Promise.all(legacyImportIds.map(async importId => {
-    const reportDate = await loadLegacyImportReportDate(importId);
-    return [importId, reportDate] as const;
-  }))).flatMap(([importId, reportDate]) => reportDate ? [[importId, reportDate]] : []));
   return [...periods].map(([month, period]) => ({
     month,
     ...period,
-    reportDate: period.reportDate ?? (period.importId ? legacyReportDates.get(period.importId) ?? null : null),
   })).sort((left, right) => {
     if (left.importedAt && right.importedAt) return right.importedAt.localeCompare(left.importedAt) || right.month.localeCompare(left.month);
     if (left.importedAt) return -1;
@@ -356,7 +453,7 @@ export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
   }).map(({ month, reportDate }) => ({ month, reportDate }));
 }
 
-async function performDashboardSummaryRefresh(input: { shopIds: string[]; months?: string[] }) {
+async function performDashboardSummaryRefresh(input: z.infer<typeof refreshSchema>) {
   const value = refreshSchema.parse(input);
   const supervisors = new Map((await loadSupervisors()).map(supervisor => [supervisor.id, supervisor]));
   const touchedMonths = new Set(value.months ?? []);
@@ -406,11 +503,23 @@ async function performDashboardSummaryRefresh(input: { shopIds: string[]; months
   await Promise.all([...touchedMonths].map(writeMonthMeta));
 }
 
-export async function refreshDashboardSummaries(input: { shopIds: string[]; months?: string[] }) {
+async function refreshDashboardProjections(input: z.infer<typeof refreshSchema>) {
+  const [performanceRefreshId, periodsRefreshId] = await Promise.all([
+    input.performanceChanged ? markPerformanceIndexesDirty(input.shopIds) : Promise.resolve(null),
+    input.periodsChanged ? markDashboardPeriodIndexDirty() : Promise.resolve(null),
+  ]);
+  await Promise.all([
+    performDashboardSummaryRefresh(input),
+    performanceRefreshId ? syncPerformanceIndexes(input.shopIds, performanceRefreshId) : Promise.resolve(),
+    periodsRefreshId ? syncDashboardPeriodIndex(periodsRefreshId) : Promise.resolve(),
+  ]);
+}
+
+export async function refreshDashboardSummaries(input: { shopIds: string[]; months?: string[]; performanceChanged?: boolean; periodsChanged?: boolean }) {
   const value = refreshSchema.parse(input);
   const actor = await requireEditorForShops(value.shopIds);
   try {
-    await performDashboardSummaryRefresh(value);
+    await refreshDashboardProjections(value);
     return { synchronized: true as const };
   } catch (error) {
     console.error("Dashboard summary refresh failed; scheduling a rebuild.", error);
@@ -447,7 +556,7 @@ export async function retryPendingDashboardSummaryJobs() {
       continue;
     }
     try {
-      await performDashboardSummaryRefresh(parsed.data.input);
+      await refreshDashboardProjections(parsed.data.input);
       await job.ref.update({ status: "completed", completedAt: new Date().toISOString(), attempts: parsed.data.attempts + 1 });
       completed += 1;
     } catch (error) {
@@ -469,14 +578,19 @@ export async function fetchDashboardInsights(month: string): Promise<DashboardSu
   const validMonth = monthSchema.parse(month);
   const meta = await ensureMonth(validMonth);
   if (actor.role === "admin") return meta.summary;
-  const documents = await adminDb.collection("dashboardSummaries").doc(validMonth).collection("shops").get();
+  const scopedShopIds = [...new Set(actor.shopIds)];
+  if (!scopedShopIds.length) return summarizeValues([]);
+  const summaries = adminDb.collection("dashboardSummaries").doc(validMonth).collection("shops");
+  const documents = scopedShopIds.length <= 10
+    ? await summaries.where(FieldPath.documentId(), "in", scopedShopIds).get()
+    : await summaries.get();
   return summarizeDocuments(documents.docs.filter(document => actor.shopIds.includes(document.id))).summary;
 }
 
 export async function fetchDashboardPage(input: { month: string; search?: string; supervisorId?: string | null; pageSize: number; cursor?: DashboardCursor | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
   const actor = await getCurrentActor();
   const value = dashboardPageSchema.parse(input);
-  const meta = await ensureMonth(value.month);
+  let meta = await ensureMonth(value.month);
 
   const monthReference = adminDb.collection("dashboardSummaries").doc(value.month);
   let baseQuery: FirebaseFirestore.Query = monthReference.collection("shops");
@@ -485,16 +599,90 @@ export async function fetchDashboardPage(input: { month: string; search?: string
   else if (normalizedSearch) baseQuery = baseQuery.where("searchPrefixes", "array-contains", normalizedSearch);
 
   const direction = value.sortDirection;
-  let pageDocuments: FirebaseFirestore.QueryDocumentSnapshot[];
+  let pageDocuments: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   let matchingDocuments: FirebaseFirestore.QueryDocumentSnapshot[] | null = null;
-  let hasMore: boolean;
-  let total: number;
-  if (normalizedSearch || value.supervisorId || actor.role !== "admin") {
-    const matching = await baseQuery.get();
-    matchingDocuments = normalizedSearch && value.supervisorId
-      ? matching.docs.filter(document => (document.data() as ShopSummary).searchPrefixes.includes(normalizedSearch))
-      : matching.docs;
-    if (actor.role !== "admin") matchingDocuments = matchingDocuments.filter(document => actor.shopIds.includes(document.id));
+  let hasMore = false;
+  let total = 0;
+  let searchPageEntries: SearchEntry[] | null = null;
+  let searchMeta: MonthMeta | null = null;
+  let supervisorMeta: MonthMeta | null = null;
+  if (actor.role === "admin" && normalizedSearch) {
+    const indexed = await loadSearchIndex(value.month, meta);
+    if (indexed) {
+      meta = indexed.meta;
+      const matches = indexed.entries.filter(entry => searchEntryMatches(entry, normalizedSearch)
+        && (!value.supervisorId || entry.supervisorId === value.supervisorId));
+      const sorted = matches.sort((left, right) => compareSearchEntries(left, right, value.sortBy, direction));
+      const cursorIndex = value.cursor ? sorted.findIndex(entry => entry.shopId === value.cursor?.id) : -1;
+      const start = cursorIndex >= 0 ? cursorIndex + 1 : 0;
+      searchPageEntries = sorted.slice(start, start + value.pageSize);
+      hasMore = start + value.pageSize < sorted.length;
+      total = sorted.length;
+      const matchingIds = new Set(sorted.map(entry => entry.shopId));
+      const representativeRows = meta.representativeRows.filter(row => matchingIds.has(row.shopId))
+        .map((row, index) => ({ ...row, rank: index + 1 }));
+      searchMeta = {
+        ...meta,
+        summary: summarizeValues(sorted),
+        supervisorRows: summarizeSupervisorRows(sorted),
+        representativeRows,
+      };
+    }
+  }
+  if (!searchMeta && actor.role === "admin" && value.supervisorId && !normalizedSearch) {
+    if (!meta.supervisorSummaries || meta.representativeRows.some(row => !("supervisorId" in row))) {
+      try {
+        meta = await writeMonthMeta(value.month);
+      } catch (error) {
+        console.warn("Supervisor dashboard aggregates could not be stored; using matching summary reads.", error);
+      }
+    }
+    if (meta.supervisorSummaries && meta.representativeRows.every(row => "supervisorId" in row)) {
+      const supervisorId = value.supervisorId;
+      const suffix = direction === "asc" ? "Asc" : "Desc";
+      const sortField = value.sortBy === "shop" ? "normalizedShopName" : `${value.sortBy}${suffix}`;
+      let pageQuery = baseQuery.orderBy(sortField, direction);
+      if (value.sortBy !== "shop") pageQuery = pageQuery.orderBy("normalizedShopName", "asc");
+      pageQuery = pageQuery.orderBy(FieldPath.documentId(), "asc");
+      if (value.cursor) {
+        pageQuery = value.sortBy === "shop"
+          ? pageQuery.startAfter(value.cursor.value, value.cursor.id)
+          : pageQuery.startAfter(value.cursor.value, value.cursor.name, value.cursor.id);
+      }
+      try {
+        const pageSnapshot = await pageQuery.limit(value.pageSize + 1).get();
+        pageDocuments = pageSnapshot.docs.slice(0, value.pageSize);
+        hasMore = pageSnapshot.size > value.pageSize;
+        const representativeRows = meta.representativeRows.filter(row => row.supervisorId === supervisorId)
+          .map((row, index) => ({ ...row, rank: index + 1 }));
+        supervisorMeta = {
+          ...meta,
+          summary: meta.supervisorSummaries[supervisorId] ?? summarizeValues([]),
+          supervisorRows: meta.supervisorRows.filter(row => row.id === supervisorId),
+          representativeRows,
+        };
+        total = supervisorMeta.summary.activeShops;
+      } catch (error) {
+        const code = (error as { code?: unknown }).code;
+        if (code !== 9 && code !== "failed-precondition") throw error;
+        console.warn("Supervisor dashboard index is unavailable; using matching summary reads.");
+      }
+    }
+  }
+  if (!searchMeta && !supervisorMeta && (normalizedSearch || value.supervisorId || actor.role !== "admin")) {
+    const scopedShopIds = actor.role !== "admin" ? [...new Set(actor.shopIds)] : [];
+    const useScopedShopQuery = actor.role !== "admin" && scopedShopIds.length <= 10;
+    const matching = useScopedShopQuery
+      ? scopedShopIds.length
+        ? await monthReference.collection("shops").where(FieldPath.documentId(), "in", scopedShopIds).get()
+        : null
+      : await baseQuery.get();
+    matchingDocuments = (matching?.docs ?? []).filter(document => {
+      const summary = document.data() as ShopSummary;
+      return (!normalizedSearch || summary.searchPrefixes.includes(normalizedSearch))
+        && (!value.supervisorId || summary.supervisorId === value.supervisorId)
+        && (actor.role === "admin" || scopedShopIds.includes(document.id));
+    });
     const directionMultiplier = direction === "asc" ? 1 : -1;
     const getSortValue = (document: FirebaseFirestore.QueryDocumentSnapshot): string | number => {
       const summary = document.data() as ShopSummary;
@@ -517,7 +705,7 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     pageDocuments = sorted.slice(start, start + value.pageSize);
     hasMore = start + value.pageSize < sorted.length;
     total = sorted.length;
-  } else {
+  } else if (!searchMeta && !supervisorMeta) {
     const suffix = direction === "asc" ? "Asc" : "Desc";
     const sortField = value.sortBy === "shop" ? "normalizedShopName" : `${value.sortBy}${suffix}`;
     let pageQuery = baseQuery.orderBy(sortField, direction).orderBy(FieldPath.documentId(), direction);
@@ -527,10 +715,9 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     pageDocuments = pageSnapshot.docs.slice(0, value.pageSize);
     total = meta.summary.activeShops;
   }
-  const rows = pageDocuments.map(document => {
-    const summary = document.data() as ShopSummary;
+  const rows = (searchPageEntries ?? pageDocuments.map(document => ({ shopId: document.id, ...document.data() } as ShopSummary))).map(summary => {
     return {
-      shop: { id: document.id, name: summary.shopName, ...(summary.supervisorId ? { supervisorId: summary.supervisorId } : {}) },
+      shop: { id: summary.shopId, name: summary.shopName, ...(summary.supervisorId ? { supervisorId: summary.supervisorId } : {}) },
       revenue: summary.revenue,
       totalAchievement: summary.achievement,
       forecastAchievement: summary.hasData && !summary.isFinal ? summary.forecast : null,
@@ -539,18 +726,19 @@ export async function fetchDashboardPage(input: { month: string; search?: string
     } satisfies DashboardRow;
   });
 
-  const scopedMeta = matchingDocuments ? summarizeDocuments(matchingDocuments) : meta;
+  const scopedMeta = searchMeta ?? supervisorMeta ?? (matchingDocuments ? summarizeDocuments(matchingDocuments) : meta);
   const summary = scopedMeta.summary;
 
   const last = pageDocuments.at(-1);
-  const lastValue = last?.data() as ShopSummary | undefined;
+  const lastValue = searchPageEntries ? searchPageEntries.at(-1) : last?.data() as ShopSummary | undefined;
+  const lastId = searchPageEntries ? searchPageEntries.at(-1)?.shopId : last?.id;
   const suffix = direction === "asc" ? "Asc" : "Desc";
-  const sortField = value.sortBy === "shop" ? "normalizedShopName" : `${value.sortBy}${suffix}` as keyof ShopSummary;
+  const sortField = value.sortBy === "shop" ? "normalizedShopName" : `${value.sortBy}${suffix}` as keyof SearchEntry;
   const sortValue = !lastValue ? "" : lastValue[sortField] as string | number;
   return {
     rows,
     total,
-    nextCursor: hasMore && last && lastValue ? { hasData: lastValue.hasData, value: sortValue, name: lastValue.normalizedShopName, id: last.id } : null,
+    nextCursor: hasMore && lastValue && lastId ? { hasData: lastValue.hasData, value: sortValue, name: lastValue.normalizedShopName, id: lastId } : null,
     summary,
     supervisorRows: scopedMeta.supervisorRows,
     representativeRows: scopedMeta.representativeRows,

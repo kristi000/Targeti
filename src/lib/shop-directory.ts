@@ -1,5 +1,6 @@
 import "server-only";
 
+import { cache } from "react";
 import { adminDb, collection, getDocs } from "@/lib/firebase-admin";
 import {
   metricWeightProfileSchema,
@@ -27,7 +28,7 @@ function parseDirectoryDocument<T>(
   return null;
 }
 
-export async function loadShops(): Promise<Shop[]> {
+export const loadShops = cache(async (): Promise<Shop[]> => {
   const snapshot = await getDocs(collection(adminDb, "shops"));
   return snapshot.docs.flatMap(document => {
     const shop = parseDirectoryDocument(
@@ -38,9 +39,23 @@ export async function loadShops(): Promise<Shop[]> {
     );
     return shop ? [shop as Shop] : [];
   });
-}
+});
 
-export async function loadSupervisors(): Promise<Supervisor[]> {
+export const loadAccessibleShops = cache(async (actor: AppActor): Promise<Shop[]> => {
+  if (actor.role === "admin" || actor.shopIds.length > 10) {
+    const shops = await loadShops();
+    return actor.role === "admin" ? shops : shops.filter(shop => actor.shopIds.includes(shop.id));
+  }
+
+  const documents = await Promise.all(actor.shopIds.map(shopId => adminDb.collection("shops").doc(shopId).get()));
+  return documents.flatMap(document => {
+    if (!document.exists) return [];
+    const shop = parseDirectoryDocument(shopSchema, document.ref.path, document.id, document.data());
+    return shop ? [shop as Shop] : [];
+  });
+});
+
+export const loadSupervisors = cache(async (): Promise<Supervisor[]> => {
   const snapshot = await getDocs(collection(adminDb, "supervisors"));
   return snapshot.docs.flatMap(document => {
     const supervisor = parseDirectoryDocument(
@@ -51,9 +66,9 @@ export async function loadSupervisors(): Promise<Supervisor[]> {
     );
     return supervisor ? [supervisor as Supervisor] : [];
   }).sort((left, right) => left.name.localeCompare(right.name));
-}
+});
 
-export async function loadWeightProfiles(): Promise<MetricWeightProfile[]> {
+export const loadWeightProfiles = cache(async (): Promise<MetricWeightProfile[]> => {
   const snapshot = await getDocs(collection(adminDb, "weightProfiles"));
   return snapshot.docs.flatMap(document => {
     const profile = parseDirectoryDocument(
@@ -64,25 +79,21 @@ export async function loadWeightProfiles(): Promise<MetricWeightProfile[]> {
     );
     return profile ? [profile as MetricWeightProfile] : [];
   }).sort((left, right) => left.name.localeCompare(right.name));
-}
+});
 
 export async function loadShopDirectory(actor?: AppActor): Promise<ShopData> {
   const [shops, supervisors, weightProfiles] = await Promise.all([
-    loadShops(),
+    actor ? loadAccessibleShops(actor) : loadShops(),
     loadSupervisors(),
     loadWeightProfiles(),
   ]);
 
-  const accessibleShops = actor && actor.role !== "admin"
-    ? shops.filter(shop => actor.shopIds.includes(shop.id))
-    : shops;
-
   return {
-    shops: accessibleShops,
+    shops,
     supervisors,
     weightProfiles,
     monthlyTargets: Object.fromEntries(
-      accessibleShops.flatMap(shop =>
+      shops.flatMap(shop =>
         shop.monthlyTargets ? [[shop.id, shop.monthlyTargets] as const] : [],
       ),
     ),

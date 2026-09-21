@@ -22,6 +22,14 @@ Forward server errors and failed Firebase operations to the production error-mon
 
 Failed dashboard projection refreshes are stored in `maintenanceJobs` with type `dashboard-summary-refresh`. An administrator can invoke `retryPendingDashboardSummaryJobs`; use `rebuildDashboardSummaryMonths` for an explicit month rebuild. Alert when a pending job is older than 15 minutes or has three failed attempts.
 
+Shop report selectors read `shops/{shopId}/metadata/performanceIndex`. Older shops build this document on first access. Performance mutations mark it dirty and refresh it alongside dashboard summaries; while dirty, reads fall back to a projected performance query. Retry pending dashboard projection jobs to repair an index left dirty after a failed refresh.
+
+Dashboard month selectors read `dashboardPeriodIndexes/current`. The first request after deployment builds this compact index from shop month keys and active imports. Shop and import mutations refresh it alongside dashboard summaries. While dirty, reads fall back to projected source queries; retry pending dashboard projection jobs if it stays dirty. The index is server-only and has a size cap, so very large datasets continue to use projected reads.
+
+Supervisor-filtered dashboard pages use the composite indexes in `firestore.indexes.json` and cached supervisor summaries in each `dashboardSummaries/{month}` document. Deploy the indexes before the application change with `firebase deploy --only firestore:indexes --project YOUR_PROJECT_ID` from the repository root, replacing `YOUR_PROJECT_ID` with the intended Firebase project ID. This repository has no `.firebaserc`, so select the project explicitly. Until an index is ready, the page falls back to reading the matching shop summaries. Older month summaries populate the supervisor aggregates on first filtered access.
+
+Admin text search reads `dashboardSummaries/{month}/metadata/searchIndex`, a compact copy of shop totals. It is written atomically with the month summary and built on first search for older months. If the index exceeds 750 KB or is unavailable, search falls back to reading matching shop summaries. The `metadata.entries` field is exempted from automatic indexing in `firestore.indexes.json` because no query uses that array.
+
 Imports are recorded before completion in the `imports` collection and their data, history, status, and activity event are committed atomically. Only the latest import for each month is `active`; earlier retained versions are `superseded`. Monitor imports that remain outside `active`, `superseded`, `undone`, or `removed` states.
 
 ## Deployment checklist

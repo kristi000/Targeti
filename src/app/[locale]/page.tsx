@@ -4,7 +4,7 @@ import { fetchDashboardPage } from "@/app/dashboard-actions";
 import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 import { getTranslations } from "next-intl/server";
 import type { DashboardCursor, DashboardSortKey } from "@/lib/dashboard-types";
-import { dashboardPageQueryKey } from "@/lib/query-keys";
+import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import { getDashboardPeriods } from "@/lib/server/dashboard-loaders";
 
 export async function generateMetadata({params}: {params: Promise<{locale: string}>}) {
@@ -48,6 +48,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Da
     id: cursorId,
   } : null;
   const queryClient = new QueryClient();
+  queryClient.setQueryData(dashboardPeriodsQueryKey, periods);
   const queryKey = dashboardPageQueryKey({ month, search, supervisorId, pageSize, cursor, sortBy, sortDescending });
   await queryClient.prefetchQuery({
     queryKey,

@@ -6,19 +6,17 @@ import { useTranslations } from "next-intl";
 
 import { BonusDashboardClient } from "@/components/bonus-dashboard-client";
 import { useShop } from "@/components/shop-provider";
-import { useShopPerformance } from "@/hooks/use-shop-performance";
 
-export function BonusDashboardRoute({ shopId }: { shopId: string }) {
+export function BonusDashboardRoute({ shopId, requestedMonth }: { shopId: string; requestedMonth?: string }) {
   const { shops, selectedShop, setSelectedShop } = useShop();
   const t = useTranslations("DetailedDashboard");
   const routeShop = shops.find(shop => shop.id === shopId);
-  const performanceQuery = useShopPerformance(shopId, Boolean(routeShop));
 
   useEffect(() => {
     if (routeShop && selectedShop?.id !== routeShop.id) setSelectedShop(routeShop);
   }, [routeShop, selectedShop?.id, setSelectedShop]);
 
-  if (selectedShop?.id === shopId && performanceQuery.data) return <BonusDashboardClient allData={performanceQuery.data} />;
+  if (selectedShop?.id === shopId) return <BonusDashboardClient key={`${shopId}:${requestedMonth ?? ""}`} requestedMonth={requestedMonth} />;
   return (
     <div className="flex min-h-64 items-center justify-center p-6">
       {routeShop

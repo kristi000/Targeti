@@ -1,6 +1,174 @@
 {
   "indexes": [
     {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "DESCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "achievementAsc",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "achievementDesc",
+                "order": "DESCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "forecastAsc",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "forecastDesc",
+                "order": "DESCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "revenueAsc",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
+        "collectionGroup": "shops",
+        "queryScope": "COLLECTION",
+        "fields": [
+            {
+                "fieldPath": "supervisorId",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "revenueDesc",
+                "order": "DESCENDING"
+            },
+            {
+                "fieldPath": "normalizedShopName",
+                "order": "ASCENDING"
+            },
+            {
+                "fieldPath": "__name__",
+                "order": "ASCENDING"
+            }
+        ]
+    },
+    {
       "collectionGroup": "imports",
       "queryScope": "COLLECTION",
       "fields": [
@@ -10,6 +178,11 @@
     }
   ],
   "fieldOverrides": [
+    {
+      "collectionGroup": "metadata",
+      "fieldPath": "entries",
+      "indexes": []
+    },
     {
       "collectionGroup": "performance",
       "fieldPath": "date",

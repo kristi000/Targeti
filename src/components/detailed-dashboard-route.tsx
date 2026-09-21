@@ -8,21 +8,19 @@ import { ArrowLeft, Loader2 } from "lucide-react";
 import { DetailedDashboardClient } from "@/components/detailed-dashboard-client";
 import { useShop } from "@/components/shop-provider";
 import { buttonVariants } from "@/components/ui/button";
-import { useShopPerformance } from "@/hooks/use-shop-performance";
 import { cn } from "@/lib/utils";
 
-export function DetailedDashboardRoute({ shopId }: { shopId: string }) {
+export function DetailedDashboardRoute({ shopId, requestedMonth }: { shopId: string; requestedMonth?: string }) {
   const { shops, selectedShop, setSelectedShop } = useShop();
   const locale = useLocale();
   const t = useTranslations("DetailedDashboard");
   const routeShop = shops.find(shop => shop.id === shopId);
-  const performanceQuery = useShopPerformance(shopId, Boolean(routeShop));
 
   useEffect(() => {
     if (routeShop && selectedShop?.id !== routeShop.id) setSelectedShop(routeShop);
   }, [routeShop, selectedShop?.id, setSelectedShop]);
 
-  if (selectedShop?.id === shopId && performanceQuery.data) return <DetailedDashboardClient allData={performanceQuery.data} />;
+  if (selectedShop?.id === shopId) return <DetailedDashboardClient key={`${shopId}:${requestedMonth ?? ""}`} requestedMonth={requestedMonth} />;
 
   return (
     <div className="flex h-full flex-col p-4 md:p-6 lg:p-8">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { ArrowLeft, Banknote, ClipboardCheck, Loader2, MessageSquareText, RotateCcw, TrendingUp, Trophy, Users } from "lucide-react";
 import { format, isSameMonth, parseISO } from "date-fns";
@@ -14,12 +15,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getForecastDate, projectMetrics } from "@/lib/forecast";
-import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData } from "@/lib/types";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceIndexEntry } from "@/lib/types";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
 import { handleRevertAchievementOverrides } from "@/app/actions/achievements";
+import { shopPerformanceIndexQueryOptions, shopPerformanceMonthQueryOptions } from "@/lib/performance-queries";
 import { useToast } from "@/hooks/use-toast";
 
-export function DetailedDashboardClient({ allData }: { allData: PerformanceData[] }) {
+const EMPTY_INDEX: PerformanceIndexEntry[] = [];
+const EMPTY_PERFORMANCE: PerformanceData[] = [];
+
+export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: string }) {
   const { selectedShop, allMonthlyTargets, refreshDataForShop, actor, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
@@ -30,13 +35,21 @@ export function DetailedDashboardClient({ allData }: { allData: PerformanceData[
 
   const now = new Date();
   const currentMonth = format(now, "yyyy-MM");
+  const indexQuery = useQuery({ ...shopPerformanceIndexQueryOptions(selectedShop?.id ?? ""), enabled: Boolean(selectedShop) });
+  const index = indexQuery.data ?? EMPTY_INDEX;
   const availableMonths = useMemo(() => {
-    const months = getPerformanceMonthsByImportRecency(allData, Object.keys(selectedShop?.monthlyData ?? {}));
+    const months = getPerformanceMonthsByImportRecency(index, Object.keys(selectedShop?.monthlyData ?? {}));
     return months.length ? months : [currentMonth];
-  }, [allData, selectedShop?.monthlyData, currentMonth]);
+  }, [index, selectedShop?.monthlyData, currentMonth]);
   const selectedMonth = monthSelection.shopId === selectedShop?.id && availableMonths.includes(monthSelection.month)
     ? monthSelection.month
+    : requestedMonth && availableMonths.includes(requestedMonth) ? requestedMonth
     : availableMonths.includes(selectedDatasetId) ? selectedDatasetId : availableMonths[0] ?? format(now, "yyyy-MM");
+  const performanceQuery = useQuery({
+    ...shopPerformanceMonthQueryOptions(selectedShop?.id ?? "", selectedMonth),
+    enabled: Boolean(selectedShop && selectedMonth && !indexQuery.isPending),
+  });
+  const allData = performanceQuery.data ?? EMPTY_PERFORMANCE;
   const selectedVersionId = versionSelection.shopId === selectedShop?.id ? versionSelection.versionId : "active";
   const monthVersions = useMemo(() => allData
     .filter(entry => entry.importId && entry.date.startsWith(selectedMonth))
@@ -46,10 +59,10 @@ export function DetailedDashboardClient({ allData }: { allData: PerformanceData[
     : monthVersions.find(entry => getPerformanceDatasetId(entry) === selectedVersionId);
   useEffect(() => {
     setSelectedDatasetId(selectedMonth);
-    setSelectedPerformanceId(selectedVersion ? getPerformanceDatasetId(selectedVersion) : null);
-  }, [selectedMonth, selectedVersion, setSelectedDatasetId, setSelectedPerformanceId]);
+    setSelectedPerformanceId(selectedVersionId === "active" ? null : selectedVersionId);
+  }, [selectedMonth, selectedVersionId, setSelectedDatasetId, setSelectedPerformanceId]);
   const reportOptions = useMemo(() => availableMonths.flatMap(month => {
-    const versions = allData
+    const versions = index
       .filter(entry => entry.importId && entry.date.startsWith(month))
       .sort((left, right) => (right.importedAt ?? right.date).localeCompare(left.importedAt ?? left.date));
     const activeOption = { value: `active:${month}`, month, versionId: "active", report: versions[0] };
@@ -62,7 +75,7 @@ export function DetailedDashboardClient({ allData }: { allData: PerformanceData[
         report,
       })),
     ];
-  }), [allData, availableMonths]);
+  }), [index, availableMonths]);
   const selectedReportValue = selectedVersion ? selectedVersionId : `active:${selectedMonth}`;
   const performanceData = useMemo(() => selectedVersion
     ? [selectedVersion]
@@ -114,6 +127,12 @@ export function DetailedDashboardClient({ allData }: { allData: PerformanceData[
     }
   };
 
+  if (indexQuery.isPending || performanceQuery.isPending) {
+    return <div className="flex min-h-64 items-center justify-center p-6" role="status"><Loader2 className="h-5 w-5 animate-spin" />{t("loading")}</div>;
+  }
+  if (indexQuery.isError || performanceQuery.isError) {
+    return <div className="p-6 text-destructive" role="alert">{t("tryAgain")}</div>;
+  }
   if (!selectedShop || !monthlyTargets) {
     return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex-1 p-4 md:p-6 lg:p-8"><Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
   }

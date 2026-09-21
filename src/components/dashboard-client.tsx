@@ -46,7 +46,7 @@ const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
 ];
 
 export function DashboardClient() {
-  const { shops, supervisors, loading, setSelectedDatasetId } = useShop();
+  const { actor, shops, supervisors, loading, setSelectedDatasetId } = useShop();
   const locale = useLocale();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -103,7 +103,9 @@ export function DashboardClient() {
 
   useEffect(() => {
     const nextCursor = pageQuery.data?.nextCursor;
-    if (!nextCursor) return;
+    // Prefetch only the unfiltered admin path. Other views may still need
+    // matching summaries to calculate their totals and rankings.
+    if (!nextCursor || deferredSearch || selectedSupervisorId || actor.role !== "admin") return;
     void queryClient.prefetchQuery({
       queryKey: dashboardPageQueryKey({
         month: activeDatasetId,
@@ -117,7 +119,7 @@ export function DashboardClient() {
       queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, pageSize: pagination.pageSize, cursor: nextCursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
       staleTime: 30_000,
     });
-  }, [activeDatasetId, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, selectedSupervisorId, sorting]);
+  }, [activeDatasetId, actor.role, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, selectedSupervisorId, sorting]);
 
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
   const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
@@ -255,7 +257,7 @@ export function DashboardClient() {
                 <tbody>
                   {visibleRows.map((row, rowIndex) => {
                     const item = row.original;
-                    const destination = `/${locale}/shop/${item.shop.id}`;
+                    const destination = `/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`;
                     const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                     return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
                       <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", pagination.pageIndex * pagination.pageSize + rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</span></td>
@@ -275,7 +277,7 @@ export function DashboardClient() {
                 const item = row.original;
                 const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                 const rowNumber = pagination.pageIndex * pagination.pageSize + rowIndex + 1;
-                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70">
+                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{rowNumber}</span>
                     <div className="min-w-0">
@@ -299,7 +301,7 @@ export function DashboardClient() {
 
           <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} selectedSupervisorId={selectedSupervisorId} onSelectSupervisor={selectSupervisor} />
 
-          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0"><SalesRepresentativeRanking rows={pageQuery.data?.representativeRows ?? []} /></section>
+          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0"><SalesRepresentativeRanking rows={pageQuery.data?.representativeRows ?? []} month={activeDatasetId} /></section>
           </div>
         </div>
       </main>

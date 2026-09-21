@@ -86,6 +86,8 @@ export type PerformanceData = {
   revenue?: number;
 };
 
+export type PerformanceIndexEntry = Pick<PerformanceData, "id" | "date" | "importId" | "importName" | "importedAt" | "asOfDate">;
+
 export type QualityMetrics = {
   checklistScore?: number;
   npsScore?: number;
@@ -113,7 +115,7 @@ export function getActivePerformanceData(data: PerformanceData[]): PerformanceDa
   return [...effectiveManualEntries, ...latestExcelByMonth.values()].sort((left, right) => left.date.localeCompare(right.date));
 }
 
-export function getPerformanceMonthsByImportRecency(data: PerformanceData[], additionalMonths: string[] = []): string[] {
+export function getPerformanceMonthsByImportRecency(data: Pick<PerformanceData, "date" | "importId" | "importedAt">[], additionalMonths: string[] = []): string[] {
   const latestImportByMonth = new Map<string, string>();
   const months = new Set(additionalMonths);
 
@@ -148,7 +150,7 @@ export function getQuarterKey(date: string) {
   return `${year}-Q${quarter}`;
 }
 
-export function getPerformanceDatasetId(data: PerformanceData) {
+export function getPerformanceDatasetId(data: Pick<PerformanceData, "id" | "importId" | "date">) {
   return data.importId ?? data.id ?? data.date;
 }
 

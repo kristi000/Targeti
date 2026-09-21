@@ -76,7 +76,7 @@ export async function handleSaveAchievementOverrides(shopId: string, month: stri
       await setDoc(doc(db, "shops", input.shopId, "performance", manualReport.id!), toFirestoreData(documentData));
     }
 
-    await refreshDashboardSummaries({ shopIds: [input.shopId], months: [input.month] });
+    await refreshDashboardSummaries({ shopIds: [input.shopId], months: [input.month], performanceChanged: true });
 
     const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", input.shopId), limit(1)))).docs[0];
     const shopName = String(shopDocument?.data().name ?? input.shopId);
@@ -113,7 +113,7 @@ export async function handleRevertAchievementOverrides(shopId: string, performan
         : deleteField(),
       achievementOverride: deleteField(),
     });
-    await refreshDashboardSummaries({ shopIds: [validShopId], months: [report.date.slice(0, 7)] });
+    await refreshDashboardSummaries({ shopIds: [validShopId], months: [report.date.slice(0, 7)], performanceChanged: true });
 
     const shopDocument = (await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShopId), limit(1)))).docs[0];
     const shopName = String(shopDocument?.data().name ?? validShopId);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
@@ -26,10 +27,6 @@ import {
 
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
 import { Header } from "@/components/header";
-import { MonthlyClosingSummary } from "@/components/monthly-closing-summary";
-import { MonthlyCellSummary } from "@/components/monthly-cell-summary";
-import { MonthlyDebts } from "@/components/monthly-debts";
-import { MonthlyUnsubscribes } from "@/components/monthly-unsubscribes";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
 import { useShop } from "@/components/shop-provider";
@@ -48,6 +45,15 @@ import { getClosingView, type ClosingView } from "@/lib/closing-navigation";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
 import { type DailyClosing, type DailyClosingDebt, type DailyClosingUnsubscribeEntry, type PerformanceMetric } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+function MonthlyViewLoading() {
+  return <div className="min-h-64 animate-pulse rounded-lg border bg-muted/30" aria-hidden="true" />;
+}
+
+const MonthlyClosingSummary = dynamic(() => import("@/components/monthly-closing-summary").then(module => module.MonthlyClosingSummary), { loading: MonthlyViewLoading });
+const MonthlyCellSummary = dynamic(() => import("@/components/monthly-cell-summary").then(module => module.MonthlyCellSummary), { loading: MonthlyViewLoading });
+const MonthlyDebts = dynamic(() => import("@/components/monthly-debts").then(module => module.MonthlyDebts), { loading: MonthlyViewLoading });
+const MonthlyUnsubscribes = dynamic(() => import("@/components/monthly-unsubscribes").then(module => module.MonthlyUnsubscribes), { loading: MonthlyViewLoading });
 
 type Adjustments = { boss: number; invoice: number; unsubscribe: number };
 type AutosaveStatus = "ready" | "pending" | "saving" | "saved" | "error";

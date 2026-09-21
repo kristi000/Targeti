@@ -21,7 +21,7 @@ export async function handleAddShop(shopName: string, description?: string) {
       createdAt: new Date().toISOString(),
     };
     const document = await addDoc(collection(db, "shops"), toFirestoreData(shopData));
-    await refreshDashboardSummaries({ shopIds: [document.id] });
+    await refreshDashboardSummaries({ shopIds: [document.id], periodsChanged: true });
     await recordActivity({ action: "shop_created", summary: `Created shop ${shopData.name}.`, shopIds: [document.id], shopNames: [shopData.name] });
 
     return {
@@ -53,7 +53,7 @@ export async function handleUpdateShop(shop: Shop) {
     }
     const { id, ...shopData } = validShop;
     await updateDoc(doc(db, "shops", id), toFirestoreData(shopData));
-    await refreshDashboardSummaries({ shopIds: [id] });
+    await refreshDashboardSummaries({ shopIds: [id], periodsChanged: true });
     await recordActivity({ action: "shop_edited", summary: `Edited shop ${validShop.name}.`, shopIds: [id], shopNames: [validShop.name] });
     return { success: true as const, data: validShop };
   } catch (error) {
@@ -88,7 +88,7 @@ export async function handleDeleteShop(shopId: string) {
     finalBatch.delete(shopRef);
     finalBatch.set(activity.reference, activity.data);
     await finalBatch.commit();
-    await refreshDashboardSummaries({ shopIds: [validShopId] });
+    await refreshDashboardSummaries({ shopIds: [validShopId], performanceChanged: true, periodsChanged: true });
     return { success: true as const };
   } catch (error) {
     return { success: false as const, error: mutationError("delete the shop", error) };

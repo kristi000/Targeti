@@ -61,6 +61,8 @@
     "managerBonusDescription": "{group} based on a base bonus of {base}",
     "managerBonusMissingCollection": "Import or enter the shop's monthly collection to calculate the manager bonus.",
     "estimatedBonus": "Estimated bonus",
+    "eomBonusForecast": "EOM bonus forecast",
+    "eomBonusForecastBasis": "Based on results and collection through {date}. Projected collection group: {group}.",
     "category": "Category",
     "weight": "Weight",
     "payoutRate": "Payout rate",
