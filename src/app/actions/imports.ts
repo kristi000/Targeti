@@ -2,11 +2,13 @@
 
 import { z } from "zod";
 import type { ImportHistoryItem } from "@/lib/import-history";
-import { collection, deleteField, doc, documentId, getDocs, limit, orderBy, query, startAfter, where, writeBatch } from "@/lib/firebase-admin";
+import { collection, deleteField, doc, documentId, getDoc, getDocs, limit, orderBy, query, startAfter, where, writeBatch } from "@/lib/firebase-admin";
 import { getCurrentActor, requireAdmin, requireEditor, requireEditorForShops } from "@/lib/access";
 import { refreshDashboardSummaries } from "@/app/dashboard-actions";
-import { performanceDataSchema, isoDateSchema, monthSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
-import { type PerformanceData, type Shop } from "@/lib/types";
+import { bonusSnapshotSchema, performanceDataSchema, isoDateSchema, monthSchema, quarterlyBonusSnapshotSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
+import { type BonusSnapshot, type PerformanceData, type QuarterlyBonusSnapshot, type Shop, getQuarterKey } from "@/lib/types";
+import { bonusSnapshotFromImport, quarterlySnapshotFromMonths } from "@/lib/bonus-snapshot";
+import { getQuarterMonths } from "@/lib/quarterly-bonus";
 import { createActivity, mutationError, omitId, parseFirestoreDocument, stableValue, toFirestoreData } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
 
@@ -16,6 +18,8 @@ const importChangeSchema = z.object({
   performanceId: shopIdSchema,
   previousShop: shopSchema.nullable(),
   importedShop: shopSchema,
+  previousBonusSnapshot: bonusSnapshotSchema.nullable().optional(),
+  previousQuarterlyBonusSnapshot: quarterlyBonusSnapshotSchema.nullable().optional(),
 }).strict();
 
 const importStatusSchema = z.enum(["active", "superseded", "undone", "removed"]);
@@ -48,7 +52,40 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     const activeImports = existingMonthImports.docs.filter(document =>
       document.id !== validImportId && document.data().status === "active"
     );
-    const writeCount = 2 + (validChanges.length * 3) + activeImports.length;
+    const completedMonth = validChanges.every(change => change.performance.reportType === "completedMonth");
+    if (!completedMonth && validChanges.some(change => change.performance.reportType !== "midMonth")) {
+      throw new Error("Every record in this import must use the same report type.");
+    }
+    if (validChanges.some(change => change.performance.date !== validReportDate)) {
+      throw new Error("Every performance record must use the selected reporting date.");
+    }
+    if (completedMonth && validReportDate !== new Date(Date.UTC(Number(validMonth.slice(0, 4)), Number(validMonth.slice(5, 7)), 0)).toISOString().slice(0, 10)) {
+      throw new Error("A final month import must use the last day of its reporting month.");
+    }
+    const quarter = getQuarterKey(validMonth);
+    const quarterMonths = getQuarterMonths(quarter);
+    const otherMonthKeys = quarterMonths.filter(month => month !== validMonth);
+    const finalizedAt = new Date().toISOString();
+    const prepared = await Promise.all(validChanges.map(async change => {
+      const bonusRef = doc(db, "shops", change.shopId, "bonusSnapshots", validMonth);
+      const quarterRef = doc(db, "shops", change.shopId, "quarterlyBonusSnapshots", quarter);
+      const [existingBonus, existingQuarter, ...otherMonths] = await Promise.all([
+        getDoc(bonusRef), getDoc(quarterRef),
+        ...(completedMonth ? otherMonthKeys.map(month => getDoc(doc(db, "shops", change.shopId, "bonusSnapshots", month))) : []),
+      ]);
+      if (!completedMonth && existingBonus.exists) throw new Error(`${change.shopName}: this month already has a finalized payroll snapshot. Import it as a final month.`);
+      const previousBonusSnapshot = existingBonus.exists ? bonusSnapshotSchema.parse(existingBonus.data()) as BonusSnapshot : null;
+      const previousQuarterlyBonusSnapshot = existingQuarter.exists ? quarterlyBonusSnapshotSchema.parse(existingQuarter.data()) as QuarterlyBonusSnapshot : null;
+      const bonus = completedMonth ? bonusSnapshotSchema.parse(bonusSnapshotFromImport(change.importedShop, change.performance, finalizedAt)) as BonusSnapshot : null;
+      const monthly = completedMonth ? quarterMonths.map(month => month === validMonth
+        ? bonus
+        : bonusSnapshotSchema.safeParse(otherMonths[otherMonthKeys.indexOf(month)]?.data()).data as BonusSnapshot | undefined) : [];
+      const quarterly = monthly.length === 3 && monthly.every((item): item is BonusSnapshot => Boolean(item))
+        ? quarterlyBonusSnapshotSchema.parse(quarterlySnapshotFromMonths(quarter, monthly as BonusSnapshot[], finalizedAt, validImportId)) as QuarterlyBonusSnapshot
+        : null;
+      return { change, previousBonusSnapshot, previousQuarterlyBonusSnapshot, bonus, quarterly, bonusRef, quarterRef };
+    }));
+    const writeCount = 2 + prepared.reduce((count, item) => count + 3 + Number(Boolean(item.bonus)) + Number(Boolean(item.quarterly)), 0) + activeImports.length;
     if (writeCount > 500) {
       throw new Error("This month has too many active import versions to replace in one operation. Clean up its import history and try again.");
     }
@@ -57,7 +94,7 @@ export async function handleRegisterImport(importId: string, fileName: string, m
       month: validMonth,
       reportDate: validReportDate,
       shopIds: validChanges.map(change => change.shopId),
-      createdAt: new Date().toISOString(),
+      createdAt: finalizedAt,
       actor: await getCurrentActor(),
       status: "active",
       recordCount: validChanges.length,
@@ -76,13 +113,15 @@ export async function handleRegisterImport(importId: string, fileName: string, m
       supersededAt: value.createdAt,
       supersededBy: validImportId,
     }));
-    validChanges.forEach(change => {
+    prepared.forEach(({ change, previousBonusSnapshot, previousQuarterlyBonusSnapshot, bonus, quarterly, bonusRef, quarterRef }) => {
       const shopData = Object.fromEntries(Object.entries(change.importedShop).filter(([key]) => key !== "id"));
       const performanceData = Object.fromEntries(Object.entries(change.performance).filter(([key]) => key !== "id"));
-      const historyChange = Object.fromEntries(Object.entries(change).filter(([key]) => key !== "performance"));
+      const historyChange = { ...Object.fromEntries(Object.entries(change).filter(([key]) => key !== "performance")), ...(bonus && { previousBonusSnapshot, previousQuarterlyBonusSnapshot }) };
       batch.set(doc(db, "shops", change.shopId), toFirestoreData(shopData));
       batch.set(doc(db, "shops", change.shopId, "performance", change.performanceId), toFirestoreData(performanceData));
       batch.set(doc(db, "imports", validImportId, "changes", change.shopId), toFirestoreData(historyChange));
+      if (bonus) batch.set(bonusRef, toFirestoreData(bonus));
+      if (quarterly) batch.set(quarterRef, toFirestoreData(quarterly));
     });
     batch.set(activity.reference, activity.data);
     await batch.commit();
@@ -154,6 +193,16 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
         && document.data().status === "superseded"
         && String(document.data().createdAt ?? "") < importedAt)
       .sort((left, right) => String(right.data().createdAt ?? "").localeCompare(String(left.data().createdAt ?? "")))[0];
+    const legacySnapshots = await Promise.all(changes.map(async change => {
+      if (change.previousBonusSnapshot !== undefined) return null;
+      const bonus = await getDoc(doc(db, "shops", change.shopId, "bonusSnapshots", month));
+      const quarter = await getDoc(doc(db, "shops", change.shopId, "quarterlyBonusSnapshots", getQuarterKey(month)));
+      const belongsToImport = (document: typeof bonus) => document.exists && (
+        document.data()?.sourceImportId === importDocument.id
+        || (!document.data()?.sourceImportId && String(document.data()?.finalizedAt ?? "") >= importedAt)
+      );
+      return { bonus: belongsToImport(bonus), quarter: belongsToImport(quarter) };
+    }));
     const activity = await createActivity({
       action: "excel_import_undone",
       summary: `Undid import ${String(data.fileName ?? importDocument.id)}.`,
@@ -162,9 +211,20 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
       metadata: { importId: importDocument.id, month },
     }, actor);
     const batch = writeBatch(db);
-    changes.forEach(change => {
+    changes.forEach((change, index) => {
       const shopRef = doc(db, "shops", change.shopId);
       batch.delete(doc(db, "shops", change.shopId, "performance", change.performanceId));
+      if (change.previousBonusSnapshot !== undefined) {
+        const bonusRef = doc(db, "shops", change.shopId, "bonusSnapshots", month);
+        if (change.previousBonusSnapshot) batch.set(bonusRef, toFirestoreData(change.previousBonusSnapshot));
+        else batch.delete(bonusRef);
+        const quarterRef = doc(db, "shops", change.shopId, "quarterlyBonusSnapshots", getQuarterKey(month));
+        if (change.previousQuarterlyBonusSnapshot) batch.set(quarterRef, toFirestoreData(change.previousQuarterlyBonusSnapshot));
+        else batch.delete(quarterRef);
+      } else if (legacySnapshots[index]) {
+        if (legacySnapshots[index].bonus) batch.delete(doc(db, "shops", change.shopId, "bonusSnapshots", month));
+        if (legacySnapshots[index].quarter) batch.delete(doc(db, "shops", change.shopId, "quarterlyBonusSnapshots", getQuarterKey(month)));
+      }
       if (change.previousShop) {
         const previousData = omitId(change.previousShop);
         batch.set(shopRef, toFirestoreData(previousData));

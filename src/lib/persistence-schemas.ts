@@ -222,6 +222,7 @@ export const newShopSchema = z.object({
 export const bonusSnapshotSchema = z.object({
   month: monthSchema,
   finalizedAt: z.string().datetime({ offset: true }),
+  sourceImportId: documentIdSchema.optional(),
   calculationVersion: z.string().trim().min(1).max(80),
   payoutTableVersion: z.string().trim().min(1).max(80),
   inputs: z.object({
@@ -270,6 +271,7 @@ const quarterlyResultSchema = z.object({
 export const quarterlyBonusSnapshotSchema = z.object({
   quarter: quarterSchema,
   finalizedAt: z.string().datetime({ offset: true }),
+  sourceImportId: documentIdSchema.optional(),
   calculationVersion: z.string().trim().min(1).max(80),
   payoutTableVersion: z.string().trim().min(1).max(80),
   monthlySources: z.array(z.object({

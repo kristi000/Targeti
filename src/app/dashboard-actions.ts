@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { getCurrentActor, requireAdmin, requireEditorForShops } from "@/lib/access";
 import { markPerformanceIndexesDirty, syncPerformanceIndexes } from "@/lib/performance-index";
+import { bonusOverviewReference, syncBonusOverviewProjection } from "@/lib/bonus-overview-index";
 import { loadDashboardPeriodSources, markDashboardPeriodIndexDirty, syncDashboardPeriodIndex } from "@/lib/dashboard-period-index";
 import { adminDb } from "@/lib/firebase-admin";
 import { calculateForecastAchievement, getForecastDate } from "@/lib/forecast";
@@ -483,14 +484,17 @@ async function performDashboardSummaryRefresh(input: z.infer<typeof refreshSchem
     for (const month of touchedMonths) {
       const reference = adminDb.collection("dashboardSummaries").doc(month).collection("shops").doc(shopDocument.id);
       if (!shop) {
-        await reference.delete();
+        await Promise.all([reference.delete(), bonusOverviewReference(month, shopDocument.id).delete()]);
         continue;
       }
       const entries = performance?.flatMap(document => {
         const entry = parsePerformance(document);
         return entry?.date.startsWith(month) ? [entry] : [];
       }) ?? [];
-      await reference.set(createShopSummary(shop, entries, supervisors));
+      await Promise.all([
+        reference.set(createShopSummary(shop, entries, supervisors)),
+        syncBonusOverviewProjection(shop, month, entries),
+      ]);
     }
   }
   await Promise.all([...touchedMonths].map(writeMonthMeta));

@@ -249,6 +249,7 @@ export function getMonthlyRepresentatives(shop: Shop, month: string): SalesRepre
 export type BonusSnapshot = {
   month: string;
   finalizedAt: string;
+  sourceImportId?: string;
   calculationVersion: string;
   payoutTableVersion: string;
   inputs: {
@@ -272,6 +273,7 @@ export type BonusSnapshot = {
 export type QuarterlyBonusSnapshot = {
   quarter: string;
   finalizedAt: string;
+  sourceImportId?: string;
   calculationVersion: string;
   payoutTableVersion: string;
   monthlySources: Array<{ month: string; finalizedAt: string }>;

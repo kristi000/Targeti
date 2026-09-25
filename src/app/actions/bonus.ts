@@ -1,12 +1,10 @@
 "use server";
 
-import { collection, doc, getDoc, getDocs, limit, orderBy, query, runTransaction, startAfter } from "@/lib/firebase-admin";
+import { collection, doc, getDoc, getDocs, limit, orderBy, query, startAfter } from "@/lib/firebase-admin";
 import { z } from "zod";
-import { requireEditorForShops, requireShopAccess } from "@/lib/access";
+import { requireShopAccess } from "@/lib/access";
 import { bonusSnapshotSchema, monthSchema, quarterSchema, quarterlyBonusSnapshotSchema, shopIdSchema } from "@/lib/persistence-schemas";
 import { type BonusSnapshot, type QuarterlyBonusSnapshot } from "@/lib/types";
-import { calculateQuarterlyBonus, getQuarterMonths, getQuarterlyMonthFromSnapshot, QUARTERLY_CALCULATION_VERSION, QUARTERLY_PAYOUT_TABLE_VERSION } from "@/lib/quarterly-bonus";
-import { mutationError, toFirestoreData } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { requireRestrictedAccess } from "@/lib/restricted-access";
 import { type BonusHistoryCursor, type BonusHistoryMonth, monthlyHistoryRecord, quarterlyHistoryRecord, quarterlyPayoutMonth } from "@/lib/bonus-history";
@@ -48,28 +46,6 @@ export async function fetchBonusHistoryPage(shopId: string, cursor?: BonusHistor
   return { rows, nextCursor };
 }
 
-export async function saveBonusSnapshot(shopId: string, snapshot: BonusSnapshot) {
-  try {
-    await requireRestrictedAccess();
-    await requireEditorForShops([shopId]);
-    const validShopId = shopIdSchema.parse(shopId);
-    const validSnapshot = bonusSnapshotSchema.parse(snapshot) as BonusSnapshot;
-    const snapshotRef = doc(db, "shops", validShopId, "bonusSnapshots", validSnapshot.month);
-
-    await runTransaction(db, async transaction => {
-      if ((await transaction.get(snapshotRef)).exists) throw new Error("ALREADY_FINALIZED");
-      transaction.set(snapshotRef, toFirestoreData(validSnapshot));
-    });
-
-    return { success: true as const, data: validSnapshot };
-  } catch (error) {
-    if (error instanceof Error && error.message === "ALREADY_FINALIZED") {
-      return { success: false as const, error: "This month has already been finalized." };
-    }
-    return { success: false as const, error: mutationError("finalize the payroll snapshot", error) };
-  }
-}
-
 export async function fetchBonusSnapshot(shopId: string, month: string): Promise<BonusSnapshot | null> {
   await requireRestrictedAccess();
   const validShopId = shopIdSchema.parse(shopId);
@@ -94,41 +70,4 @@ export async function fetchQuarterlyBonusSnapshot(shopId: string, quarter: strin
   if (result.success) return result.data as QuarterlyBonusSnapshot;
   console.error(`Ignoring invalid quarterly bonus snapshot ${snapshot.ref.path}:`, result.error.flatten());
   return null;
-}
-
-export async function saveQuarterlyBonusSnapshot(shopId: string, quarter: string) {
-  try {
-    await requireRestrictedAccess();
-    await requireEditorForShops([shopId]);
-    const validShopId = shopIdSchema.parse(shopId);
-    const validQuarter = quarterSchema.parse(quarter);
-    const months = getQuarterMonths(validQuarter);
-    const ref = doc(db, "shops", validShopId, "quarterlyBonusSnapshots", validQuarter);
-    const monthRefs = months.map(month => doc(db, "shops", validShopId, "bonusSnapshots", month));
-    const snapshot = await runTransaction(db, async transaction => {
-      const [existing, ...monthlyDocs] = await Promise.all([transaction.get(ref), ...monthRefs.map(monthRef => transaction.get(monthRef))]);
-      if (existing.exists) throw new Error("ALREADY_FINALIZED");
-      const monthlySnapshots = monthlyDocs.map(monthDoc => {
-        const result = bonusSnapshotSchema.safeParse(monthDoc.data());
-        if (!result.success) throw new Error("MONTHS_REQUIRED");
-        return result.data as BonusSnapshot;
-      });
-      const nextSnapshot: QuarterlyBonusSnapshot = {
-        quarter: validQuarter,
-        finalizedAt: new Date().toISOString(),
-        calculationVersion: QUARTERLY_CALCULATION_VERSION,
-        payoutTableVersion: QUARTERLY_PAYOUT_TABLE_VERSION,
-        monthlySources: monthlySnapshots.map(item => ({ month: item.month, finalizedAt: item.finalizedAt })),
-        result: calculateQuarterlyBonus(validQuarter, monthlySnapshots.map(getQuarterlyMonthFromSnapshot)),
-      };
-      quarterlyBonusSnapshotSchema.parse(nextSnapshot);
-      transaction.set(ref, toFirestoreData(nextSnapshot));
-      return nextSnapshot;
-    });
-    return { success: true as const, data: snapshot };
-  } catch (error) {
-    if (error instanceof Error && error.message === "ALREADY_FINALIZED") return { success: false as const, error: "This quarter has already been finalized." };
-    if (error instanceof Error && error.message === "MONTHS_REQUIRED") return { success: false as const, error: "Finalize all three monthly payroll snapshots first." };
-    return { success: false as const, error: mutationError("finalize the quarterly payroll snapshot", error) };
-  }
 }

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { importTargetWorkbook, type ImportedWorkbookData } from "@/lib/excel-import";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
@@ -346,10 +347,13 @@ export function ExcelImportDialog({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["dashboard-periods"] }),
         queryClient.invalidateQueries({ queryKey: ["firestore-shop-performance-page"] }),
+        queryClient.invalidateQueries({ queryKey: ["bonus-snapshot"] }),
+        queryClient.invalidateQueries({ queryKey: ["quarterly-bonus-snapshot"] }),
+        queryClient.invalidateQueries({ queryKey: ["bonus-history"] }),
       ]);
       toast({
         title: "Excel data imported",
-        description: `${review.workbook.shops.length} shops and ${representativeCount} visible representatives were updated.${hiddenRepresentativeCount ? ` ${hiddenRepresentativeCount} hidden representative${hiddenRepresentativeCount === 1 ? " was" : "s were"} skipped.` : ""} The file was retained as an independent version.`,
+        description: `${review.workbook.shops.length} shops and ${representativeCount} visible representatives were updated.${hiddenRepresentativeCount ? ` ${hiddenRepresentativeCount} hidden representative${hiddenRepresentativeCount === 1 ? " was" : "s were"} skipped.` : ""} ${review.reportType === "completedMonth" ? "Final payroll snapshots were saved automatically." : "The file was retained as an independent version."}`,
       });
       setOpen(false);
       reset();
@@ -408,9 +412,9 @@ export function ExcelImportDialog({
         <p className="mt-1 text-sm text-muted-foreground">.xlsx files up to 10 MB · one reporting month</p>
       </div><div className="flex justify-end"><Button type="button" variant="ghost" disabled={loading} onClick={() => void undoLatestImport()}><RotateCcw className="mr-2 h-4 w-4" />Undo latest import</Button></div></> : <div className="space-y-5">
         <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-3">
-          <Label className="grid gap-1.5">Report type<select className="h-10 rounded-md border bg-background px-3 text-sm" value={review.reportType} onChange={event => setReview(current => current && { ...current, reportType: event.target.value as ReviewState["reportType"] })}><option value="midMonth">Mid-month update</option><option value="completedMonth">Completed month</option></select></Label>
+          <Label className="flex items-center gap-2"><Checkbox checked={review.reportType === "completedMonth"} onCheckedChange={checked => setReview(current => current && { ...current, reportType: checked === true ? "completedMonth" : "midMonth" })} /><span>Final month import</span></Label>
           <Label className="grid gap-1.5">Reporting month<Input type="month" value={review.reportMonth} onChange={event => { const reportMonth = event.target.value; setReview(current => current && { ...current, reportMonth, asOfDate: reportMonth ? moveDateToMonth(current.asOfDate, reportMonth) : current.asOfDate }); }} /></Label>
-          {review.reportType === "midMonth" ? <Label className="grid gap-1.5">Data as of<Input type="date" min={`${review.reportMonth}-01`} max={monthEnd(review.reportMonth)} value={review.asOfDate} onChange={event => { const asOfDate = event.target.value; setReview(current => current && { ...current, asOfDate, ...(asOfDate && { reportMonth: asOfDate.slice(0, 7) }) }); }} /><span className="text-xs font-normal text-muted-foreground">Choose the last day included in this Excel report.</span></Label> : <div className="grid content-center gap-1"><span className="text-sm font-medium">EOM status</span><span className="text-sm text-muted-foreground">Final — no forecast</span></div>}
+          {review.reportType === "midMonth" ? <Label className="grid gap-1.5">Data as of<Input type="date" min={`${review.reportMonth}-01`} max={monthEnd(review.reportMonth)} value={review.asOfDate} onChange={event => { const asOfDate = event.target.value; setReview(current => current && { ...current, asOfDate, ...(asOfDate && { reportMonth: asOfDate.slice(0, 7) }) }); }} /><span className="text-xs font-normal text-muted-foreground">Choose the last day included in this Excel report.</span></Label> : <div className="grid content-center gap-1"><span className="text-sm font-medium">Payroll status</span><span className="text-sm text-muted-foreground">Monthly snapshot saved on import. The quarter is saved when all three months are final.</span></div>}
         </div>
 
         <section className="space-y-2 rounded-lg border bg-muted/20 p-4">

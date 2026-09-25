@@ -110,9 +110,9 @@ export function DashboardClient() {
     if (selectedSupervisorId) parameters.set("supervisor", selectedSupervisorId);
     if (sorting[0]?.id && sorting[0].id !== "shop") parameters.set("sort", sorting[0].id);
     if (sorting[0]?.desc) parameters.set("dir", "desc");
-    router.replace(`${pathname}?${parameters.toString()}`, { scroll: false });
+    window.history.replaceState(null, "", `${pathname}?${parameters.toString()}`);
     setSelectedDatasetId(activeDatasetId);
-  }, [activeDatasetId, shopSearch, selectedSupervisorId, sorting, pathname, router, setSelectedDatasetId]);
+  }, [activeDatasetId, shopSearch, selectedSupervisorId, sorting, pathname, setSelectedDatasetId]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-muted-foreground">Loading dashboard…</div>;

@@ -1,25 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BriefcaseBusiness, CalendarCheck, CheckCircle2, Loader2, Users } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BriefcaseBusiness, CheckCircle2, Loader2, Users } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
-import { fetchBonusSnapshot, saveBonusSnapshot } from "@/app/actions/bonus";
+import { fetchBonusSnapshot } from "@/app/actions/bonus";
 import { Header } from "@/components/header";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShop } from "@/components/shop-provider";
-import { useToast } from "@/hooks/use-toast";
 import { getMonthlyBonusForecast } from "@/lib/forecast";
-import { calculateManagerBonus, MANAGER_PAYOUT_TABLE_VERSION } from "@/lib/manager-bonus";
-import { calculateRepresentativeBonus, REPRESENTATIVE_PAYOUT_TABLE_VERSION } from "@/lib/sales-representative-bonus";
+import { calculateManagerBonus } from "@/lib/manager-bonus";
+import { calculateRepresentativeBonus } from "@/lib/sales-representative-bonus";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type BonusSnapshot, type PerformanceData, type PerformanceIndexEntry, type PerformanceMetric } from "@/lib/types";
-import { formatReportingMonth } from "@/lib/reporting-month";
-import { bonusHistoryQueryKey, bonusSnapshotQueryKey } from "@/lib/query-keys";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceIndexEntry, type PerformanceMetric } from "@/lib/types";
+import { bonusSnapshotQueryKey } from "@/lib/query-keys";
 import { shopPerformanceIndexQueryOptions, shopPerformanceMonthQueryOptions } from "@/lib/performance-queries";
 
 const EMPTY_INDEX: PerformanceIndexEntry[] = [];
@@ -29,8 +26,6 @@ export function BonusDashboardClient({ requestedMonth }: { requestedMonth?: stri
   const { selectedShop, allMonthlyTargets, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
   const indexQuery = useQuery({ ...shopPerformanceIndexQueryOptions(selectedShop?.id ?? ""), enabled: Boolean(selectedShop) });
   const index = indexQuery.data ?? EMPTY_INDEX;
   const months = useMemo(
@@ -38,7 +33,6 @@ export function BonusDashboardClient({ requestedMonth }: { requestedMonth?: stri
     [index, selectedShop?.monthlyData],
   );
   const [monthSelection, setMonthSelection] = useState({ shopId: "", month: "" });
-  const [finalizing, setFinalizing] = useState(false);
   const selectedMonth = monthSelection.shopId === selectedShop?.id && months.includes(monthSelection.month)
     ? monthSelection.month
     : requestedMonth && months.includes(requestedMonth) ? requestedMonth
@@ -118,19 +112,5 @@ export function BonusDashboardClient({ requestedMonth }: { requestedMonth?: stri
   const displayRepresentatives = snapshot?.representatives.map(item => ({ id: item.id, name: item.name })) ?? representatives;
   const forecastAsOf = snapshot || snapshotQuery.isPending || !forecast ? undefined : format(forecast.asOfDate, "PP");
 
-  const finalize = async () => {
-    if (collection === undefined || !liveBonuses || snapshot || snapshotQuery.isPending || snapshotQuery.isError) return;
-    setFinalizing(true);
-    const nextSnapshot: BonusSnapshot = { month: selectedMonth, finalizedAt: new Date().toISOString(), calculationVersion: "bonus-calculation-2026-02", payoutTableVersion: `${MANAGER_PAYOUT_TABLE_VERSION};${REPRESENTATIVE_PAYOUT_TABLE_VERSION}`, inputs: { collection, targets, representativeTargets: individualTargets, metricSettings, metricOrder: [...metrics], shopActuals: totals.shop, representativeActuals }, manager: liveBonuses.manager, representatives: liveBonuses.representatives.map(item => ({ ...item, eligible: item.result.shopBonusEligible })) };
-    try {
-      const result = await saveBonusSnapshot(selectedShop.id, nextSnapshot);
-      if (!result.success) throw new Error(result.error);
-      queryClient.setQueryData(bonusSnapshotQueryKey(selectedShop.id, selectedMonth), nextSnapshot);
-      await queryClient.invalidateQueries({ queryKey: bonusHistoryQueryKey(selectedShop.id) });
-      toast({ title: "Month finalized", description: `${formatReportingMonth(selectedMonth, locale)} is now locked for payroll.` });
-    } catch (error) { toast({ variant: "destructive", title: "Finalization failed", description: error instanceof Error ? error.message : "Could not save the payroll snapshot." }); }
-    finally { setFinalizing(false); }
-  };
-
-  return <div className="flex h-full flex-col"><Header title={`${t("bonusPage")}: ${selectedShop.name}`} actions={<select aria-label="Import month" className="h-9 w-32 shrink-0 rounded-md border bg-background px-3 text-sm text-foreground sm:w-40" value={selectedMonth} onChange={event => setMonthSelection({ shopId: selectedShop.id, month: event.target.value })}>{months.map(month => <option key={month} value={month}>{format(parseISO(`${month}-01`), "MMMM yyyy")}</option>)}</select>} /><div className="flex-1 overflow-y-auto p-3 md:p-4"><div className="mx-auto w-full max-w-6xl space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{t("monthlyBonuses")}</h2><p className="text-sm text-muted-foreground">{selectedMonth ? t("bonusMonthDescription", { month: format(parseISO(`${selectedMonth}-01`), "MMMM yyyy") }) : t("noData")}</p></div><Button onClick={finalize} disabled={!liveBonuses || !!snapshot || snapshotQuery.isPending || snapshotQuery.isError || finalizing}><CalendarCheck className="mr-2 h-4 w-4" />{snapshot ? "Finalized" : finalizing ? "Finalizing…" : "Finalize month"}</Button></div>{snapshot && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />Payroll snapshot finalized {new Date(snapshot.finalizedAt).toLocaleString(locale)}. Displaying locked values.</p>}{collection !== undefined && managerResult ? <Tabs defaultValue="manager"><TabsList className="grid w-full grid-cols-2 sm:w-[420px]"><TabsTrigger value="manager"><BriefcaseBusiness className="mr-2 h-4 w-4" />{t("managerBonusButton")}</TabsTrigger><TabsTrigger value="representatives"><Users className="mr-2 h-4 w-4" />{t("representativeBonusButton")}</TabsTrigger></TabsList><TabsContent value="manager" className="mt-4"><ManagerBonusCard result={managerResult} forecast={forecastAsOf ? forecast?.manager : undefined} forecastAsOf={forecastAsOf} metricSettings={metricSettings} /></TabsContent><TabsContent value="representatives" className="mt-4"><RepresentativeBonusCards representatives={displayRepresentatives} results={Object.fromEntries(representativeResults.map(item => [item.id, item.result]))} forecasts={forecastAsOf ? Object.fromEntries(forecast!.representatives.map(item => [item.id, item.result])) : undefined} forecastAsOf={forecastAsOf} metricSettings={metricSettings} /></TabsContent></Tabs> : <p className="rounded-lg border p-6 text-sm text-muted-foreground">{t("managerBonusMissingCollection")}</p>}</div></div></div>;
+  return <div className="flex h-full flex-col"><Header title={`${t("bonusPage")}: ${selectedShop.name}`} actions={<select aria-label="Import month" className="h-9 w-32 shrink-0 rounded-md border bg-background px-3 text-sm text-foreground sm:w-40" value={selectedMonth} onChange={event => setMonthSelection({ shopId: selectedShop.id, month: event.target.value })}>{months.map(month => <option key={month} value={month}>{format(parseISO(`${month}-01`), "MMMM yyyy")}</option>)}</select>} /><div className="flex-1 overflow-y-auto p-3 md:p-4"><div className="mx-auto w-full max-w-6xl space-y-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-2xl font-semibold">{t("monthlyBonuses")}</h2><p className="text-sm text-muted-foreground">{selectedMonth ? t("bonusMonthDescription", { month: format(parseISO(`${selectedMonth}-01`), "MMMM yyyy") }) : t("noData")}</p></div></div>{snapshot && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />Payroll snapshot finalized {new Date(snapshot.finalizedAt).toLocaleString(locale)}. Displaying locked values.</p>}{collection !== undefined && managerResult ? <Tabs defaultValue="manager"><TabsList className="grid w-full grid-cols-2 sm:w-[420px]"><TabsTrigger value="manager"><BriefcaseBusiness className="mr-2 h-4 w-4" />{t("managerBonusButton")}</TabsTrigger><TabsTrigger value="representatives"><Users className="mr-2 h-4 w-4" />{t("representativeBonusButton")}</TabsTrigger></TabsList><TabsContent value="manager" className="mt-4"><ManagerBonusCard result={managerResult} forecast={forecastAsOf ? forecast?.manager : undefined} forecastAsOf={forecastAsOf} metricSettings={metricSettings} /></TabsContent><TabsContent value="representatives" className="mt-4"><RepresentativeBonusCards representatives={displayRepresentatives} results={Object.fromEntries(representativeResults.map(item => [item.id, item.result]))} forecasts={forecastAsOf ? Object.fromEntries(forecast!.representatives.map(item => [item.id, item.result])) : undefined} forecastAsOf={forecastAsOf} metricSettings={metricSettings} /></TabsContent></Tabs> : <p className="rounded-lg border p-6 text-sm text-muted-foreground">{t("managerBonusMissingCollection")}</p>}</div></div></div>;
 }

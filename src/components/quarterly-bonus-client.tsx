@@ -1,28 +1,23 @@
 "use client";
 
 import { useState } from "react";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, CheckCircle2, Loader2 } from "lucide-react";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { CheckCircle2, Loader2 } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { format } from "date-fns";
-import { fetchBonusSnapshot, fetchQuarterlyBonusSnapshot, saveQuarterlyBonusSnapshot } from "@/app/actions/bonus";
+import { fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/app/actions/bonus";
 import { Header } from "@/components/header";
-import { Button } from "@/components/ui/button";
 import { useShop } from "@/components/shop-provider";
-import { useToast } from "@/hooks/use-toast";
 import { shopPerformanceIndexQueryOptions, shopPerformanceMonthQueryOptions } from "@/lib/performance-queries";
-import { bonusHistoryQueryKey, bonusSnapshotQueryKey, quarterlyBonusSnapshotQueryKey } from "@/lib/query-keys";
+import { bonusSnapshotQueryKey, quarterlyBonusSnapshotQueryKey } from "@/lib/query-keys";
 import { calculateQuarterlyBonus, getQuarterMonths, getQuarterlyForecastMonth, getQuarterlyMonthFromSnapshot } from "@/lib/quarterly-bonus";
-import { getQuarterKey, type BonusSnapshot } from "@/lib/types";
+import { getQuarterKey } from "@/lib/types";
 
 export function QuarterlyBonusClient() {
   const { selectedShop, allMonthlyTargets } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [selected, setSelected] = useState("");
-  const [finalizing, setFinalizing] = useState(false);
   const shopId = selectedShop?.id ?? "";
   const indexQuery = useQuery({ ...shopPerformanceIndexQueryOptions(shopId), enabled: Boolean(shopId) });
   const currentQuarter = getQuarterKey(format(new Date(), "yyyy-MM"));
@@ -54,7 +49,6 @@ export function QuarterlyBonusClient() {
   });
   const snapshot = snapshotQuery.data;
   const monthly = months.map((month, index) => monthlyQueries[index].data ?? null);
-  const ready = monthly.every((item): item is BonusSnapshot => item !== null);
   const forecast = !snapshot && forecastMonth && !monthly[months.indexOf(forecastMonth)] && selectedShop && performanceQuery.data
     ? getQuarterlyForecastMonth(selectedShop, forecastMonth, performanceQuery.data, allMonthlyTargets[shopId])
     : null;
@@ -65,25 +59,12 @@ export function QuarterlyBonusClient() {
   const result = snapshot?.result ?? (previewReady ? calculateQuarterlyBonus(quarter, inputs.filter((item): item is NonNullable<typeof item> => item !== null)) : null);
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
   const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(1)}%`;
-  const finalize = async () => {
-    if (!ready || snapshot || snapshotQuery.isPending || snapshotQuery.isError) return;
-    setFinalizing(true);
-    try {
-      const response = await saveQuarterlyBonusSnapshot(shopId, quarter);
-      if (!response.success) throw new Error(response.error);
-      queryClient.setQueryData(quarterlyBonusSnapshotQueryKey(shopId, quarter), response.data);
-      await queryClient.invalidateQueries({ queryKey: bonusHistoryQueryKey(shopId) });
-      toast({ title: t("quarterFinalized") });
-    } catch (error) {
-      toast({ variant: "destructive", title: t("quarterFinalizationFailed"), description: error instanceof Error ? error.message : t("tryAgain") });
-    } finally { setFinalizing(false); }
-  };
 
   if (!selectedShop) return null;
   return <div className="flex h-full flex-col">
     <Header title={`${t("quarterlyBonus")}: ${selectedShop.name}`} actions={<select aria-label={t("quarter")} className="h-9 rounded-md border bg-background px-3 text-sm" value={quarter} onChange={event => setSelected(event.target.value)}>{quarters.map(item => <option key={item} value={item}>{item}</option>)}</select>} />
     <div className="flex-1 overflow-y-auto p-3 md:p-4"><div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-semibold">{t("quarterlyBonus")}</h2><p className="text-sm text-muted-foreground">{t("quarterlyDescription")}</p></div><Button onClick={finalize} disabled={!ready || !!snapshot || snapshotQuery.isPending || snapshotQuery.isError || finalizing}><CalendarCheck className="mr-2 h-4 w-4" />{snapshot ? t("quarterFinalized") : finalizing ? t("loading") : t("finalizeQuarter")}</Button></div>
+      <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-2xl font-semibold">{t("quarterlyBonus")}</h2><p className="text-sm text-muted-foreground">{t("quarterlyDescription")}</p></div></div>
       {snapshot && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />{t("quarterSnapshotLocked", { date: new Date(snapshot.finalizedAt).toLocaleString(locale) })}</p>}
       {(monthlyQueries.some(query => query.isPending) || snapshotQuery.isPending || performanceQuery.isPending && Boolean(forecastMonth)) && !snapshot ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</p> : null}
       {(monthlyQueries.some(query => query.isError) || snapshotQuery.isError || performanceQuery.isError) && !snapshot ? <p className="text-sm text-destructive">{t("tryAgain")}</p> : null}

@@ -3,6 +3,7 @@ import { DashboardClient } from "@/components/dashboard-client";
 import { fetchDashboardPage } from "@/app/dashboard-actions";
 import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 import { getTranslations } from "next-intl/server";
+import { redirect } from "next/navigation";
 import type { DashboardSortKey } from "@/lib/dashboard-types";
 import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import { getDashboardPeriods } from "@/lib/server/dashboard-loaders";
@@ -23,8 +24,14 @@ function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default async function DashboardPage({ searchParams }: { searchParams: DashboardSearchParams }) {
+export default async function DashboardPage({ params, searchParams }: { params: Promise<{ locale: string }>; searchParams: DashboardSearchParams }) {
   const parameters = await searchParams;
+  if (first(parameters.view) === "bonuses") {
+    const { locale } = await params;
+    const requestedMonth = first(parameters.month);
+    const query = requestedMonth ? `?month=${encodeURIComponent(requestedMonth)}` : "";
+    redirect(`/${locale}/bonuses${query}`);
+  }
   const periods = await getDashboardPeriods();
   const requestedMonth = first(parameters.month);
   const month = periods.some(period => period.month === requestedMonth)

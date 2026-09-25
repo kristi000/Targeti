@@ -3,6 +3,7 @@
 
 import {
   LayoutDashboard,
+  Banknote,
   Lightbulb,
   TrendingUp,
   Github,
@@ -28,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ReportingDateSelector } from "@/components/reporting-date-selector";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
@@ -37,6 +38,7 @@ import { useShop } from "@/components/shop-provider";
 export function SidebarNav() {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const locale = useLocale();
   const router = useRouter();
   const { selectedShop } = useShop();
@@ -44,6 +46,8 @@ export function SidebarNav() {
   const isDetailedDashboard = pathname.includes('/shop/');
   const isDashboard = !isDetailedDashboard;
   const shopId = pathname.match(/\/shop\/([^/]+)/)?.[1];
+  const month = searchParams.get("month");
+  const bonusMonthQuery = month && /^\d{4}-\d{2}$/.test(month) ? `?month=${month}` : "";
 
   const menuItems = [
     {
@@ -55,6 +59,11 @@ export function SidebarNav() {
       href: `/${locale}/insights`,
       icon: Lightbulb,
       label: t('insights'),
+    },
+    {
+      href: `/${locale}/bonuses${bonusMonthQuery}`,
+      icon: Banknote,
+      label: t('bonuses'),
     },
   ];
 
@@ -94,7 +103,7 @@ export function SidebarNav() {
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
                 asChild
-                isActive={pathname === item.href || (item.href.endsWith('/') && pathname === `/${locale}`)}
+                isActive={pathname === item.href.split("?")[0] || (item.href.endsWith('/') && pathname === `/${locale}`)}
                 tooltip={item.label}
               >
                 <Link href={item.href}>
