@@ -242,6 +242,45 @@ export const bonusSnapshotSchema = z.object({
   }).strict()).max(500),
 }).strict();
 
+export const quarterSchema = z.string().regex(/^\d{4}-Q[1-4]$/);
+
+const quarterlyResultSchema = z.object({
+  quarter: quarterSchema,
+  months: z.array(monthSchema).length(3),
+  shopMonths: z.array(z.object({ month: monthSchema, performance: z.number().finite(), collection: finiteNonNegativeNumber }).strict()).length(3),
+  shopAverage: z.number().finite(),
+  averageCollection: finiteNonNegativeNumber,
+  manager: z.object({ eligible: z.boolean(), groupName: z.string(), baseBonus: finiteNonNegativeNumber, shopRate: finiteNonNegativeNumber, totalBonus: finiteNonNegativeNumber }).strict(),
+  representatives: z.array(z.object({
+    id: documentIdSchema,
+    name: z.string().trim().min(1),
+    monthly: z.array(z.object({ month: monthSchema, active: z.boolean(), performance: z.number().finite().nullable() }).strict()).length(3),
+    activeAllMonths: z.boolean(),
+    individualAverage: z.number().finite().nullable(),
+    eligible: z.boolean(),
+    groupName: z.string(),
+    baseBonus: finiteNonNegativeNumber,
+    individualRate: finiteNonNegativeNumber,
+    shopRate: finiteNonNegativeNumber,
+    totalBonus: finiteNonNegativeNumber,
+  }).strict()).max(500),
+  totalBonus: finiteNonNegativeNumber,
+}).strict();
+
+export const quarterlyBonusSnapshotSchema = z.object({
+  quarter: quarterSchema,
+  finalizedAt: z.string().datetime({ offset: true }),
+  calculationVersion: z.string().trim().min(1).max(80),
+  payoutTableVersion: z.string().trim().min(1).max(80),
+  monthlySources: z.array(z.object({
+    month: monthSchema,
+    finalizedAt: z.string().datetime({ offset: true }),
+  }).strict()).length(3),
+  result: quarterlyResultSchema,
+}).strict().refine(snapshot => snapshot.result.quarter === snapshot.quarter
+  && snapshot.monthlySources.every((source, index) => source.month === snapshot.result.months[index])
+  && snapshot.result.shopMonths.every((source, index) => source.month === snapshot.result.months[index]), "Quarterly source months do not match.");
+
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
   action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),

@@ -9,6 +9,12 @@ const BASE_BONUS_GROUPS = [
   { name: "Group 5", minimumCollection: 7_500_000, baseBonus: 48_000 },
 ] as const;
 
+export function getManagerBonusGroup(monthlyCollection: number) {
+  const collection = Number.isFinite(monthlyCollection) ? Math.max(monthlyCollection, 0) : 0;
+  return [...BASE_BONUS_GROUPS].reverse()
+    .find(candidate => collection >= candidate.minimumCollection) ?? BASE_BONUS_GROUPS[0];
+}
+
 const PAYOUT_PERCENTAGES = [
   30, 33.5, 37, 40.5, 44, 47.5, 51, 54.5, 58, 61.5,
   65, 68.5, 72, 75.5, 79, 82.5, 86, 89.5, 93, 96.5,
@@ -27,8 +33,9 @@ export type ManagerBonusCategory = {
 };
 
 export function getManagerPayoutPercentage(achievementPercentage: number): number {
-  if (!Number.isFinite(achievementPercentage) || achievementPercentage < 80) return 0;
-  const wholeAchievement = Math.min(Math.floor(achievementPercentage), 120);
+  if (!Number.isFinite(achievementPercentage)) return 0;
+  const wholeAchievement = Math.min(Math.round(achievementPercentage), 120);
+  if (wholeAchievement < 80) return 0;
   return PAYOUT_PERCENTAGES[wholeAchievement - 80];
 }
 
@@ -39,9 +46,7 @@ export function calculateManagerBonus(
   metrics: readonly PerformanceMetric[],
   metricSettings?: MetricSettings,
 ) {
-  const normalizedCollection = Number.isFinite(monthlyCollection) ? Math.max(monthlyCollection, 0) : 0;
-  const group = [...BASE_BONUS_GROUPS].reverse()
-    .find(candidate => normalizedCollection >= candidate.minimumCollection) ?? BASE_BONUS_GROUPS[0];
+  const group = getManagerBonusGroup(monthlyCollection);
   const categories: ManagerBonusCategory[] = metrics.map(metric => {
     const target = targets[metric] ?? 0;
     const rawAchievement = target > 0 ? ((actuals[metric] ?? 0) / target) * 100 : 0;

@@ -1,12 +1,11 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   type ColumnDef,
-  type PaginationState,
   type SortingState,
   getCoreRowModel,
   useReactTable,
@@ -16,8 +15,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
   Search,
   Store,
   UserRoundCog,
@@ -34,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
 import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import { fetchDashboardPeriods } from "@/app/dashboard-actions";
-import { fetchDashboardPage, type DashboardCursor, type DashboardRow, type DashboardSortKey, type DashboardSupervisorRow } from "@/app/dashboard-actions";
+import { fetchDashboardPage, type DashboardRow, type DashboardSortKey, type DashboardSupervisorRow } from "@/app/dashboard-actions";
 
 type ShopPerformanceRow = DashboardRow;
 
@@ -46,10 +43,9 @@ const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
 ];
 
 export function DashboardClient() {
-  const { actor, shops, supervisors, loading, setSelectedDatasetId } = useShop();
+  const { shops, supervisors, loading, setSelectedDatasetId } = useShop();
   const locale = useLocale();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
@@ -58,16 +54,6 @@ export function DashboardClient() {
   const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
   const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
   const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: hasRequestedSort ? searchParams.get("dir") === "desc" : true }]);
-  const [pagination, setPagination] = useState<PaginationState>({ pageIndex: Math.max(Number(searchParams.get("page") ?? 1) - 1, 0), pageSize: [10, 20, 50].includes(Number(searchParams.get("size"))) ? Number(searchParams.get("size")) : 10 });
-  const cursorValue = searchParams.get("afterValue");
-  const initialCursor = cursorValue !== null && searchParams.get("afterName") && searchParams.get("afterId") ? {
-    hasData: searchParams.get("afterHasData") === "true",
-    value: searchParams.get("afterType") === "number" ? Number(cursorValue) : cursorValue,
-    name: searchParams.get("afterName")!,
-    id: searchParams.get("afterId")!,
-  } : null;
-  const [cursor, setCursor] = useState<DashboardCursor | null>(initialCursor);
-  const [cursorHistory, setCursorHistory] = useState<Array<DashboardCursor | null>>(() => Array.from({ length: Math.max(Number(searchParams.get("page") ?? 1), 1) }, (_, index) => index === Math.max(Number(searchParams.get("page") ?? 1) - 1, 0) ? initialCursor : null));
   const deferredSearch = useDeferredValue(shopSearch.trim());
 
   const periodsQuery = useQuery({ queryKey: dashboardPeriodsQueryKey, queryFn: fetchDashboardPeriods, staleTime: 60_000 });
@@ -77,49 +63,18 @@ export function DashboardClient() {
   })), [periodsQuery.data, locale]);
   const requestedMonth = searchParams.get("month");
   const activeDatasetId = datasets.some(dataset => dataset.id === requestedMonth) ? requestedMonth! : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
-  const previousDatasetId = useRef(activeDatasetId);
-
-  useEffect(() => {
-    if (previousDatasetId.current === activeDatasetId) return;
-    previousDatasetId.current = activeDatasetId;
-    setCursor(null);
-    setCursorHistory([null]);
-    setPagination(current => ({ ...current, pageIndex: 0 }));
-  }, [activeDatasetId]);
 
   const pageQuery = useQuery({
     queryKey: dashboardPageQueryKey({
       month: activeDatasetId,
       search: deferredSearch,
       supervisorId: selectedSupervisorId,
-      pageSize: pagination.pageSize,
-      cursor,
       sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey,
       sortDescending: Boolean(sorting[0]?.desc),
     }),
-    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, pageSize: pagination.pageSize, cursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
     placeholderData: keepPreviousData,
   });
-
-  useEffect(() => {
-    const nextCursor = pageQuery.data?.nextCursor;
-    // Prefetch only the unfiltered admin path. Other views may still need
-    // matching summaries to calculate their totals and rankings.
-    if (!nextCursor || deferredSearch || selectedSupervisorId || actor.role !== "admin") return;
-    void queryClient.prefetchQuery({
-      queryKey: dashboardPageQueryKey({
-        month: activeDatasetId,
-        search: deferredSearch,
-        supervisorId: selectedSupervisorId,
-        pageSize: pagination.pageSize,
-        cursor: nextCursor,
-        sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey,
-        sortDescending: Boolean(sorting[0]?.desc),
-      }),
-      queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, pageSize: pagination.pageSize, cursor: nextCursor, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
-      staleTime: 30_000,
-    });
-  }, [activeDatasetId, actor.role, deferredSearch, pageQuery.data?.nextCursor, pagination.pageSize, queryClient, selectedSupervisorId, sorting]);
 
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
   const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
@@ -128,44 +83,24 @@ export function DashboardClient() {
     data: pageQuery.data?.rows ?? [],
     columns: shopColumns,
     getCoreRowModel: getCoreRowModel(),
-    manualPagination: true,
     manualSorting: true,
-    rowCount: pageQuery.data?.total ?? 0,
-    state: { pagination, sorting },
-    onPaginationChange: updater => {
-      const next = typeof updater === "function" ? updater(pagination) : updater;
-      if (next.pageSize !== pagination.pageSize) {
-        setCursor(null); setCursorHistory([null]); setPagination({ pageIndex: 0, pageSize: next.pageSize }); return;
-      }
-      if (next.pageIndex > pagination.pageIndex) {
-        const nextCursor = pageQuery.data?.nextCursor;
-        if (!nextCursor) return;
-        setCursorHistory(current => { const copy = [...current]; copy[next.pageIndex] = nextCursor; return copy; });
-        setCursor(nextCursor);
-      } else {
-        setCursor(cursorHistory[next.pageIndex] ?? null);
-      }
-      setPagination(next);
-    },
+    state: { sorting },
     onSortingChange: updater => {
       setSorting(current => {
         const next = typeof updater === "function" ? updater(current) : updater;
       return next.length ? [next[0]] : [{ id: "achievement", desc: true }];
       });
-      setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
     },
   });
 
   const updateSearch = (value: string) => {
     setShopSearch(value);
-    setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
   };
 
   const selectSupervisor = (supervisorId: string) => {
     const isSelected = selectedSupervisorId === supervisorId;
     setSelectedSupervisorId(isSelected ? null : supervisorId);
     if (!isSelected) setShopSearch("");
-    setCursor(null); setCursorHistory([null]); setPagination(current => ({ ...current, pageIndex: 0 }));
   };
 
   useEffect(() => {
@@ -173,20 +108,11 @@ export function DashboardClient() {
     if (activeDatasetId) parameters.set("month", activeDatasetId);
     if (shopSearch.trim()) parameters.set("q", shopSearch.trim());
     if (selectedSupervisorId) parameters.set("supervisor", selectedSupervisorId);
-    if (pagination.pageIndex) parameters.set("page", String(pagination.pageIndex + 1));
-    if (pagination.pageSize !== 10) parameters.set("size", String(pagination.pageSize));
     if (sorting[0]?.id && sorting[0].id !== "shop") parameters.set("sort", sorting[0].id);
     if (sorting[0]?.desc) parameters.set("dir", "desc");
-    if (cursor) {
-      parameters.set("afterHasData", String(cursor.hasData));
-      parameters.set("afterType", typeof cursor.value);
-      parameters.set("afterValue", String(cursor.value));
-      parameters.set("afterName", cursor.name);
-      parameters.set("afterId", cursor.id);
-    }
     router.replace(`${pathname}?${parameters.toString()}`, { scroll: false });
     setSelectedDatasetId(activeDatasetId);
-  }, [activeDatasetId, shopSearch, selectedSupervisorId, pagination.pageIndex, pagination.pageSize, sorting, cursor, pathname, router, setSelectedDatasetId]);
+  }, [activeDatasetId, shopSearch, selectedSupervisorId, sorting, pathname, router, setSelectedDatasetId]);
 
   if (loading) {
     return <div className="flex h-full items-center justify-center text-muted-foreground">Loading dashboard…</div>;
@@ -260,7 +186,7 @@ export function DashboardClient() {
                     const destination = `/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`;
                     const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                     return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", pagination.pageIndex * pagination.pageSize + rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{pagination.pageIndex * pagination.pageSize + rowIndex + 1}</span></td>
+                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{rowIndex + 1}</span></td>
                       <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
                       <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</td>
                       <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
@@ -276,7 +202,7 @@ export function DashboardClient() {
               {visibleRows.map((row, rowIndex) => {
                 const item = row.original;
                 const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
-                const rowNumber = pagination.pageIndex * pagination.pageSize + rowIndex + 1;
+                const rowNumber = rowIndex + 1;
                 return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70">
                   <div className="flex min-w-0 items-center gap-3">
                     <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{rowNumber}</span>
@@ -296,7 +222,6 @@ export function DashboardClient() {
             </div>
 
             {visibleRows.length === 0 && <div className="px-4 py-12 text-center text-sm text-slate-500">No shops match your search.</div>}
-            <TablePagination table={table} resultCount={resultCount} />
           </section>
 
           <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} selectedSupervisorId={selectedSupervisorId} onSelectSupervisor={selectSupervisor} />
@@ -349,22 +274,4 @@ function SortableHeader({ table, columnId, label, align = "center", className }:
   const direction = column?.getIsSorted();
   const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
   return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-center", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-center")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
-}
-
-function TablePagination({ table, resultCount }: { table: DashboardTable; resultCount: number }) {
-  const { pageIndex, pageSize } = table.getState().pagination;
-  const start = resultCount === 0 ? 0 : pageIndex * pageSize + 1;
-  const end = Math.min((pageIndex + 1) * pageSize, resultCount);
-  return <div className="flex flex-col gap-3 border-t bg-slate-50 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-    <p className="text-slate-500">Showing {start}–{end} of {resultCount}</p>
-    <div className="flex items-center justify-between gap-3 sm:justify-end">
-      <label className="flex items-center gap-2 text-slate-500">Rows
-        <select className="h-8 rounded-md border bg-white px-2 text-slate-900" value={pageSize} onChange={event => table.setPageSize(Number(event.target.value))}>
-          {[10, 20, 50].map(size => <option key={size} value={size}>{size}</option>)}
-        </select>
-      </label>
-      <span className="min-w-20 text-center text-slate-600">Page {resultCount ? pageIndex + 1 : 0} of {table.getPageCount()}</span>
-      <div className="flex gap-1"><Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></Button><Button type="button" variant="outline" size="icon" className="h-8 w-8" onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} aria-label="Next page"><ChevronRight className="h-4 w-4" /></Button></div>
-    </div>
-  </div>;
 }

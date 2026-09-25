@@ -10,6 +10,11 @@ const BASE_BONUS_GROUPS = [
   { name: "Group 5", minimumCollection: 7_500_000, baseBonus: 35_000 },
 ] as const;
 
+export function getRepresentativeBonusGroup(monthlyCollection: number) {
+  const collection = Number.isFinite(monthlyCollection) ? Math.max(monthlyCollection, 0) : 0;
+  return [...BASE_BONUS_GROUPS].reverse().find(item => collection >= item.minimumCollection) ?? BASE_BONUS_GROUPS[0];
+}
+
 const PAYOUT_PERCENTAGES = [
   15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
   26, 28, 30, 32, 34, 36, 38, 40, 42, 44,
@@ -21,8 +26,10 @@ const PAYOUT_PERCENTAGES = [
 export const REPRESENTATIVE_PAYOUT_TABLE_VERSION = "representative-2026-01";
 
 export function getRepresentativePayoutPercentage(achievement: number): number {
-  if (!Number.isFinite(achievement) || achievement < 70) return 0;
-  return PAYOUT_PERCENTAGES[Math.min(Math.floor(achievement), 120) - 70];
+  if (!Number.isFinite(achievement)) return 0;
+  const wholeAchievement = Math.min(Math.round(achievement), 120);
+  if (wholeAchievement < 70) return 0;
+  return PAYOUT_PERCENTAGES[wholeAchievement - 70];
 }
 
 export function calculateRepresentativeBonus(
@@ -34,8 +41,7 @@ export function calculateRepresentativeBonus(
   metrics: readonly PerformanceMetric[],
   metricSettings?: MetricSettings,
 ) {
-  const collection = Number.isFinite(monthlyCollection) ? Math.max(monthlyCollection, 0) : 0;
-  const group = [...BASE_BONUS_GROUPS].reverse().find(item => collection >= item.minimumCollection) ?? BASE_BONUS_GROUPS[0];
+  const group = getRepresentativeBonusGroup(monthlyCollection);
   const individualPerformance = calculateTotalAchievement(individualActuals, individualTargets, metricSettings);
   const shopBonusEligible = individualPerformance >= 50;
   const categories = metrics.map(metric => {

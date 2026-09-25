@@ -1,4 +1,4 @@
-import type { DashboardCursor, DashboardSortKey } from "@/lib/dashboard-types";
+import type { DashboardSortKey } from "@/lib/dashboard-types";
 
 export const dashboardPeriodsQueryKey = ["dashboard-periods"] as const;
 
@@ -6,8 +6,6 @@ export function dashboardPageQueryKey(input: {
   month: string;
   search: string;
   supervisorId: string | null;
-  pageSize: number;
-  cursor: DashboardCursor | null;
   sortBy: DashboardSortKey;
   sortDescending: boolean;
 }) {
@@ -16,8 +14,6 @@ export function dashboardPageQueryKey(input: {
     input.month,
     input.search,
     input.supervisorId,
-    input.pageSize,
-    input.cursor,
     input.sortBy,
     input.sortDescending,
   ] as const;
@@ -31,3 +27,5 @@ export const shopPerformanceMonthQueryKey = (shopId: string, month: string) => [
 export const performanceMonthQueryKey = (month: string) => ["performance", "month", month] as const;
 
 export const bonusSnapshotQueryKey = (shopId: string, month: string) => ["bonus-snapshot", shopId, month] as const;
+export const quarterlyBonusSnapshotQueryKey = (shopId: string, quarter: string) => ["quarterly-bonus-snapshot", shopId, quarter] as const;
+export const bonusHistoryQueryKey = (shopId: string) => ["bonus-history", shopId] as const;

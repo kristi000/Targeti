@@ -27,6 +27,7 @@ export function RepresentativeBonusCards({ representatives, results, forecasts, 
     const result = results[representative.id];
     if (!result) return null;
     const forecast = forecasts?.[representative.id];
+    const forecastByMetric = new Map(forecast?.categories.map(category => [category.metric, category]));
 
     return <Card key={representative.id} className="overflow-hidden">
       <CardHeader className="flex-row items-start justify-between gap-2 space-y-0 px-3 py-2">
@@ -43,14 +44,21 @@ export function RepresentativeBonusCards({ representatives, results, forecasts, 
               <th scope="col" className="px-1.5 py-1.5 text-right font-medium">{t("individualBonus")}</th>
               <th scope="col" className="px-1.5 py-1.5 text-right font-medium">{t("shopBonus")}</th>
               <th scope="col" className="whitespace-nowrap px-1.5 py-1.5 text-right font-medium">{t("bonus")} (ALL)</th>
+              {forecast && <th scope="col" className="whitespace-nowrap px-1.5 py-1.5 text-right font-medium">{t("eomBonus")} (ALL)<span className="block font-normal">{t("forecastRates")}</span></th>}
             </tr></thead>
             <tbody>{result.categories.map(category => {
               const label = category.metric.startsWith("custom_") ? getCustomMetricLabel(category.metric, metricSettings) : metricT(category.metric as never);
+              const projected = forecastByMetric.get(category.metric);
               return <tr key={category.metric} className="border-t">
                 <th scope="row" className="max-w-0 truncate px-1.5 py-1 text-left font-medium" title={label}>{label}</th>
                 <td className="whitespace-nowrap px-1.5 py-1 text-right tabular-nums"><span className="block text-muted-foreground">{category.individualAchievement.toFixed(1)}% / {category.individualPayout.toFixed(1)}%</span><span>{number.format(category.individualBonus)}</span></td>
                 <td className="whitespace-nowrap px-1.5 py-1 text-right tabular-nums"><span className="block text-muted-foreground">{category.shopAchievement.toFixed(1)}% / {category.shopPayout.toFixed(1)}%</span><span>{number.format(category.shopBonus)}</span></td>
                 <td className="whitespace-nowrap px-1.5 py-1 text-right font-semibold tabular-nums">{number.format(category.totalBonus)}</td>
+                {forecast && <td className="whitespace-nowrap px-1.5 py-1 text-right tabular-nums">{projected && <>
+                  <span className="block text-muted-foreground">{t("forecastIndividual")}: {projected.individualAchievement.toFixed(1)}% / {projected.individualPayout.toFixed(1)}%</span>
+                  <span className="block text-muted-foreground">{t("forecastShop")}: {projected.shopAchievement.toFixed(1)}% / {projected.shopPayout.toFixed(1)}%</span>
+                  <span className="font-semibold">{number.format(projected.totalBonus)}</span>
+                </>}</td>}
               </tr>;
             })}</tbody>
           </table>

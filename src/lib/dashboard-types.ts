@@ -1,12 +1,5 @@
 import type { Shop } from "@/lib/types";
 
-export type DashboardCursor = {
-  hasData: boolean;
-  value: string | number;
-  name: string;
-  id: string;
-};
-
 export type DashboardSortKey = "shop" | "achievement" | "forecast" | "revenue";
 
 export type DashboardRow = {

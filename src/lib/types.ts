@@ -269,6 +269,15 @@ export type BonusSnapshot = {
   }>;
 };
 
+export type QuarterlyBonusSnapshot = {
+  quarter: string;
+  finalizedAt: string;
+  calculationVersion: string;
+  payoutTableVersion: string;
+  monthlySources: Array<{ month: string; finalizedAt: string }>;
+  result: ReturnType<typeof import("./quarterly-bonus").calculateQuarterlyBonus>;
+};
+
 export type ActivityAction =
   | "excel_imported"
   | "excel_import_undone"

@@ -15,13 +15,15 @@ export async function handleClearAllData() {
     ]);
     const references: DocumentReference[] = supervisors.docs.map(document => document.ref);
     await Promise.all(shops.docs.map(async shop => {
-      const [performance, bonusSnapshots, dailyClosings] = await Promise.all([
+      const [performance, bonusSnapshots, quarterlyBonusSnapshots, dailyClosings] = await Promise.all([
         getDocs(collection(db, "shops", shop.id, "performance")),
         getDocs(collection(db, "shops", shop.id, "bonusSnapshots")),
+        getDocs(collection(db, "shops", shop.id, "quarterlyBonusSnapshots")),
         getDocs(collection(db, "shops", shop.id, "dailyClosings")),
       ]);
       references.push(...performance.docs.map(item => item.ref));
       references.push(...bonusSnapshots.docs.map(item => item.ref));
+      references.push(...quarterlyBonusSnapshots.docs.map(item => item.ref));
       references.push(...dailyClosings.docs.map(item => item.ref));
       references.push(shop.ref);
     }));

@@ -12,9 +12,9 @@ import { monthSchema, performanceDataSchema, shopIdSchema, shopSchema, superviso
 import { calculateTotalAchievement } from "@/lib/utils";
 import { getMonthlyRepresentatives, getOverviewPerformanceData, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceMetric, type Shop, type Supervisor } from "@/lib/types";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
-import type { DashboardCursor, DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
+import type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 
-export type { DashboardCursor, DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
+export type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 export type DashboardPeriod = { month: string; reportDate: string | null };
 
 type ShopSummary = {
@@ -85,13 +85,6 @@ const dashboardPageSchema = z.object({
   month: monthSchema,
   search: z.string().trim().max(120).default(""),
   supervisorId: supervisorIdSchema.nullable().default(null),
-  pageSize: z.number().int().min(5).max(50),
-  cursor: z.object({
-    hasData: z.boolean(),
-    value: z.union([z.string().max(120), z.number().finite()]),
-    name: z.string().min(1).max(120),
-    id: shopIdSchema,
-  }).nullable().optional(),
   sortBy: z.enum(["shop", "achievement", "forecast", "revenue"]).default("shop"),
   sortDirection: z.enum(["asc", "desc"]).default("asc"),
 });
@@ -587,7 +580,7 @@ export async function fetchDashboardInsights(month: string): Promise<DashboardSu
   return summarizeDocuments(documents.docs.filter(document => actor.shopIds.includes(document.id))).summary;
 }
 
-export async function fetchDashboardPage(input: { month: string; search?: string; supervisorId?: string | null; pageSize: number; cursor?: DashboardCursor | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
+export async function fetchDashboardPage(input: { month: string; search?: string; supervisorId?: string | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
   const actor = await getCurrentActor();
   const value = dashboardPageSchema.parse(input);
   let meta = await ensureMonth(value.month);
@@ -601,7 +594,6 @@ export async function fetchDashboardPage(input: { month: string; search?: string
   const direction = value.sortDirection;
   let pageDocuments: FirebaseFirestore.QueryDocumentSnapshot[] = [];
   let matchingDocuments: FirebaseFirestore.QueryDocumentSnapshot[] | null = null;
-  let hasMore = false;
   let total = 0;
   let searchPageEntries: SearchEntry[] | null = null;
   let searchMeta: MonthMeta | null = null;
@@ -613,10 +605,7 @@ export async function fetchDashboardPage(input: { month: string; search?: string
       const matches = indexed.entries.filter(entry => searchEntryMatches(entry, normalizedSearch)
         && (!value.supervisorId || entry.supervisorId === value.supervisorId));
       const sorted = matches.sort((left, right) => compareSearchEntries(left, right, value.sortBy, direction));
-      const cursorIndex = value.cursor ? sorted.findIndex(entry => entry.shopId === value.cursor?.id) : -1;
-      const start = cursorIndex >= 0 ? cursorIndex + 1 : 0;
-      searchPageEntries = sorted.slice(start, start + value.pageSize);
-      hasMore = start + value.pageSize < sorted.length;
+      searchPageEntries = sorted;
       total = sorted.length;
       const matchingIds = new Set(sorted.map(entry => entry.shopId));
       const representativeRows = meta.representativeRows.filter(row => matchingIds.has(row.shopId))
@@ -644,15 +633,9 @@ export async function fetchDashboardPage(input: { month: string; search?: string
       let pageQuery = baseQuery.orderBy(sortField, direction);
       if (value.sortBy !== "shop") pageQuery = pageQuery.orderBy("normalizedShopName", "asc");
       pageQuery = pageQuery.orderBy(FieldPath.documentId(), "asc");
-      if (value.cursor) {
-        pageQuery = value.sortBy === "shop"
-          ? pageQuery.startAfter(value.cursor.value, value.cursor.id)
-          : pageQuery.startAfter(value.cursor.value, value.cursor.name, value.cursor.id);
-      }
       try {
-        const pageSnapshot = await pageQuery.limit(value.pageSize + 1).get();
-        pageDocuments = pageSnapshot.docs.slice(0, value.pageSize);
-        hasMore = pageSnapshot.size > value.pageSize;
+        const pageSnapshot = await pageQuery.get();
+        pageDocuments = pageSnapshot.docs;
         const representativeRows = meta.representativeRows.filter(row => row.supervisorId === supervisorId)
           .map((row, index) => ({ ...row, rank: index + 1 }));
         supervisorMeta = {
@@ -700,19 +683,14 @@ export async function fetchDashboardPage(input: { month: string; search?: string
       const nameComparison = String(left.data().normalizedShopName).localeCompare(String(right.data().normalizedShopName));
       return nameComparison || left.id.localeCompare(right.id);
     });
-    const cursorIndex = value.cursor ? sorted.findIndex(document => document.id === value.cursor?.id) : -1;
-    const start = cursorIndex >= 0 ? cursorIndex + 1 : 0;
-    pageDocuments = sorted.slice(start, start + value.pageSize);
-    hasMore = start + value.pageSize < sorted.length;
+    pageDocuments = sorted;
     total = sorted.length;
   } else if (!searchMeta && !supervisorMeta) {
     const suffix = direction === "asc" ? "Asc" : "Desc";
     const sortField = value.sortBy === "shop" ? "normalizedShopName" : `${value.sortBy}${suffix}`;
-    let pageQuery = baseQuery.orderBy(sortField, direction).orderBy(FieldPath.documentId(), direction);
-    if (value.cursor) pageQuery = pageQuery.startAfter(value.cursor.value, value.cursor.id);
-    const pageSnapshot = await pageQuery.limit(value.pageSize + 1).get();
-    hasMore = pageSnapshot.size > value.pageSize;
-    pageDocuments = pageSnapshot.docs.slice(0, value.pageSize);
+    const pageQuery = baseQuery.orderBy(sortField, direction).orderBy(FieldPath.documentId(), direction);
+    const pageSnapshot = await pageQuery.get();
+    pageDocuments = pageSnapshot.docs;
     total = meta.summary.activeShops;
   }
   const rows = (searchPageEntries ?? pageDocuments.map(document => ({ shopId: document.id, ...document.data() } as ShopSummary))).map(summary => {
@@ -729,16 +707,9 @@ export async function fetchDashboardPage(input: { month: string; search?: string
   const scopedMeta = searchMeta ?? supervisorMeta ?? (matchingDocuments ? summarizeDocuments(matchingDocuments) : meta);
   const summary = scopedMeta.summary;
 
-  const last = pageDocuments.at(-1);
-  const lastValue = searchPageEntries ? searchPageEntries.at(-1) : last?.data() as ShopSummary | undefined;
-  const lastId = searchPageEntries ? searchPageEntries.at(-1)?.shopId : last?.id;
-  const suffix = direction === "asc" ? "Asc" : "Desc";
-  const sortField = value.sortBy === "shop" ? "normalizedShopName" : `${value.sortBy}${suffix}` as keyof SearchEntry;
-  const sortValue = !lastValue ? "" : lastValue[sortField] as string | number;
   return {
     rows,
     total,
-    nextCursor: hasMore && lastValue && lastId ? { hasData: lastValue.hasData, value: sortValue, name: lastValue.normalizedShopName, id: lastId } : null,
     summary,
     supervisorRows: scopedMeta.supervisorRows,
     representativeRows: scopedMeta.representativeRows,
