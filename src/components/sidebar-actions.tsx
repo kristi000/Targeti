@@ -38,15 +38,12 @@ import {
   type Target,
   type PerformanceMetric,
   performanceMetrics,
-  type RepPerformanceData,
-  type PerformanceData,
   Shop,
   type MetricSettings,
   getMetricOrder,
   getInitialTargets,
   getShopMetrics,
   getMonthlyRepresentatives,
-  getActivePerformanceData,
   getQuarterKey,
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
@@ -54,11 +51,7 @@ import { useShop } from "./shop-provider";
 import { usePathname } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
-import { ScrollArea } from "./ui/scroll-area";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
-import { handleSaveAchievementOverrides } from "@/app/actions/achievements";
-import { fetchShopPerformanceForMonth } from "@/app/actions/shop-data";
-import { useToast } from "@/hooks/use-toast";
 import { formatReportingMonth } from "@/lib/reporting-month";
 
 function SidebarDialogLoading() {
@@ -71,8 +64,6 @@ function SidebarDialogLoading() {
         </div>
     );
 }
-
-const EMPTY_PERFORMANCE_DATA: PerformanceData[] = [];
 
 const ManageShopsDialog = dynamic(() =>
     import("./manage-shops-dialog").then(module => module.ManageShopsDialog),
@@ -108,8 +99,7 @@ const WeightProfileManagerDialog = dynamic(() =>
 );
 
 export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
-    const { selectedShop, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, selectedDatasetId, selectedPerformanceId, isAdmin, actor } = useShop();
-    const { toast } = useToast();
+    const { selectedShop, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, selectedDatasetId, selectedPerformanceId, requestAchievementEdit, isAdmin, actor } = useShop();
     const pathname = usePathname();
     const locale = useLocale();
     const t = useTranslations("Sidebar");
@@ -118,12 +108,8 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
 
     const isDashboard = !pathname.includes('/shop/');
     const canEdit = actor.role !== "viewer";
-    const [loadedPerformance, setLoadedPerformance] = useState<{ shopId: string; month: string; data: PerformanceData[] } | null>(null);
     const latestDataMonth = Object.keys(selectedShop?.monthlyData ?? {}).sort().at(-1) ?? new Date().toISOString().slice(0, 7);
     const activeMonth = activeMonthOverride ?? (selectedDatasetId || latestDataMonth);
-    const performanceData = loadedPerformance && loadedPerformance.shopId === selectedShop?.id && loadedPerformance.month === activeMonth
-        ? loadedPerformance.data
-        : EMPTY_PERFORMANCE_DATA;
     const isHistoricalReport = !isDashboard && selectedPerformanceId !== null;
     const monthlyRepresentatives = useMemo(
         () => selectedShop ? getMonthlyRepresentatives(selectedShop, activeMonth) : [],
@@ -137,10 +123,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         ? activeMonthData?.targets ?? allMonthlyTargets[selectedShop.id] ?? getInitialTargets()
         : getInitialTargets();
     const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings: effectiveMetricSettings, metricOrder: effectiveMetricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, effectiveMetricSettings, effectiveMetricOrder]);
-    const activeImportedReport = useMemo(
-        () => getActivePerformanceData(performanceData).find(day => day.importId && day.date.startsWith(activeMonth)),
-        [performanceData, activeMonth],
-    );
 
     const [editingTargets, setEditingTargets] = useState<Target>(getInitialTargets);
     const [editingMetricSettings, setEditingMetricSettings] = useState<MetricSettings>({});
@@ -150,8 +132,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [newMetricName, setNewMetricName] = useState("");
     const [isSaving, setIsSaving] = useState(false);
     const [isTargetDialogOpen, setIsTargetDialogOpen] = useState(false);
-    const [isAchievementDialogOpen, setIsAchievementDialogOpen] = useState(false);
-    const [isLoadingAchievements, setIsLoadingAchievements] = useState(false);
     
     const [isManagementDialogOpen, setIsManagementDialogOpen] = useState(false);
     const [isSupervisorDialogOpen, setIsSupervisorDialogOpen] = useState(false);
@@ -164,38 +144,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const [editingShop, setEditingShop] = useState<Shop | null>(null);
     const weightTotal = editingMetricOrder.reduce((sum, metric) => sum + (editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric] ?? 0), 0);
     const weightsValid = Math.abs(weightTotal - 1) < 0.00001;
-
-    const getInitialRepTotals = (data: PerformanceData[]) => {
-        const totals: Record<string, Record<PerformanceMetric, number>> = {};
-        monthlyRepresentatives.forEach(rep => {
-            totals[rep.id] = metrics.reduce((acc, metric) => {
-                acc[metric] = 0;
-                return acc;
-            }, {} as Record<PerformanceMetric, number>);
-        });
-
-        getActivePerformanceData(data).forEach(day => {
-            day.reps.forEach(repData => {
-                if (totals[repData.repId]) {
-                    metrics.forEach(metric => {
-                        totals[repData.repId][metric] += repData[metric];
-                    });
-                }
-            });
-        });
-        return totals;
-    };
-    const initialRepTotals = getInitialRepTotals(performanceData);
-
-    const [editingRepTotals, setEditingRepTotals] = useState<Record<string, Record<PerformanceMetric, number>>>({});
-    const importedRepTotals = useMemo(() => {
-        const originalReps = activeImportedReport?.achievementOverride?.originalReps;
-        if (!originalReps) return {};
-        return Object.fromEntries(originalReps.map(representative => [
-            representative.repId,
-            Object.fromEntries(metrics.map(metric => [metric, representative[metric] ?? 0])),
-        ])) as Record<string, Record<PerformanceMetric, number>>;
-    }, [activeImportedReport?.achievementOverride?.originalReps, metrics]);
 
     const handleTargetChange = (metric: PerformanceMetric, value: string) => {
         setEditingTargets((prev) => ({ ...prev, [metric]: Number(value) }));
@@ -267,10 +215,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
             repId,
             Object.fromEntries(Object.entries(values).filter(([key]) => key !== metric)),
         ])) as Record<string, Target>);
-        setEditingRepTotals(current => Object.fromEntries(Object.entries(current).map(([repId, values]) => [
-            repId,
-            Object.fromEntries(Object.entries(values).filter(([key]) => key !== metric)),
-        ])) as Record<string, Record<PerformanceMetric, number>>);
     };
 
     const onOpenTargetDialog = () => {
@@ -308,89 +252,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         await refreshDataForShop(selectedShop.id);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
-    };
-
-    const handleAchievementChange = (repId: string, metric: PerformanceMetric, value: string) => {
-        setEditingRepTotals(prev => ({
-            ...prev,
-            [repId]: {
-                ...prev[repId],
-                [metric]: Number(value)
-            }
-        }));
-    };
-
-    const onOpenAchievementDialog = async () => {
-        if (!selectedShop) return;
-        setIsLoadingAchievements(true);
-        try {
-            const data = await fetchShopPerformanceForMonth(selectedShop.id, activeMonth);
-            setLoadedPerformance({ shopId: selectedShop.id, month: activeMonth, data });
-            setEditingRepTotals(getInitialRepTotals(data));
-            setIsAchievementDialogOpen(true);
-        } catch (error) {
-            toast({
-                variant: "destructive",
-                title: tDialog("achievementSaveFailed"),
-                description: error instanceof Error ? error.message : tDialog("tryAgain"),
-            });
-        } finally {
-            setIsLoadingAchievements(false);
-        }
-    };
-
-    const onSaveAchievements = async () => {
-        if (!editingRepTotals || !selectedShop) return;
-        setIsSaving(true);
-        try {
-            const namesById = new Map(monthlyRepresentatives.map(representative => [representative.id, representative.name]));
-            const repsData: RepPerformanceData[] = Object.entries(editingRepTotals).map(([repId, values]) => ({
-                repId,
-                repName: namesById.get(repId),
-                ...values,
-            }));
-
-            if (!selectedShop.monthlyData?.[activeMonth]?.representatives) {
-                const existingMonth = selectedShop.monthlyData?.[activeMonth];
-                const representativeTargets = existingMonth?.representativeTargets ?? Object.fromEntries(monthlyRepresentatives.map(rep => [
-                    rep.id,
-                    getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length),
-                ]));
-                await updateShop({
-                    ...selectedShop,
-                    monthlyData: {
-                        ...selectedShop.monthlyData,
-                        [activeMonth]: {
-                            collection: existingMonth?.collection ?? selectedShop.revenue ?? 0,
-                            targets: existingMonth?.targets ?? monthlyTargets,
-                            representatives: monthlyRepresentatives,
-                            representativeTargets,
-                            metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
-                            metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
-                        },
-                    },
-                });
-            }
-
-            const result = await handleSaveAchievementOverrides(selectedShop.id, activeMonth, repsData);
-            if (!result.success) throw new Error(result.error);
-            await refreshDataForShop(selectedShop.id);
-            toast({
-                title: tDialog("achievementsSaved"),
-                description: activeImportedReport
-                    ? tDialog("achievementsSavedOverride")
-                    : tDialog("achievementsSavedManual"),
-            });
-            setIsAchievementDialogOpen(false);
-        } catch (error) {
-            toast({
-                variant: "destructive",
-                title: tDialog("achievementSaveFailed"),
-                description: error instanceof Error ? error.message : tDialog("tryAgain"),
-            });
-        } finally {
-            setIsSaving(false);
-        }
     };
 
     const handleSaveShop = async (shop: Shop) => {
@@ -468,7 +329,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                         <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Shop actions</p>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings />{t('setMonthlyTargets')}</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenAchievementDialog} disabled={isHistoricalReport || isLoadingAchievements} title={isHistoricalReport ? "Historical imports are read-only" : undefined}>{isLoadingAchievements ? <Loader2 className="animate-spin" /> : <Pencil />}{t('editAchievements')}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => requestAchievementEdit(selectedShop.id, activeMonth)} disabled={isHistoricalReport || monthlyRepresentatives.length === 0} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil />{t('editAchievements')}</Button>
                         <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenEditShop}><Edit />{t('editShop')}</Button>
                         {isExcelImportDialogOpen && <ExcelImportDialog restrictToSelectedShop open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
@@ -611,71 +472,6 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                             </DialogContent>
                         </Dialog>
 
-                        <Dialog open={isAchievementDialogOpen} onOpenChange={setIsAchievementDialogOpen}>
-                            <DialogContent className="sm:max-w-xl">
-                            <DialogHeader>
-                                <DialogTitle>{tDialog('editAchievementsTitle', {shopName: selectedShop.name})}</DialogTitle>
-                                <DialogDescription>
-                                {tDialog('editAchievementsDescription')}
-                                </DialogDescription>
-                            </DialogHeader>
-                            <ScrollArea className="h-[48vh] pr-4">
-                            <Accordion type="single" collapsible className="w-full">
-                                {monthlyRepresentatives.map(rep => (
-                                    <AccordionItem key={rep.id} value={rep.name}>
-                                        <AccordionTrigger>{rep.name}</AccordionTrigger>
-                                        <AccordionContent>
-                                            <div className="overflow-x-auto rounded-md border">
-                                                <table className="w-full min-w-[440px] text-sm">
-                                                    <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
-                                                        <tr className="border-b">
-                                                            <th scope="col" className="px-3 py-2 text-left font-medium">{tDialog('metric')}</th>
-                                                            <th scope="col" className="px-3 py-2 text-right font-medium">{tDialog('achievement')}</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y">
-                                                        {initialRepTotals[rep.id] && getMetricOrder(effectiveMetricOrder, metrics).map((metric) => (
-                                                            <tr key={metric} className="hover:bg-muted/40">
-                                                            <th scope="row" className="px-3 py-2 text-left font-medium">
-                                                                <span>{getSavedMetricLabel(metric)}</span>
-                                                                {importedRepTotals[rep.id]?.[metric] !== undefined
-                                                                    && initialRepTotals[rep.id]?.[metric] !== importedRepTotals[rep.id][metric]
-                                                                    && <span className="mt-0.5 block text-[11px] font-normal text-amber-700 dark:text-amber-300">
-                                                                        {tDialog("userChangedFrom", { value: importedRepTotals[rep.id][metric] })}
-                                                                    </span>}
-                                                            </th>
-                                                                <td className="px-3 py-2">
-                                                                    <Input
-                                                                        id={`achievement-${rep.id}-${metric}`}
-                                                                        aria-label={getSavedMetricLabel(metric)}
-                                                                        className="ml-auto max-w-40 text-right tabular-nums"
-                                                                        type="number"
-                                                                        value={editingRepTotals[rep.id]?.[metric] ?? ''}
-                                                                        onChange={(e) => handleAchievementChange(rep.id, metric, e.target.value)}
-                                                                    />
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        </AccordionContent>
-                                    </AccordionItem>
-                                ))}
-                            </Accordion>
-                            </ScrollArea>
-                            <DialogFooter>
-                                <Button onClick={onSaveAchievements} disabled={isSaving}>
-                                {isSaving ? (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                ) : (
-                                    <Check className="mr-2 h-4 w-4" />
-                                )}
-                                {tDialog('saveChanges')}
-                                </Button>
-                            </DialogFooter>
-                            </DialogContent>
-                        </Dialog>
                     </>
                 )}
             </div>

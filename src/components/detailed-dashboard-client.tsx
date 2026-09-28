@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { ArrowLeft, Banknote, ClipboardCheck, Loader2, MessageSquareText, RotateCcw, TrendingUp, Trophy, Users } from "lucide-react";
+import { ArrowLeft, Banknote, ClipboardCheck, Loader2, MessageSquareText, Pencil, RotateCcw, Save, TrendingUp, Trophy, Users } from "lucide-react";
 import { format, isSameMonth, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
@@ -15,22 +15,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getForecastDate, projectMetrics } from "@/lib/forecast";
-import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceIndexEntry } from "@/lib/types";
+import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceIndexEntry, type PerformanceMetric, type RepPerformanceData } from "@/lib/types";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
-import { handleRevertAchievementOverrides } from "@/app/actions/achievements";
+import { handleRevertAchievementOverrides, handleSaveAchievementOverrides } from "@/app/actions/achievements";
 import { shopPerformanceIndexQueryOptions, shopPerformanceMonthQueryOptions } from "@/lib/performance-queries";
 import { useToast } from "@/hooks/use-toast";
+import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 
 const EMPTY_INDEX: PerformanceIndexEntry[] = [];
 const EMPTY_PERFORMANCE: PerformanceData[] = [];
 
 export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: string }) {
-  const { selectedShop, allMonthlyTargets, refreshDataForShop, actor, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
+  const { selectedShop, allMonthlyTargets, refreshDataForShop, updateShop, actor, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId, achievementEditRequest, clearAchievementEditRequest } = useShop();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
   const [monthSelection, setMonthSelection] = useState({ shopId: "", month: "" });
   const [versionSelection, setVersionSelection] = useState({ shopId: "", versionId: "active" });
   const [isRevertingAchievements, setIsRevertingAchievements] = useState(false);
+  const [achievementDraft, setAchievementDraft] = useState<{ key: string; reps: RepPerformanceData[] } | null>(null);
+  const [isSavingAchievements, setIsSavingAchievements] = useState(false);
   const { toast } = useToast();
 
   const now = new Date();
@@ -81,9 +84,9 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
     ? [selectedVersion]
     : getActivePerformanceData(allData).filter(day => day.date.startsWith(selectedMonth)), [allData, selectedMonth, selectedVersion]);
   const monthData = selectedShop?.monthlyData?.[selectedMonth];
-  const monthlyRepresentatives = selectedVersion
+  const monthlyRepresentatives = useMemo(() => selectedVersion
     ? selectedVersion.reps.map(rep => ({ id: rep.repId, name: rep.repName ?? rep.repId }))
-    : selectedShop ? getMonthlyRepresentatives(selectedShop, selectedMonth) : [];
+    : selectedShop ? getMonthlyRepresentatives(selectedShop, selectedMonth) : [], [selectedVersion, selectedShop, selectedMonth]);
   const monthlyTargets = selectedVersion?.targets ?? monthData?.targets ?? (selectedShop ? allMonthlyTargets[selectedShop.id] : undefined);
   const metricSettings = selectedVersion?.metricSettings ?? monthData?.metricSettings ?? selectedShop?.metricSettings;
   const metricOrder = selectedVersion?.metricOrder ?? monthData?.metricOrder ?? selectedShop?.metricOrder;
@@ -91,10 +94,40 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
   const metrics = useMemo(() => getShopMetrics(selectedShop ? { ...selectedShop, metricSettings, metricOrder } : undefined, monthlyTargets), [selectedShop, monthlyTargets, metricSettings, metricOrder]);
   const monthlyTotals = useMemo(() => getPerformanceShopActuals(performanceData, metrics), [performanceData, metrics]);
 
-  const monthlyAchievement = monthlyTargets
-    ? calculateTotalAchievement(monthlyTotals, monthlyTargets, metricSettings)
-    : 0;
   const excelReport = performanceData.find(entry => entry.importId);
+  const initialAchievementReps = useMemo<RepPerformanceData[]>(() => excelReport?.reps.map(rep => ({ ...rep })) ?? monthlyRepresentatives.map(representative => {
+    const values = metrics.reduce((totals, metric) => {
+      totals[metric] = performanceData.reduce((sum, report) => sum + (report.reps.find(rep => rep.repId === representative.id)?.[metric] ?? 0), 0);
+      return totals;
+    }, {} as Record<PerformanceMetric, number>);
+    return { repId: representative.id, repName: representative.name, ...values };
+  }), [excelReport, monthlyRepresentatives, metrics, performanceData]);
+  const draftKey = `${selectedShop?.id ?? ""}:${selectedMonth}:${excelReport ? getPerformanceDatasetId(excelReport) : "manual"}`;
+  const activeDraft = achievementDraft?.key === draftKey ? achievementDraft : null;
+  useEffect(() => {
+    if (!achievementEditRequest || performanceQuery.isPending || achievementEditRequest.shopId !== selectedShop?.id || achievementEditRequest.month !== selectedMonth) return;
+    setAchievementDraft({ key: draftKey, reps: initialAchievementReps });
+    clearAchievementEditRequest();
+    document.getElementById("edit-achievements-controls")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [achievementEditRequest, performanceQuery.isPending, selectedShop?.id, selectedMonth, draftKey, initialAchievementReps, clearAchievementEditRequest]);
+  const importedReps = excelReport?.achievementOverride?.originalReps ?? excelReport?.reps;
+  const originalRepActuals = useMemo(() => Object.fromEntries((importedReps ?? []).map(rep => [rep.repId, rep])) as Record<string, Partial<Record<PerformanceMetric, number>>>, [importedReps]);
+  const editedRepActuals = useMemo(() => activeDraft ? Object.fromEntries(activeDraft.reps.map(rep => [rep.repId, rep])) as Record<string, Record<PerformanceMetric, number>> : undefined, [activeDraft]);
+  const hasAchievementChanges = Boolean(activeDraft && activeDraft.reps.some(rep => {
+    const saved = initialAchievementReps.find(item => item.repId === rep.repId);
+    return saved && metrics.some(metric => (rep[metric] ?? 0) !== (saved[metric] ?? 0));
+  }));
+  const displayedShopActuals = useMemo(() => activeDraft && hasAchievementChanges ? metrics.reduce((totals, metric) => {
+    totals[metric] = activeDraft.reps.reduce((sum, rep) => sum + (rep[metric] ?? 0), 0);
+    return totals;
+  }, {} as Record<PerformanceMetric, number>) : monthlyTotals, [activeDraft, hasAchievementChanges, metrics, monthlyTotals]);
+  const originalShopActuals = excelReport?.achievementOverride?.originalShopActuals
+    ?? (excelReport?.achievementOverride && importedReps
+      ? metrics.reduce((totals, metric) => ({ ...totals, [metric]: importedReps.reduce((sum, rep) => sum + (rep[metric] ?? 0), 0) }), {} as Record<PerformanceMetric, number>)
+      : excelReport ? getPerformanceShopActuals([excelReport], metrics) : undefined);
+  const monthlyAchievement = monthlyTargets
+    ? calculateTotalAchievement(displayedShopActuals, monthlyTargets, metricSettings)
+    : 0;
   const revenue = excelReport?.revenue ?? monthData?.collection ?? selectedShop?.revenue;
   const qualityMetrics = excelReport?.qualityMetrics ?? monthData?.qualityMetrics;
   const isFinal = excelReport?.reportType === "completedMonth";
@@ -102,11 +135,51 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
   const hasForecast = !isFinal && (excelReport?.reportType === "midMonth" || (isSameMonth(parseISO(`${selectedMonth}-01`), now) && performanceData.length >= 2));
   const forecastData = useMemo(() => {
     if (!hasForecast) return undefined;
-    return projectMetrics(monthlyTotals, metrics, forecastDate);
-  }, [hasForecast, monthlyTotals, metrics, forecastDate]);
+    return projectMetrics(displayedShopActuals, metrics, forecastDate);
+  }, [hasForecast, displayedShopActuals, metrics, forecastDate]);
   const totalPerformanceForecast = forecastData
     ? calculateTotalAchievement(forecastData, monthlyTargets, metricSettings)
     : null;
+
+  const adjustAchievement = (repId: string, metric: PerformanceMetric, delta: -1 | 1) => {
+    setAchievementDraft(current => current?.key === draftKey ? {
+      ...current,
+      reps: current.reps.map(rep => rep.repId === repId ? { ...rep, [metric]: Math.max(0, (rep[metric] ?? 0) + delta) } : rep),
+    } : current);
+  };
+
+  const saveAchievements = async () => {
+    if (!selectedShop || !monthlyTargets || !activeDraft || !hasAchievementChanges) return;
+    setIsSavingAchievements(true);
+    try {
+      if (!selectedShop.monthlyData?.[selectedMonth]?.representatives) {
+        const existingMonth = selectedShop.monthlyData?.[selectedMonth];
+        await updateShop({
+          ...selectedShop,
+          monthlyData: {
+            ...selectedShop.monthlyData,
+            [selectedMonth]: {
+              collection: existingMonth?.collection ?? selectedShop.revenue ?? 0,
+              targets: existingMonth?.targets ?? monthlyTargets,
+              representatives: monthlyRepresentatives,
+              representativeTargets: existingMonth?.representativeTargets ?? Object.fromEntries(monthlyRepresentatives.map(rep => [rep.id, getEqualRepresentativeTargets(monthlyTargets, metrics, monthlyRepresentatives.length)])),
+              metricSettings: existingMonth?.metricSettings ?? selectedShop.metricSettings,
+              metricOrder: existingMonth?.metricOrder ?? selectedShop.metricOrder,
+            },
+          },
+        });
+      }
+      const result = await handleSaveAchievementOverrides(selectedShop.id, selectedMonth, activeDraft.reps);
+      if (!result.success) throw new Error(result.error);
+      await refreshDataForShop(selectedShop.id);
+      setAchievementDraft(null);
+      toast({ title: t("achievementsSaved") });
+    } catch (error) {
+      toast({ variant: "destructive", title: t("achievementSaveFailed"), description: error instanceof Error ? error.message : t("tryAgain") });
+    } finally {
+      setIsSavingAchievements(false);
+    }
+  };
 
   const revertAchievements = async () => {
     if (!selectedShop || !excelReport?.achievementOverride) return;
@@ -157,6 +230,12 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
       />
       <div className="flex-1 overflow-y-auto p-2 sm:p-3 md:p-4">
         <div className="mx-auto w-full max-w-6xl space-y-2 sm:space-y-3">
+          {actor.role !== "viewer" && !selectedVersion && monthlyRepresentatives.length > 0 && (
+            <div id="edit-achievements-controls" className="flex scroll-mt-4 flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2">
+              <p className="text-xs text-muted-foreground">{activeDraft ? t("editAchievementsHint") : t("editAchievementsAvailable")}</p>
+              {activeDraft ? <div className="flex gap-2"><Button type="button" size="sm" variant="outline" disabled={isSavingAchievements} onClick={() => setAchievementDraft(null)}>{t("cancel")}</Button><Button type="button" size="sm" disabled={isSavingAchievements || !hasAchievementChanges} onClick={() => void saveAchievements()}>{isSavingAchievements ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}{t("saveAchievements")}</Button></div> : <Button type="button" size="sm" variant="outline" onClick={() => setAchievementDraft({ key: draftKey, reps: initialAchievementReps })}><Pencil className="mr-1.5 h-4 w-4" />{t("editAchievements")}</Button>}
+            </div>
+          )}
           {excelReport?.achievementOverride && (
             <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -168,7 +247,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
                 </p>
               </div>
               {actor.role !== "viewer" && (
-                <Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-400 bg-background/80" onClick={() => void revertAchievements()} disabled={isRevertingAchievements}>
+                <Button type="button" variant="outline" size="sm" className="shrink-0 border-amber-400 bg-background/80" onClick={() => void revertAchievements()} disabled={isRevertingAchievements || Boolean(activeDraft)}>
                   {isRevertingAchievements ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}
                   {t("revertToImported")}
                 </Button>
@@ -185,7 +264,8 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
             </div>
             <CardContent className="space-y-2 px-2 pb-2 sm:space-y-3 sm:px-3 sm:pb-3">
               <PerformanceTable
-                actuals={monthlyTotals}
+                actuals={displayedShopActuals}
+                originalActuals={originalShopActuals}
                 targets={monthlyTargets}
                 metricSettings={metricSettings}
                 metricOrder={metrics}
@@ -201,7 +281,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
 
           {qualityMetrics && <Card className="overflow-hidden"><CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3"><CardTitle className="text-sm sm:text-base">Quality indicators</CardTitle><CardDescription className="hidden sm:block">Reported separately from weighted target metrics</CardDescription></CardHeader><CardContent className="grid grid-cols-3 gap-2 px-3 pb-3 sm:gap-3 sm:px-4 sm:pb-4 xl:grid-cols-1 2xl:grid-cols-3">{qualityMetrics.checklistScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><ClipboardCheck className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Checklist</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.checklistScore.toFixed(1)}</p></div>}{qualityMetrics.npsScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><MessageSquareText className="h-3.5 w-3.5 shrink-0" />NPS</p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsScore.toFixed(1)}</p></div>}{qualityMetrics.npsResponses !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><Users className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Responses</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsResponses}</p></div>}</CardContent></Card>}
 
-          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} representativeTargets={representativeTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} forecastDate={hasForecast ? forecastDate : undefined} forecastAsOf={hasForecast ? format(forecastDate, "PP") : undefined} isFinal={isFinal} /> : null}
+          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} representativeTargets={representativeTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} forecastDate={hasForecast ? forecastDate : undefined} forecastAsOf={hasForecast ? format(forecastDate, "PP") : undefined} isFinal={isFinal} editedActuals={editedRepActuals} originalActuals={excelReport ? originalRepActuals : undefined} onAdjustActual={activeDraft ? adjustAchievement : undefined} /> : null}
           </div>
         </div>
       </div>

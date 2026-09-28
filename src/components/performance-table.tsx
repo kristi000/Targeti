@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useCallback, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, ArrowUpDown, Gauge, RotateCcw } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Gauge, Minus, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { METRIC_CONFIG } from "@/lib/data";
@@ -54,6 +54,8 @@ type PerformanceTableProps = {
   storageKey: string;
   caption: string;
   compact?: boolean;
+  originalActuals?: Partial<Record<PerformanceMetric, number>>;
+  onAdjustActual?: (metric: PerformanceMetric, delta: -1 | 1) => void;
 };
 
 export function PerformanceTable({
@@ -67,6 +69,8 @@ export function PerformanceTable({
   storageKey,
   caption,
   compact = false,
+  originalActuals,
+  onAdjustActual,
 }: PerformanceTableProps) {
   const t = useTranslations("DetailedDashboard");
   const tMetric = useTranslations("Metrics");
@@ -195,6 +199,8 @@ export function PerformanceTable({
 
   const renderValues = (metric: PerformanceMetric) => {
     const actual = actuals[metric] ?? 0;
+    const original = originalActuals?.[metric];
+    const difference = original === undefined ? 0 : actual - original;
     const target = targets[metric] ?? 0;
     const achievement = target > 0 ? (actual / target) * 100 : 0;
     const forecast = forecasts?.[metric];
@@ -206,7 +212,10 @@ export function PerformanceTable({
       <tr key={metric} className={cn("hover:bg-muted/40", compact ? "h-6" : "h-11")}>
         <th scope="row" title={compact ? undefined : metricLabel(metric)} className={cn("text-left font-medium", compact ? "px-0.5 py-0 sm:px-1" : "px-2 py-0")}><span className="flex min-w-0 items-center gap-0.5 sm:gap-1.5"><Icon className="h-3 w-3 shrink-0 text-muted-foreground sm:h-3.5 sm:w-3.5" />{compact ? metricName(metric) : <span className="truncate">{metricLabel(metric)}</span>}</span></th>
         <td title={compact ? undefined : String(Math.round(target))} className={cn("text-right tabular-nums text-muted-foreground", compact ? "truncate px-0.5 py-0 sm:px-1" : "px-3 py-0")}>{numericValue(String(Math.round(target)))}</td>
-        <td title={compact ? undefined : String(actual)} className={cn("text-right tabular-nums", compact ? "truncate px-0.5 py-0 sm:px-1" : "px-2 py-0")}>{numericValue(String(actual))}</td>
+        <td className={cn("text-right tabular-nums", compact ? "px-0.5 py-0 sm:px-1" : "px-2 py-0")}>
+          {onAdjustActual ? <Popover><PopoverTrigger asChild><button type="button" className="block w-full text-right font-medium text-primary underline decoration-dotted underline-offset-2" aria-label={t("adjustActual", { metric: metricLabel(metric), value: actual })}>{actual}</button></PopoverTrigger><PopoverContent align="end" className="w-auto p-2"><div className="flex items-center gap-2"><Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label={t("decreaseActual", { metric: metricLabel(metric) })} disabled={actual <= 0} onClick={() => onAdjustActual(metric, -1)}><Minus className="h-4 w-4" /></Button><span className="min-w-10 text-center font-semibold tabular-nums">{actual}</span><Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label={t("increaseActual", { metric: metricLabel(metric) })} onClick={() => onAdjustActual(metric, 1)}><Plus className="h-4 w-4" /></Button></div>{original !== undefined && <p className="mt-2 text-xs text-muted-foreground">{t("excelOriginal", { value: original })}</p>}</PopoverContent></Popover> : numericValue(String(actual))}
+          {original !== undefined && difference !== 0 && <Popover><PopoverTrigger asChild><button type="button" className="block w-full text-right text-[9px] font-semibold text-amber-700 dark:text-amber-300 sm:text-[10px]" aria-label={t("excelDifferenceDetails", { original, difference: difference > 0 ? `+${difference}` : String(difference) })}>{difference > 0 ? `+${difference}` : difference}</button></PopoverTrigger><PopoverContent align="end" className="w-auto p-2 text-xs"><p>{t("excelOriginal", { value: original })}</p><p>{t("excelDifference", { value: difference > 0 ? `+${difference}` : String(difference) })}</p></PopoverContent></Popover>}
+        </td>
         <td className={cn("text-right font-semibold tabular-nums", compact ? "truncate px-0.5 py-0 sm:px-1" : "px-2 py-0", statusStyles(achievement))}>
           {numericValue(achievementLabel)}
         </td>

@@ -31,6 +31,9 @@ type ShopContextType = {
   setSelectedDatasetId: (datasetId: string) => void;
   selectedPerformanceId: string | null;
   setSelectedPerformanceId: (performanceId: string | null) => void;
+  achievementEditRequest: { shopId: string; month: string; id: number } | null;
+  requestAchievementEdit: (shopId: string, month: string) => void;
+  clearAchievementEditRequest: () => void;
 };
 
 const ShopContext = createContext<ShopContextType | undefined>(undefined);
@@ -45,6 +48,11 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   const [loading, setLoading] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState("");
   const [selectedPerformanceId, setSelectedPerformanceId] = useState<string | null>(null);
+  const [achievementEditRequest, setAchievementEditRequest] = useState<{ shopId: string; month: string; id: number } | null>(null);
+  const requestAchievementEdit = useCallback((shopId: string, month: string) => {
+    setAchievementEditRequest(current => ({ shopId, month, id: (current?.id ?? 0) + 1 }));
+  }, []);
+  const clearAchievementEditRequest = useCallback(() => setAchievementEditRequest(null), []);
 
   const { toast } = useToast();
   const t = useTranslations("Toasts");
@@ -191,7 +199,10 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     setSelectedDatasetId,
     selectedPerformanceId,
     setSelectedPerformanceId,
-  }), [actor, shops, supervisors, weightProfiles, selectedShop, handleSetSelectedShop, addShop, updateShop, deleteShop, allMonthlyTargets, loading, refreshDataForShop, refreshShopDirectory, loadInitialData, selectedDatasetId, selectedPerformanceId]);
+    achievementEditRequest,
+    requestAchievementEdit,
+    clearAchievementEditRequest,
+  }), [actor, shops, supervisors, weightProfiles, selectedShop, handleSetSelectedShop, addShop, updateShop, deleteShop, allMonthlyTargets, loading, refreshDataForShop, refreshShopDirectory, loadInitialData, selectedDatasetId, selectedPerformanceId, achievementEditRequest, requestAchievementEdit, clearAchievementEditRequest]);
   
   return (
     <ShopContext.Provider value={contextValue}>
