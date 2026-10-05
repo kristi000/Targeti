@@ -2,7 +2,7 @@ import { getMetricWeight } from "@/lib/data";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
 import { getMetricOrder, getQuarterKey, getShopTargetMetrics, type DailyClosingDebt, type DailyClosingTotals, type MetricSettings, type PerformanceMetric, type Shop, type Target } from "@/lib/types";
 
-export const DEFAULT_EXCHANGE_RATE = 92;
+export const DEFAULT_EXCHANGE_RATE = 85;
 
 export const CASH_DENOMINATIONS = [
   { key: "lek_10000", label: "10,000", value: 10_000 },
