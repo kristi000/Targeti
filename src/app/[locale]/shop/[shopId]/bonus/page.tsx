@@ -11,7 +11,7 @@ import { getShopDirectory } from "@/lib/server/dashboard-loaders";
 import { notFound } from "next/navigation";
 import { monthSchema, quarterSchema } from "@/lib/persistence-schemas";
 
-export default async function BonusPage({ params, searchParams }: { params: Promise<{ shopId: string }>; searchParams: Promise<{ month?: string | string[]; view?: string | string[]; kind?: string | string[]; period?: string | string[] }> }) {
+export default async function BonusPage({ params, searchParams }: { params: Promise<{ shopId: string }>; searchParams: Promise<{ month?: string | string[]; quarter?: string | string[]; view?: string | string[]; kind?: string | string[]; period?: string | string[] }> }) {
   const { shopId } = await params;
   const parameters = await searchParams;
   const directory = await getShopDirectory();
@@ -23,6 +23,8 @@ export default async function BonusPage({ params, searchParams }: { params: Prom
   const index = await queryClient.fetchQuery(shopPerformanceIndexQueryOptions(shopId));
   const months = getPerformanceMonthsByImportRecency(index, Object.keys(shop.monthlyData ?? {}));
   const requestedMonth = Array.isArray(parameters.month) ? parameters.month[0] : parameters.month;
+  const parsedQuarter = quarterSchema.safeParse(Array.isArray(parameters.quarter) ? parameters.quarter[0] : parameters.quarter);
+  const requestedQuarter = parsedQuarter.success ? parsedQuarter.data : undefined;
   const requestedView = Array.isArray(parameters.view) ? parameters.view[0] : parameters.view;
   const initialView = requestedView === "quarterly" || requestedView === "history" ? requestedView : "monthly";
   const requestedKind = Array.isArray(parameters.kind) ? parameters.kind[0] : parameters.kind;
@@ -45,7 +47,7 @@ export default async function BonusPage({ params, searchParams }: { params: Prom
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <BonusDashboardRoute shopId={shopId} requestedMonth={requestedMonth && months.includes(requestedMonth) ? requestedMonth : undefined} initialView={initialView} historyDetail={historyDetail} />
+      <BonusDashboardRoute shopId={shopId} requestedMonth={requestedMonth && months.includes(requestedMonth) ? requestedMonth : undefined} requestedQuarter={requestedQuarter} initialView={initialView} historyDetail={historyDetail} />
     </HydrationBoundary>
   );
 }

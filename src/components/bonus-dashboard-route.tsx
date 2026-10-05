@@ -10,7 +10,7 @@ import { BonusHistoryClient } from "@/components/bonus-history-client";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useShop } from "@/components/shop-provider";
 
-export function BonusDashboardRoute({ shopId, requestedMonth, initialView = "monthly", historyDetail }: { shopId: string; requestedMonth?: string; initialView?: "monthly" | "quarterly" | "history"; historyDetail?: { kind: "monthly" | "quarterly"; period: string } }) {
+export function BonusDashboardRoute({ shopId, requestedMonth, requestedQuarter, initialView = "monthly", historyDetail }: { shopId: string; requestedMonth?: string; requestedQuarter?: string; initialView?: "monthly" | "quarterly" | "history"; historyDetail?: { kind: "monthly" | "quarterly"; period: string } }) {
   const { shops, selectedShop, setSelectedShop } = useShop();
   const t = useTranslations("DetailedDashboard");
   const routeShop = shops.find(shop => shop.id === shopId);
@@ -28,7 +28,7 @@ export function BonusDashboardRoute({ shopId, requestedMonth, initialView = "mon
   }} className="flex h-full flex-col">
     <div className="border-b px-3 py-2 md:px-4"><TabsList aria-label={t("bonusPage")}><TabsTrigger value="monthly">{t("monthlyBonuses")}</TabsTrigger><TabsTrigger value="quarterly">{t("quarterlyBonus")}</TabsTrigger><TabsTrigger value="history">{t("bonusHistory")}</TabsTrigger></TabsList></div>
     <TabsContent value="monthly" className="mt-0 min-h-0 flex-1"><BonusDashboardClient key={`${shopId}:${requestedMonth ?? ""}`} requestedMonth={requestedMonth} /></TabsContent>
-    <TabsContent value="quarterly" className="mt-0 min-h-0 flex-1"><QuarterlyBonusClient key={shopId} /></TabsContent>
+    <TabsContent value="quarterly" className="mt-0 min-h-0 flex-1"><QuarterlyBonusClient key={`${shopId}:${requestedQuarter ?? requestedMonth ?? ""}`} requestedMonth={requestedMonth} requestedQuarter={requestedQuarter} /></TabsContent>
     <TabsContent value="history" className="mt-0 min-h-0 flex-1"><BonusHistoryClient shopId={shopId} detail={historyDetail} /></TabsContent>
   </Tabs>;
   return (
