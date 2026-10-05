@@ -13,6 +13,43 @@ const finiteNonNegativeNumber = z.number().finite().nonnegative();
 const finiteMoney = z.number().finite().nonnegative().max(1_000_000_000);
 
 export const shopIdSchema = documentIdSchema;
+const attendanceTextSchema = z.string().refine(value => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(value), "Invalid attendance text");
+export const attendanceDateSchema = isoDateSchema.refine(value => {
+  const date = new Date(`${value}T12:00:00Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}, "Invalid calendar date");
+export const attendanceMonthSchema = monthSchema.refine(value => Number(value.slice(5)) >= 1 && Number(value.slice(5)) <= 12, "Invalid month");
+export const attendanceStaffSchema = z.object({
+  id: documentIdSchema,
+  name: z.string().trim().min(1).max(120).pipe(attendanceTextSchema),
+  role: z.enum(["SM", "SR", "IE"]),
+}).strict();
+export const attendanceEntrySchema = z.object({
+  staffId: documentIdSchema,
+  code: z.enum(["1", "2", "1+2", "P", "LV", "R", "OTHER"]),
+  note: z.string().trim().max(200).pipe(attendanceTextSchema).default(""),
+  originalText: z.string().max(250).pipe(attendanceTextSchema).optional(),
+}).strict().refine(value => value.code !== "OTHER" || value.note.length > 0, "Other attendance requires a note");
+export const attendanceDaySchema = z.object({
+  date: attendanceDateSchema,
+  entries: z.array(attendanceEntrySchema).max(50),
+  state: z.enum(["planned", "confirmed"]),
+  updatedAt: z.string().datetime(),
+  updatedBy: documentIdSchema,
+}).strict().refine(value => new Set(value.entries.map(entry => entry.staffId)).size === value.entries.length, "Duplicate staff entry");
+export const attendanceRosterSchema = z.array(attendanceStaffSchema).min(1).max(50).refine(value => new Set(value.map(staff => staff.id)).size === value.length, "Duplicate staff ID");
+export const attendanceMonthConfigSchema = z.object({
+  staff: attendanceRosterSchema,
+  revision: z.number().int().nonnegative(),
+  template: z.object({
+    id: documentIdSchema,
+    sheet: z.string().min(1).max(31),
+    month: attendanceMonthSchema,
+    sourceMonth: attendanceMonthSchema.optional(),
+    fileName: z.string().min(1).max(255),
+    columns: z.array(z.object({ column: z.number().int().min(3).max(26), staffId: documentIdSchema }).strict()).max(24),
+  }).strict().optional(),
+}).strict();
 export const weightProfileIdSchema = documentIdSchema;
 export const supervisorIdSchema = documentIdSchema;
 export const supervisorSchema = z.object({
@@ -167,6 +204,7 @@ const dailyClosingTotalsSchema = z.object({
 }).strict();
 
 export const dailyClosingSchema = dailyClosingInputSchema.omit({ shopId: true }).extend({
+  attendance: z.array(attendanceEntrySchema).max(50).optional(),
   id: documentIdSchema.optional(),
   status: z.enum(["draft", "finalized"]),
   metricWeights: z.record(metricKeySchema, finiteNonNegativeNumber),
@@ -285,7 +323,7 @@ export const quarterlyBonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),
+  action: z.enum(["attendance_saved", "excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),

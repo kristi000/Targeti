@@ -281,6 +281,7 @@ export type QuarterlyBonusSnapshot = {
 };
 
 export type ActivityAction =
+  | "attendance_saved"
   | "excel_imported"
   | "excel_import_undone"
   | "excel_import_removed"
@@ -353,6 +354,7 @@ export type DailyClosingTotals = {
 };
 
 export type DailyClosing = {
+  attendance?: import("@/lib/attendance").AttendanceEntry[];
   id?: string;
   date: string;
   status: DailyClosingStatus;

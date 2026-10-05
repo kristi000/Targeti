@@ -32,6 +32,20 @@ Admin text search reads `dashboardSummaries/{month}/metadata/searchIndex`, a com
 
 Imports are recorded before completion in the `imports` collection and their data, history, status, and activity event are committed atomically. Only the latest import for each month is `active`; earlier retained versions are `superseded`. Monitor imports that remain outside `active`, `superseded`, `undone`, or `removed` states.
 
+## Attendance and original-format Excel export
+
+Each shop has a Presence & Shifts page at `/shop/{shopId}/attendance`. The selected month's roster includes SM (manager), SR, and IE staff. SM names receive a manager label and visual emphasis. Staff IDs, names and roles are saved per month, preserving historical rosters independently of performance imports. Attendance does not alter performance, bonus eligibility, payroll or cash calculations.
+
+`shops/{shopId}/attendanceMonths/{month}` stores the roster, revision, and private template mapping. `attendanceDays/{date}` stores entries, planned/confirmed state and audit timestamps. Month reads are limited to 31 attendance and 31 closing documents. Saves validate Zod schemas and actor/shop access, check both the month revision and individual day versions, and commit records with an activity event. The existing catch-all Firestore rule denies direct client reads/writes to these new collections; access is through authorized server actions/routes. No new rules or composite indexes are required.
+
+Daily Closing shares the same attendance records. Attendance has explicit Save/Cancel controls, separate from financial autosave. Save or cancel attendance edits before finalizing. Finalization confirms attendance and copies its entries into the closing atomically; a finalized closing locks attendance editing in both views. An administrator can use the existing Reopen flow to unlock it. Missing attendance produces a reminder without blocking older closing workflows. Roster names/roles cannot change while the month contains finalized closings.
+
+An editor uploads an XLSX workbook of up to 2 MB, reviews staff mapping and the selected sheet, and approves the import. The workbook must belong to the selected shop and use monthly Albanian worksheet names including a year, DATA in B5, SM/SR/IE roles on row 5, staff names on row 6, and calendar dates in column B from row 7. Imports replace the selected month's attendance only after revision checks and reject locked dates. Nonstandard attendance text is retained verbatim until edited. An existing sheet can also be attached as a blank template for a different empty month; exporting then adds that new month while preserving all original sheets.
+
+Original files are stored privately in `attendanceTemplates/{version}/chunks` beneath the shop, with chunks smaller than Firestore's document limit. Historical template versions are retained until shop/all-data deletion, which also recursively removes all attendance collections. Never commit template workbooks, log staff/medical notes, or include workbook contents in error monitoring. Export uses the original XLSX package and selectively changes mapped cells, preserving styles, conditional formatting, merges, dimensions and print settings. A larger roster requires a matching template; columns are never silently inserted. Verify exported files in Excel and compare print preview before production rollout. Structural package comparisons alone do not establish native Excel rendering.
+
+Before application deployment, run typecheck, lint and build, then smoke-test import/mapping, month/week edits, Daily Closing Save/Cancel/finalize/reopen, concurrent saves, viewer restrictions, mobile horizontal scrolling, and original-format export in staging. This feature introduces no Firebase rules/index deployment. Application deployment and production template import remain separate operations.
+
 ## Deployment checklist
 
 1. Confirm the target environment and Firebase project ID.

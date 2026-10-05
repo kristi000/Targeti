@@ -27,6 +27,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
   const debts = useTranslations("MonthlyDebts");
   const unsubscribes = useTranslations("MonthlyUnsubscribes");
   const cell = useTranslations("MonthlyCell");
+  const attendance = useTranslations("Attendance");
   const restricted = useTranslations("RestrictedAccess");
   const accessQuery = useRestrictedAccess();
   const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
@@ -41,6 +42,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
     { path: basePath, href: `${basePath}${monthQuery}`, icon: BarChart3, label: t("performancePage") },
     { path: `${basePath}/bonus`, href: `${basePath}/bonus${monthQuery}`, icon: BadgeDollarSign, label: t("bonusPage") },
     { path: closingPath, href: closingPath, icon: ClipboardCheck, label: t("closingPage") },
+    { path: `${basePath}/attendance`, href: `${basePath}/attendance${monthQuery}`, icon: CalendarRange, label: attendance("title") },
   ];
   const protectedItems: { view: Exclude<ClosingView, "daily">; icon: typeof CalendarRange; label: string }[] = [
     { view: "monthly", icon: CalendarRange, label: monthly("title") },

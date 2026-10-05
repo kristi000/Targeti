@@ -27,6 +27,8 @@ import {
 
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
 import { Header } from "@/components/header";
+import { AttendanceEditor } from "@/components/attendance-editor";
+import { attendanceQueryKey } from "@/lib/attendance";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
 import { useShop } from "@/components/shop-provider";
@@ -84,6 +86,8 @@ export function DailyClosingClient() {
   const view = requestedView === "daily" || hasRestrictedAccess ? requestedView : "daily";
   const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"));
   const t = useTranslations("DailyClosing");
+  const attendanceTranslations = useTranslations("Attendance");
+  const [attendanceDirty, setAttendanceDirty] = useState(false);
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
   const { selectedShop, actor, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
@@ -227,6 +231,7 @@ export function DailyClosingClient() {
 
   const applySavedClosing = useCallback((data: DailyClosing, savedShopId: string) => {
     const savedMonth = data.date.slice(0, 7);
+    void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(savedShopId, savedMonth) });
     void queryClient.invalidateQueries({ queryKey: monthlyClosingQueryKey(savedShopId, savedMonth) });
     void queryClient.invalidateQueries({ queryKey: monthlyDebtsQueryKey(savedShopId, savedMonth) });
     void queryClient.invalidateQueries({ queryKey: monthlyUnsubscribesQueryKey(savedShopId, savedMonth) });
@@ -277,6 +282,7 @@ export function DailyClosingClient() {
   };
 
   const finalize = async () => {
+    if (attendanceDirty) return;
     if (saveInFlightRef.current) return;
     const requestScope = activeScope;
     saveInFlightRef.current = true;
@@ -372,7 +378,7 @@ export function DailyClosingClient() {
   return <div className="flex h-full flex-col">
     <Header title={`${view === "daily" ? t("pageTitle") : view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={
       view === "daily"
-        ? <Input aria-label={t("date")} type="date" className="h-9 w-32 sm:w-40" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />
+        ? <Input aria-label={t("date")} type="date" disabled={attendanceDirty} className="h-9 w-32 sm:w-40" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />
         : <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-32 sm:w-44" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />
     } />
     <main className="flex-1 overflow-y-auto p-2 md:p-3">
@@ -398,6 +404,8 @@ export function DailyClosingClient() {
         {isFinalized && <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{t("lockedMessage")}</span>{actor.role === "admin" && <Button size="sm" variant="outline" className="h-7" disabled={submitting !== null} onClick={() => void reopen()}><RotateCcw className="mr-1.5 h-3.5 w-3.5" />{submitting === "reopen" ? t("reopening") : t("reopen")}</Button>}</div>}
 
         {loading ? <div className="rounded-lg border p-10 text-center text-sm text-muted-foreground">{t("loading")}</div> : <>
+          <Card><CardContent className="p-3"><AttendanceEditor key={activeScope} shopId={shopId} month={date.slice(0, 7)} date={date} locked={isFinalized} canEdit={actor.role !== "viewer"} onDirtyChange={setAttendanceDirty} /></CardContent></Card>
+          {attendanceDirty && <p className="text-xs text-amber-700 dark:text-amber-300">{attendanceTranslations("saveBeforeFinalize")}</p>}
           <div className="grid items-start gap-2.5 xl:grid-cols-[minmax(0,1.5fr)_minmax(22rem,1fr)]">
             <div className="min-w-0 space-y-2.5">
               <div className="grid items-start gap-2.5 md:grid-cols-[minmax(15rem,0.5fr)_minmax(18rem,0.65fr)]">
@@ -430,7 +438,7 @@ export function DailyClosingClient() {
 
           </div>
 
-          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
+          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || attendanceDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
         </>}
         </div>
         <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>

@@ -5,7 +5,7 @@ import { collection, doc, documentId, getDoc, getDocs, orderBy, query, runTransa
 import { getCurrentActor, requireAdmin, requireEditorForShops, requireShopAccess } from "@/lib/access";
 import { calculateDailyClosing, getDailyClosingMetricConfig } from "@/lib/daily-closing";
 import { closingMonthSchema, monthlyDebtsInputSchema, monthlyUnsubscribesInputSchema, type MonthlyCellSummary, type MonthlyClosingSummary, type MonthlyDebtsPage, type MonthlyUnsubscribesPage } from "@/lib/monthly-closing";
-import { dailyClosingInputSchema, dailyClosingSchema, debtMutationSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
+import { attendanceDaySchema, attendanceMonthConfigSchema, dailyClosingInputSchema, dailyClosingSchema, debtMutationSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
 import { type DailyClosing, type PerformanceMetric, type Shop } from "@/lib/types";
 import { createActivity, mutationError, omitId, recordActivity, toFirestoreData } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
@@ -65,6 +65,12 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
   let closing: DailyClosing | null = null;
   await runTransaction(db, async transaction => {
     const existingSnapshot = await transaction.get(reference);
+    const attendanceRef = doc(db, "shops", value.shopId, "attendanceDays", value.date);
+    const attendanceSnapshot = status === "finalized" ? await transaction.get(attendanceRef) : null;
+    const attendance = attendanceSnapshot?.exists ? attendanceDaySchema.parse(attendanceSnapshot.data()) : null;
+    const attendanceMonthRef = doc(db, "shops", value.shopId, "attendanceMonths", value.date.slice(0, 7));
+    const attendanceMonthSnapshot = status === "finalized" ? await transaction.get(attendanceMonthRef) : null;
+    const attendanceMonth = attendanceMonthSnapshot?.exists ? attendanceMonthConfigSchema.parse(attendanceMonthSnapshot.data()) : null;
     const existing = existingSnapshot.exists ? parseDailyClosingDocument(existingSnapshot.id, existingSnapshot.data()) : null;
     if (existing?.status === "finalized") throw new Error("CLOSING_FINALIZED");
     if ((existing?.updatedAt ?? null) !== value.expectedUpdatedAt) throw new Error("CLOSING_CONFLICT");
@@ -75,6 +81,7 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
     closing = dailyClosingSchema.parse({
       date: value.date,
       status,
+      ...(status === "finalized" && attendance ? { attendance: attendance.entries } : {}),
       cashCounts: value.cashCounts,
       exchangeRate: value.exchangeRate,
       cell: value.cell,
@@ -95,6 +102,8 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
       ...(status === "finalized" ? { finalizedAt: now, finalizedBy: actor.id } : {}),
     }) as unknown as DailyClosing;
     transaction.set(reference, toFirestoreData(closing));
+    if (attendance) transaction.set(attendanceRef, { ...attendance, state: "confirmed", updatedAt: now, updatedBy: actor.id });
+    if (attendanceMonth) transaction.set(attendanceMonthRef, { ...attendanceMonth, revision: attendanceMonth.revision + 1 });
     transaction.set(activity.reference, activity.data);
   });
   if (!closing) throw new Error("CLOSING_SAVE_FAILED");
