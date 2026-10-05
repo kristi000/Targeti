@@ -30,13 +30,18 @@ export const attendanceEntrySchema = z.object({
   note: z.string().trim().max(200).pipe(attendanceTextSchema).default(""),
   originalText: z.string().max(250).pipe(attendanceTextSchema).optional(),
 }).strict().refine(value => value.code !== "OTHER" || value.note.length > 0, "Other attendance requires a note");
-export const attendanceDaySchema = z.object({
+export const attendanceDaySchema = z.preprocess(value => {
+  // Discard the obsolete status on legacy stored documents.
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const day = { ...value } as Record<string, unknown>;
+  delete day.state;
+  return day;
+}, z.object({
   date: attendanceDateSchema,
   entries: z.array(attendanceEntrySchema).max(50),
-  state: z.enum(["planned", "confirmed"]),
   updatedAt: z.string().datetime(),
   updatedBy: documentIdSchema,
-}).strict().refine(value => new Set(value.entries.map(entry => entry.staffId)).size === value.entries.length, "Duplicate staff entry");
+}).strict().refine(value => new Set(value.entries.map(entry => entry.staffId)).size === value.entries.length, "Duplicate staff entry"));
 export const attendanceRosterSchema = z.array(attendanceStaffSchema).min(1).max(50).refine(value => new Set(value.map(staff => staff.id)).size === value.length, "Duplicate staff ID");
 export const attendanceMonthConfigSchema = z.object({
   staff: attendanceRosterSchema,

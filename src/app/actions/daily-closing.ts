@@ -102,7 +102,7 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
       ...(status === "finalized" ? { finalizedAt: now, finalizedBy: actor.id } : {}),
     }) as unknown as DailyClosing;
     transaction.set(reference, toFirestoreData(closing));
-    if (attendance) transaction.set(attendanceRef, { ...attendance, state: "confirmed", updatedAt: now, updatedBy: actor.id });
+    if (attendance) transaction.set(attendanceRef, { ...attendance, updatedAt: now, updatedBy: actor.id });
     if (attendanceMonth) transaction.set(attendanceMonthRef, { ...attendanceMonth, revision: attendanceMonth.revision + 1 });
     transaction.set(activity.reference, activity.data);
   });

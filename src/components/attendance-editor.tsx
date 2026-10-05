@@ -7,11 +7,10 @@ import { fetchAttendanceMonth, handleSaveAttendance } from "@/app/actions/attend
 import { ATTENDANCE_CODES, attendanceQueryKey, monthDates, type AttendanceEntry, type AttendanceMonth } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
-type DraftDay = { entries: AttendanceEntry[]; state: "planned" | "confirmed"; expectedUpdatedAt: string | null };
+type DraftDay = { entries: AttendanceEntry[]; expectedUpdatedAt: string | null };
 type Draft = { revision: number; days: Record<string, DraftDay> };
 type Props = { shopId: string; month: string; canEdit: boolean; date?: string; locked?: boolean; onDirtyChange?: (dirty: boolean) => void };
 export function AttendanceEditor(props: Props) {
@@ -20,6 +19,11 @@ export function AttendanceEditor(props: Props) {
   if (query.isPending) return <p role="status" className="p-4 text-sm text-muted-foreground">{t("loading")}</p>;
   if (query.isError) return <div role="alert" className="p-4"><p>{t("loadFailed")}</p><Button variant="outline" onClick={() => void query.refetch()}>{t("reload")}</Button></div>;
   return <AttendanceGrid {...props} data={query.data} />;
+}
+export function AttendanceManagerName({ shopId, month }: Pick<Props, "shopId" | "month">) {
+  const t = useTranslations("Attendance");
+  const query = useQuery({ queryKey: attendanceQueryKey(shopId, month), queryFn: () => fetchAttendanceMonth(shopId, month) });
+  return <>{query.data?.config.staff.filter(person => person.role === "SM").map(manager => <span key={manager.id} className="inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary dark:text-purple-300"><BriefcaseBusiness className="h-4 w-4" />{manager.name}<span className="text-xs font-normal">{t("manager")}</span></span>)}</>;
 }
 function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, data }: Props & { data: AttendanceMonth }) {
   const t = useTranslations("Attendance");
@@ -45,7 +49,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
   const dates = date ? [date] : monthDates(month);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tirane", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const isLocked = (day: string) => locked || data.lockedDates.includes(day);
-  const dayValue = (day: string): DraftDay => draft?.days[day] ?? { entries: data.days.find(item => item.date === day)?.entries ?? [], state: data.days.find(item => item.date === day)?.state ?? "planned", expectedUpdatedAt: data.days.find(item => item.date === day)?.updatedAt ?? null };
+  const dayValue = (day: string): DraftDay => draft?.days[day] ?? { entries: data.days.find(item => item.date === day)?.entries ?? [], expectedUpdatedAt: data.days.find(item => item.date === day)?.updatedAt ?? null };
   const changeDays = (updates: Record<string, DraftDay>) => {
     setUndo(previous => [...previous.slice(-9), draft]);
     setDraft(previous => ({ revision: previous?.revision ?? data.config.revision, days: { ...previous?.days, ...updates } }));
@@ -79,7 +83,6 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
   return <div className="space-y-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-2"><CalendarDays className="h-4 w-4 text-primary" /><span className="text-sm font-semibold">{date ? t("staffToday") : t("monthlyRoster")}</span>{managers.map(manager => <span key={manager.id} className="inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary dark:text-purple-300"><BriefcaseBusiness className="h-4 w-4" />{manager.name}<span className="text-xs font-normal">{t("manager")}</span></span>)}</div>
-      <Badge variant="outline">{draft ? t("unsaved") : t("savedStatus")}</Badge>
     </div>
     {!date && canEdit && <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/20 p-2">
       <span className="text-xs text-muted-foreground">{t("selectedDates", { count: selected.length })}</span>
@@ -112,7 +115,6 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
         <thead className="sticky top-0 z-[2] bg-muted"><tr>
           <th className="sticky left-0 z-[3] min-w-40 border-b border-r bg-muted px-3 py-2 text-left">{t("date")}</th>
           {data.config.staff.map(person => <th key={person.id} className={cn("min-w-36 max-w-52 border-b border-r px-3 py-2 text-center", person.role === "SM" && "bg-primary/10")}><div className={cn("flex items-center justify-center gap-1 font-semibold", person.role === "SM" && "text-primary dark:text-purple-300")}>{person.role === "SM" && <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />}<span>{person.name}</span></div><span className="text-[11px] font-normal text-muted-foreground">{person.role === "SM" ? t("manager") : person.role}</span></th>)}
-          <th className="border-b px-3 py-2 text-left">{t("state")}</th>
         </tr></thead>
         <tbody>{dates.map(day => {
           const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
@@ -132,13 +134,12 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
                 {editNote || entry?.code === "OTHER" && !entry.note ? <Input aria-label={t("noteFor", { name: person.name })} className="mt-1 h-8 max-w-44 text-xs" disabled={readOnly} maxLength={200} value={entry?.note ?? ""} onChange={event => changeEntry(day, person.id, entry?.code ?? "OTHER", event.target.value)} /> : <button type="button" disabled={readOnly || !entry} className="mt-0.5 block w-full max-w-44 truncate text-[11px] text-muted-foreground disabled:cursor-default" title={entry?.note || t("addNote")} onClick={() => setEditing({ date: day, staffId: person.id })}>{entry?.note || (entry && !readOnly ? t("addNote") : "")}</button>}
               </td>;
             })}
-            <td className="px-3 py-2"><select aria-label={t("stateFor", { date: formatDate(day) })} className="h-9 rounded border bg-background px-2 text-xs" disabled={readOnly} value={isLocked(day) ? "locked" : current.state} onChange={event => changeDays({ [day]: { ...current, state: event.target.value as DraftDay["state"] } })}>{isLocked(day) ? <option value="locked">{t("locked")}</option> : <><option value="planned">{t("planned")}</option><option value="confirmed">{t("confirmed")}</option></>}</select></td>
           </tr>;
         })}</tbody>
         {!date && <tfoot><tr className="bg-muted/40"><th className="sticky left-0 bg-muted px-3 py-2 text-left text-xs">{t("totals")}</th>{data.config.staff.map(person => {
           const entries = dates.flatMap(day => dayValue(day).entries.filter(entry => entry.staffId === person.id));
           return <td key={person.id} className="px-3 py-2 text-center text-xs">{["1", "2", "P", "LV", "R"].map(code => `${code}: ${entries.filter(entry => entry.code === code || entry.code === "1+2" && (code === "1" || code === "2")).length}`).join(" · ")}</td>;
-        })}<td /></tr></tfoot>}
+        })}</tr></tfoot>}
       </table>
     </div>
     <p className="text-xs text-muted-foreground">{date ? t("dailyHint") : t("gridHint")}</p>

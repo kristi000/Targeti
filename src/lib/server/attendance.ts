@@ -2,15 +2,14 @@ import "server-only";
 import { z } from "zod";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { requireEditorForShops, requireShopAccess } from "@/lib/access";
-import { attendanceDaySchema, attendanceMonthConfigSchema, attendanceMonthSchema, attendanceRosterSchema, attendanceStaffSchema, dailyClosingSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
+import { attendanceDateSchema, attendanceEntrySchema, attendanceDaySchema, attendanceMonthConfigSchema, attendanceMonthSchema, attendanceRosterSchema, attendanceStaffSchema, dailyClosingSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
 import { getMonthlyRepresentatives, type Shop } from "@/lib/types";
 import { monthDates, type AttendanceConfig, type AttendanceDay, type AttendanceMonth } from "@/lib/attendance";
 import { createActivity, toFirestoreData } from "@/app/actions/shared";
 
 export const attendanceChangesSchema = z.array(z.object({
-  date: attendanceDaySchema.innerType().shape.date,
-  entries: attendanceDaySchema.innerType().shape.entries,
-  state: z.enum(["planned", "confirmed"]),
+  date: attendanceDateSchema,
+  entries: z.array(attendanceEntrySchema).max(50).refine(entries => new Set(entries.map(entry => entry.staffId)).size === entries.length, "Duplicate staff entry"),
   expectedUpdatedAt: z.string().datetime().nullable(),
 }).strict()).max(31).refine(changes => new Set(changes.map(change => change.date)).size === changes.length, "Duplicate date");
 
@@ -83,7 +82,7 @@ export async function saveAttendance(options: SaveOptions) {
     const config = attendanceMonthConfigSchema.parse({ staff, revision: current.revision + 1, template: options.template ?? current.template });
     transaction.set(ref.collection("attendanceMonths").doc(month), toFirestoreData(config));
     for (const { change } of snapshots) {
-      const day: AttendanceDay = attendanceDaySchema.parse({ date: change.date, entries: change.entries, state: change.state, updatedAt: now, updatedBy: actor.id });
+      const day: AttendanceDay = attendanceDaySchema.parse({ date: change.date, entries: change.entries, updatedAt: now, updatedBy: actor.id });
       transaction.set(ref.collection("attendanceDays").doc(change.date), day);
     }
     if (options.templateBytes && config.template) {
@@ -109,7 +108,7 @@ export async function loadAttendanceTemplate(shopId: string, config: AttendanceC
 
 export function attendanceImportChanges(month: string, days: Array<{ date: string; entries: AttendanceDay["entries"] }>, loaded: AttendanceMonth) {
   const dates = new Set(monthDates(month));
-  return days.filter(day => dates.has(day.date)).map(day => ({ ...day, state: "planned" as const,
+  return days.filter(day => dates.has(day.date)).map(day => ({ ...day,
     expectedUpdatedAt: loaded.days.find(existing => existing.date === day.date)?.updatedAt ?? null }));
 }
 
