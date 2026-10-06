@@ -52,6 +52,12 @@ History is available from both Presence & Shifts and the Daily Closing attendanc
 
 Before application deployment, run typecheck, lint and build, then smoke-test import/mapping, month/week edits, Daily Closing Save/Cancel/finalize/reopen, concurrent saves, viewer restrictions, mobile horizontal scrolling, and original-format export in staging. This feature introduces no Firebase rules/index deployment. Application deployment and production template import remain separate operations.
 
+## Dependency security maintenance
+
+`braces` is temporarily overridden with the exact `@dieub/braces-depth-guard@3.0.3-pn.3` release because upstream `braces@3.0.3` has no published fix for [GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm). The fork's published runtime was compared with upstream 3.0.3: it adds a 100-level parsing/traversal depth cap, option validation and parent-cycle rejection without changing the public entry point or adding runtime dependencies. The lockfile pins the reviewed artifact's integrity. This preserves Tailwind 3 and the existing glob consumers; normal glob expansion and deeply nested input rejection must be checked after changing this override. It bounds nesting, not all possible resource consumption.
+
+Track the [upstream fix](https://github.com/micromatch/braces/issues/70) and replace this temporary fork with an upstream patched release when available. Do not remove the override merely to silence npm resolution warnings. Run a clean Node 22/npm 10 install, `npm run typecheck`, `npm run lint`, `npm run build`, and `npm run audit` after dependency changes. The unused `patch-package` dependency was removed; there is no postinstall patch application.
+
 ## Deployment checklist
 
 1. Confirm the target environment and Firebase project ID.
