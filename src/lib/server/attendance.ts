@@ -10,6 +10,7 @@ import { attendanceHistorySchema, attendanceHistoryDetailSchema, attendanceHisto
 import { attendanceDayCorrections, attendanceRosterCorrections } from "@/lib/attendance-history";
 import { documentId } from "@/lib/firebase-admin";
 import type { AttendanceHistoryDetail } from "@/lib/attendance";
+import { exportAttendanceWorkbook } from "@/lib/attendance-workbook";
 
 export const attendanceChangesSchema = z.array(z.object({
   date: attendanceDateSchema,
@@ -83,10 +84,10 @@ export async function saveAttendance(options: SaveOptions) {
     });
     const rosterCorrection = attendanceRosterCorrections(current.staff, staff);
     if (rosterCorrection) details.push(rosterCorrection);
-    const templateChanged = Boolean(options.templateBytes);
+    const templateChanged = Boolean(options.templateBytes) || Boolean(options.template && JSON.stringify(options.template) !== JSON.stringify(current.template));
     if (details.length || templateChanged) {
       const history = attendanceHistorySchema.parse({ revision: config.revision, createdAt: now, actorId: actor.id, actorName: actor.name,
-        source: options.templateBytes ? "import" : options.staff ? "roster" : "edit",
+        source: templateChanged ? "import" : options.staff ? "roster" : "edit",
         dates: details.flatMap(detail => detail.kind === "day" ? [detail.date] : []), rosterChanged: Boolean(rosterCorrection), templateChanged });
       const historyRef = ref.collection("attendanceMonths").doc(month).collection("history").doc(String(config.revision).padStart(16, "0"));
       transaction.create(historyRef, history);
@@ -139,6 +140,35 @@ export async function loadAttendanceTemplate(shopId: string, config: AttendanceC
   const metadata = z.object({ chunks: z.number().int().min(1).max(12) }).passthrough().parse(snapshot.data());
   const chunks = await Promise.all(Array.from({ length: metadata.chunks }, (_, index) => ref.collection("chunks").doc(String(index)).get()));
   return Buffer.from(chunks.map(chunk => z.object({ data: z.string().max(250000) }).parse(chunk.data()).data).join(""), "base64");
+}
+
+export const reuseAttendanceTemplateSchema = z.object({
+  shopId: shopIdSchema, month: attendanceMonthSchema, sourceMonth: attendanceMonthSchema,
+  expectedRevision: z.number().int().nonnegative(),
+}).strict().refine(value => value.month !== value.sourceMonth, "Choose a different source month");
+
+export async function reuseAttendanceTemplate(input: z.infer<typeof reuseAttendanceTemplateSchema>) {
+  const { shopId, month, sourceMonth, expectedRevision } = reuseAttendanceTemplateSchema.parse(input);
+  await requireEditorForShops([shopId]);
+  const [source, target] = await Promise.all([loadAttendanceMonth(shopId, sourceMonth), loadAttendanceMonth(shopId, month)]);
+  if (target.config.revision !== expectedRevision || target.config.template) throw new Error("conflict");
+  if (!source.config.template) throw new Error("noTemplate");
+  const normalizeName = (name: string) => name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+  const columns = source.config.template.columns.map(column => {
+    const original = source.config.staff.find(person => person.id === column.staffId);
+    if (!original) throw new Error("invalidTemplate");
+    const byId = target.config.staff.find(person => person.id === original.id);
+    const matches = byId ? [byId] : target.config.staff.filter(person => normalizeName(person.name) === normalizeName(original.name));
+    if (matches.length !== 1) throw new Error("templateCapacity");
+    return { column: column.column, staffId: matches[0].id };
+  });
+  const mappedIds = new Set(columns.map(column => column.staffId));
+  if (mappedIds.size !== columns.length || target.config.staff.some(person => !mappedIds.has(person.id))) throw new Error("templateCapacity");
+  const template = { ...source.config.template, month, sourceMonth: source.config.template.sourceMonth ?? sourceMonth, columns };
+  const bytes = await loadAttendanceTemplate(shopId, source.config);
+  // Check that this layout can export the target calendar and roster before attaching it.
+  exportAttendanceWorkbook(bytes, { ...target, config: { ...target.config, template } });
+  return saveAttendance({ shopId, month, expectedRevision, changes: [], template });
 }
 
 export function attendanceImportChanges(month: string, days: Array<{ date: string; entries: AttendanceDay["entries"] }>, loaded: AttendanceMonth) {

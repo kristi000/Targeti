@@ -76,7 +76,11 @@ export const attendanceHistoryDetailSchema = z.discriminatedUnion("kind", [
   }).strict(),
   z.object({
     kind: z.literal("roster"),
-    changes: z.array(z.object({ before: attendanceStaffSchema.nullable(), after: attendanceStaffSchema.nullable() }).strict()).max(100),
+    changes: z.array(z.object({
+      before: attendanceStaffSchema.nullable(), after: attendanceStaffSchema.nullable(),
+      beforePosition: z.number().int().min(1).max(50).optional(),
+      afterPosition: z.number().int().min(1).max(50).optional(),
+    }).strict()).max(100),
   }).strict(),
 ]);
 export const weightProfileIdSchema = documentIdSchema;

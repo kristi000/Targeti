@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
 import { Download, FileSpreadsheet, LoaderCircle, Plus, Users } from "lucide-react";
-import { fetchAttendanceMonth, handleSaveAttendance } from "@/app/actions/attendance";
+import { fetchAttendanceMonth, handleSaveAttendance, handleReuseAttendanceTemplate } from "@/app/actions/attendance";
 import { attendanceQueryKey, monthDates, type AttendanceConfig, type AttendanceStaff } from "@/lib/attendance";
 import type { WorkbookSheet } from "@/lib/attendance-workbook";
 import { useShop } from "@/components/shop-provider";
@@ -20,14 +20,31 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
   const t = useTranslations("Attendance");
   const locale = useLocale();
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { shops, actor, setSelectedShop, setSelectedDatasetId } = useShop();
   const shop = shops.find(item => item.id === shopId);
   const [month, setMonth] = useState(initialMonth);
   const [dialog, setDialog] = useState<"staff" | "template" | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [reusing, setReusing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const query = useQuery({ queryKey: attendanceQueryKey(shopId, month), queryFn: () => fetchAttendanceMonth(shopId, month) });
+  const previousMonthDate = new Date(`${month}-01T12:00:00Z`);
+  previousMonthDate.setUTCMonth(previousMonthDate.getUTCMonth() - 1);
+  const previousMonth = previousMonthDate.toISOString().slice(0, 7);
+  const previousMonthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(previousMonthDate);
+  const reuseTemplate = async () => {
+    if (!query.data) return;
+    setReusing(true); setError(null);
+    try {
+      const result = await handleReuseAttendanceTemplate({ shopId, month, sourceMonth: previousMonth, expectedRevision: query.data.config.revision });
+      if (!result.success) { setError(result.error); return; }
+      queryClient.setQueryData(attendanceQueryKey(shopId, month), result.data);
+      toast({ title: t("templateReused") });
+    } catch { setError("saveFailed"); } finally { setReusing(false); }
+  };
   useEffect(() => { if (shop) setSelectedShop(shop); setSelectedDatasetId(month); }, [shop, month, setSelectedShop, setSelectedDatasetId]);
   const download = async () => {
     setExporting(true); setError(null);
@@ -44,19 +61,19 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
     <Header title={`${shop?.name ?? ""} · ${t("title")}`} />
     <main className="space-y-4 p-3 md:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm font-medium">{t("month")}<Input type="month" value={month} min="2000-01" max="2099-12" disabled={dirty || exporting || dialog !== null} className="w-44" onChange={event => {
+        <label className="flex items-center gap-2 text-sm font-medium">{t("month")}<Input type="month" value={month} min="2000-01" max="2099-12" disabled={dirty || exporting || reusing || dialog !== null} className="w-44" onChange={event => {
           if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) return;
           setMonth(event.target.value); setError(null); router.replace(`/${locale}/shop/${shopId}/attendance?month=${event.target.value}`, { scroll: false });
         }} /></label>
         <div className="flex flex-wrap gap-2">
           <AttendanceHistoryButton key={`${shopId}:${month}`} shopId={shopId} month={month} />
-          {actor.role !== "viewer" && <><Button variant="outline" size="sm" disabled={dirty || !query.data} onClick={() => setDialog("staff")}><Users className="mr-1.5 h-4 w-4" />{t("manageStaff")}</Button><Button variant="outline" size="sm" disabled={dirty || !query.data} onClick={() => setDialog("template")}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("importTemplate")}</Button></>}
-          <Button size="sm" disabled={dirty || exporting || !query.data?.config.template} onClick={() => void download()}>{exporting ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}{t("exportOriginal")}</Button>
+          {actor.role !== "viewer" && <><Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => setDialog("staff")}><Users className="mr-1.5 h-4 w-4" />{t("manageStaff")}</Button><Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => setDialog("template")}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("importTemplate")}</Button>{!query.data?.config.template && <Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => void reuseTemplate()}>{reusing ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-4 w-4" />}{t("usePreviousTemplate", { month: previousMonthLabel })}</Button>}</>}
+          <Button size="sm" disabled={dirty || exporting || reusing || !query.data?.config.template} onClick={() => void download()}>{exporting ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}{t("exportOriginal")}</Button>
         </div>
       </div>
       <p className="text-xs text-muted-foreground">{query.data?.config.template ? t("templateAttached", { name: query.data.config.template.fileName }) : t("templateHint")}</p>
       {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
-      <AttendanceEditor key={`${shopId}:${month}`} shopId={shopId} month={month} canEdit={actor.role !== "viewer"} onDirtyChange={setDirty} />
+      <AttendanceEditor key={`${shopId}:${month}`} shopId={shopId} month={month} canEdit={actor.role !== "viewer" && !reusing} onDirtyChange={setDirty} />
       {dialog === "staff" && query.data && <StaffDialog shopId={shopId} month={month} config={query.data.config} onClose={() => setDialog(null)} />}
       {dialog === "template" && query.data && <TemplateDialog shopId={shopId} month={month} onClose={() => setDialog(null)} />}
     </main>

@@ -1,5 +1,5 @@
 "use server";
-import { loadAttendanceMonth, saveAttendance, attendanceChangesSchema, loadAttendanceHistory, loadAttendanceHistoryDetails } from "@/lib/server/attendance";
+import { loadAttendanceMonth, saveAttendance, attendanceChangesSchema, loadAttendanceHistory, loadAttendanceHistoryDetails, reuseAttendanceTemplate, reuseAttendanceTemplateSchema } from "@/lib/server/attendance";
 import { z } from "zod";
 import type { AttendanceStaff } from "@/lib/attendance";
 import { attendanceMonthSchema, attendanceRosterSchema, shopIdSchema } from "@/lib/persistence-schemas";
@@ -22,6 +22,14 @@ export async function handleSaveAttendance(input: { shopId: string; month: strin
   try { return { success: true as const, data: await saveAttendance(attendanceSaveSchema.parse(input)) }; }
   catch (error) {
     const known = ["conflict", "staffInUse", "UNAUTHENTICATED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"];
+    return { success: false as const, error: error instanceof Error && known.includes(error.message) ? error.message : "saveFailed" };
+  }
+}
+
+export async function handleReuseAttendanceTemplate(input: z.infer<typeof reuseAttendanceTemplateSchema>) {
+  try { return { success: true as const, data: await reuseAttendanceTemplate(reuseAttendanceTemplateSchema.parse(input)) }; }
+  catch (error) {
+    const known = ["conflict", "noTemplate", "templateCapacity", "invalidTemplate", "UNAUTHENTICATED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"];
     return { success: false as const, error: error instanceof Error && known.includes(error.message) ? error.message : "saveFailed" };
   }
 }
