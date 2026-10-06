@@ -505,6 +505,7 @@
   },
   "Attendance": {
     "title": "Prezenca dhe turnet",
+    "presenceTitle": "Prezenca",
     "minimize": "Minimizo",
     "expand": "Zgjero",
     "history": {

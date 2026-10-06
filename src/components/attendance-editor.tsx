@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, ChevronDown, LoaderCircle, Plus, RotateCcw, Save } from "lucide-react";
+import { ArrowLeft, ArrowRight, BriefcaseBusiness, ChevronDown, LoaderCircle, Plus, RotateCcw, Save, X } from "lucide-react";
 import { fetchAttendanceMonth, handleSaveAttendance } from "@/app/actions/attendance";
 import { ATTENDANCE_CODES, attendanceQueryKey, monthDates, type AttendanceEntry, type AttendanceMonth, type AttendanceStaff } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
@@ -103,16 +103,21 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
     } catch { setError("saveFailed"); }
     finally { setBusy(false); }
   };
+  const displayName = (name: string) => {
+    if (!date) return name;
+    const first = name.trim().split(/[\s._]+/)[0] ?? "";
+    return first.charAt(0).toLocaleUpperCase(locale) + first.slice(1);
+  };
   const formatDate = (day: string) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
   const invalidDraft = staff.some(person => !person.name.trim()) || Object.values(draft?.days ?? {}).some(day => day.entries.some(entry => entry.code === "OTHER" && !entry.note.trim()));
   const editControls = canEdit && <div className="flex flex-wrap items-center gap-1">
     {!date && <Button size="sm" className="h-7 px-2 text-xs" variant="outline" disabled={busy || staff.length >= 50} onClick={() => changeStaff([...staff, { id: crypto.randomUUID(), name: "", role: "SR" }])}><Plus className="mr-1.5 h-4 w-4" />{t("addStaff")}</Button>}
-    <Button size="sm" className="h-7 px-2 text-xs" variant="ghost" disabled={busy || !undo.length} onClick={() => { setDraft(undo[undo.length - 1]); setUndo(previous => previous.slice(0, -1)); }}><RotateCcw className="mr-1.5 h-4 w-4" />{t("undo")}</Button>
-    <Button size="sm" className="h-7 px-2 text-xs" variant="outline" disabled={busy || !draft} onClick={() => { setDraft(null); setUndo([]); setError(null); void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(shopId, month) }); }}>{t("cancel")}</Button>
-    <Button size="sm" className="h-7 px-2 text-xs" disabled={busy || !draft || invalidDraft} onClick={() => void save()}>{busy ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}{t("save")}</Button>
+    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("undo")} title={t("undo")} variant="ghost" disabled={busy || !undo.length} onClick={() => { setDraft(undo[undo.length - 1]); setUndo(previous => previous.slice(0, -1)); }}><RotateCcw className={date ? "h-4 w-4" : "mr-1.5 h-4 w-4"} />{!date && t("undo")}</Button>
+    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("cancel")} title={t("cancel")} variant="outline" disabled={busy || !draft} onClick={() => { setDraft(null); setUndo([]); setError(null); void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(shopId, month) }); }}>{date ? <X className="h-4 w-4" /> : t("cancel")}</Button>
+    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("save")} title={t("save")} disabled={busy || !draft || invalidDraft} onClick={() => void save()}>{busy ? <LoaderCircle className={cn("h-4 w-4 animate-spin", !date && "mr-1.5")} /> : <Save className={cn("h-4 w-4", !date && "mr-1.5")} />}{!date && t("save")}</Button>
   </div>;
   return <div className="space-y-2">
-    {canEdit && <div className="flex flex-wrap items-center justify-end gap-1">{editControls}</div>}
+    {canEdit && <div className={date ? "absolute right-12 top-2" : "flex flex-wrap items-center justify-end gap-1"}>{editControls}</div>}
     {!date && canEdit && <div className="flex flex-wrap items-center gap-2 rounded-sm border bg-muted/20 p-2">
       <span className="text-xs text-muted-foreground">{t("selectedDates", { count: selected.length })}</span>
       <select aria-label={t("applyTo")} value={bulkStaffId} disabled={busy} onChange={event => setBulkStaffId(event.target.value)} className="h-9 max-w-52 rounded-md border bg-background px-2 text-sm"><option value="">{t("allStaff")}</option>{staff.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select>
@@ -149,10 +154,10 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
       </div>
     </details>
     <div className="max-h-[65vh] overflow-auto">
-      <table aria-label={date ? t("staffToday") : t("monthlyRoster")} style={{ width: 176 + staff.length * 144 }} className="table-fixed border-separate border-spacing-0 bg-background text-xs">
-        <colgroup><col className="w-8" /><col className="w-36" />{staff.map(person => <col key={person.id} />)}</colgroup>
+      <table aria-label={date ? t("staffToday") : t("monthlyRoster")} style={{ width: date ? "100%" : 176 + staff.length * 144, minWidth: date ? staff.length * 64 : undefined }} className="table-fixed border-separate border-spacing-0 bg-background text-xs">
+        <colgroup>{!date && <><col className="w-8" /><col className="w-36" /></>}{staff.map(person => <col key={person.id} />)}</colgroup>
         <thead className="sticky top-0 z-20">
-          <tr className="h-5 bg-slate-100 text-[11px] font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+          {!date && <tr className="h-5 bg-slate-100 text-[11px] font-normal text-slate-500 dark:bg-slate-800 dark:text-slate-300">
             <th aria-hidden="true" className="sticky left-0 z-30 border-b border-r border-[var(--sheet-line)] bg-slate-100 dark:bg-slate-800" />
             <th scope="col" className="sticky left-8 z-30 border-b border-r border-[var(--sheet-line)] bg-slate-100 font-normal dark:bg-slate-800">A</th>
             {staff.map((person, index) => <th key={person.id} scope="col" className="border-b border-r border-[var(--sheet-line)] font-normal">
@@ -162,15 +167,15 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
                 {!date && canEdit && <Button type="button" size="icon" variant="ghost" className="h-6 w-6 rounded-none" aria-label={t("moveColumnRight", { name: person.name || t("staffName") })} title={t("moveColumnRight", { name: person.name || t("staffName") })} disabled={busy || index === staff.length - 1} onClick={() => moveStaff(index, 1)}><ArrowRight className="h-3 w-3" /></Button>}
               </div>
             </th>)}
-          </tr>
+          </tr>}
           <tr className="bg-slate-50 dark:bg-slate-900">
-            <th aria-hidden="true" className="sticky left-0 z-30 border-b border-r border-[var(--sheet-line)] bg-slate-100 font-normal text-slate-500 dark:bg-slate-800">1</th>
-            <th scope="col" className="sticky left-8 z-30 border-b border-r border-[var(--sheet-line)] bg-slate-50 px-3 text-left font-semibold dark:bg-slate-900">{t("date")}</th>
-            {staff.map((person, index) => <th key={person.id} scope="col" className={cn("w-36 min-w-36 border-b border-r border-[var(--sheet-line)] p-0 text-center", person.role === "SM" && "bg-emerald-50 dark:bg-emerald-950")}>
+            {!date && <th aria-hidden="true" className="sticky left-0 z-30 border-b border-r border-[var(--sheet-line)] bg-slate-100 font-normal text-slate-500 dark:bg-slate-800">1</th>}
+            {!date && <th scope="col" className="sticky left-8 z-30 border-b border-r border-[var(--sheet-line)] bg-slate-50 px-3 text-left font-semibold dark:bg-slate-900">{t("date")}</th>}
+            {staff.map((person, index) => <th key={person.id} scope="col" className={cn("border-b border-r border-[var(--sheet-line)] p-0 text-center", !date && person.role === "SM" && "bg-emerald-50 dark:bg-emerald-950")}>
               {!date && canEdit ? <>
                 <input aria-label={t("staffNameColumn", { column: columnLetter(index + 1) })} title={person.name || t("staffName")} placeholder={t("staffName")} value={person.name} maxLength={120} disabled={busy} className="h-7 w-full min-w-0 border-0 bg-transparent px-2 text-center font-semibold outline-none focus:bg-background focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-emerald-600 disabled:opacity-70" onChange={event => changeStaff(staff.map(item => item.id === person.id ? { ...item, name: event.target.value } : item))} />
                 <select aria-label={t("staffRoleColumn", { column: columnLetter(index + 1) })} title={person.role === "SM" ? t("manager") : person.role} value={person.role} disabled={busy} className="h-6 w-full border-0 border-t border-[var(--sheet-line)] bg-transparent px-2 text-center text-[11px] font-normal outline-none focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-emerald-600" onChange={event => changeStaff(staff.map(item => item.id === person.id ? { ...item, role: event.target.value as AttendanceStaff["role"] } : item))}><option value="SM">SM · {t("manager")}</option><option value="SR">SR</option><option value="IE">IE</option></select>
-              </> : <div className="px-1.5 py-1"><div className="flex items-center justify-center gap-1 font-semibold">{person.role === "SM" && <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />}<span className="max-w-32 truncate" title={person.name}>{person.name}</span></div><span className="text-[11px] font-normal text-muted-foreground">{person.role === "SM" ? `SM · ${t("manager")}` : person.role}</span></div>}
+              </> : date ? <div className="truncate px-2 py-1 font-medium">{displayName(person.name)}</div> : <div className="px-1.5 py-1"><div className="flex items-center justify-center gap-1 font-semibold">{person.role === "SM" && <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />}<span className="max-w-32 truncate" title={person.name}>{person.name}</span></div><span className="text-[11px] font-normal text-muted-foreground">{person.role === "SM" ? `SM · ${t("manager")}` : person.role}</span></div>}
             </th>)}
           </tr>
         </thead>
@@ -179,16 +184,16 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
           const current = dayValue(day);
           const readOnly = !canEdit || busy;
           return <tr key={day} className={cn("group", weekday === 6 && "bg-slate-50 dark:bg-slate-900/50", weekday === 0 && "bg-orange-50 dark:bg-orange-950/30", selected.includes(day) && "bg-emerald-50 dark:bg-emerald-950/40", day === today && "bg-emerald-50/60 dark:bg-emerald-950/20")}>
-            <td aria-hidden="true" className={cn("sticky left-0 z-10 border-b border-r border-[var(--sheet-line)] bg-slate-100 px-2 text-center tabular-nums text-slate-500 dark:bg-slate-800", weekday === 0 && "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200")}>{index + 2}</td>
-            <th scope="row" className={cn("sticky left-8 z-10 border-b border-r border-[var(--sheet-line)] bg-background px-2 py-1 text-left font-normal whitespace-nowrap", weekday === 0 && "border-l-2 border-l-orange-400 bg-orange-50 font-medium text-orange-800 dark:bg-orange-950 dark:text-orange-200", selected.includes(day) && "bg-emerald-50 dark:bg-emerald-950", day === today && "font-semibold text-emerald-700 dark:text-emerald-300")}><div className="flex items-center gap-2">{!date && canEdit && <input type="checkbox" className="accent-emerald-600" aria-label={t("selectDate", { date: formatDate(day) })} disabled={readOnly} checked={selected.includes(day)} onChange={event => setSelected(previous => event.target.checked ? [...previous, day] : previous.filter(value => value !== day))} />}<span>{formatDate(day)}{day === today && <span className="ml-1 text-[10px]">{t("today")}</span>}</span></div></th>
+            {!date && <td aria-hidden="true" className={cn("sticky left-0 z-10 border-b border-r border-[var(--sheet-line)] bg-slate-100 px-2 text-center tabular-nums text-slate-500 dark:bg-slate-800", weekday === 0 && "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200")}>{index + 2}</td>}
+            {!date && <th scope="row" className={cn("sticky left-8 z-10 border-b border-r border-[var(--sheet-line)] bg-background px-2 py-1 text-left font-normal whitespace-nowrap", weekday === 0 && "border-l-2 border-l-orange-400 bg-orange-50 font-medium text-orange-800 dark:bg-orange-950 dark:text-orange-200", selected.includes(day) && "bg-emerald-50 dark:bg-emerald-950", day === today && "font-semibold text-emerald-700 dark:text-emerald-300")}><div className="flex items-center gap-2">{!date && canEdit && <input type="checkbox" className="accent-emerald-600" aria-label={t("selectDate", { date: formatDate(day) })} disabled={readOnly} checked={selected.includes(day)} onChange={event => setSelected(previous => event.target.checked ? [...previous, day] : previous.filter(value => value !== day))} />}<span>{formatDate(day)}{day === today && <span className="ml-1 text-[10px]">{t("today")}</span>}</span></div></th>}
             {staff.map(person => {
               const entry = current.entries.find(value => value.staffId === person.id);
               return <td key={person.id} className={cn("border-b border-r border-[var(--sheet-line)] p-0 text-center focus-within:relative focus-within:z-[5] focus-within:outline focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-emerald-600", person.role === "SM" && "bg-emerald-50/30 dark:bg-emerald-950/20", weekday === 0 && "bg-orange-50 dark:bg-orange-950/30", entry && attendanceColors[entry.code])}>
-                <select aria-label={t("chooseFor", { name: person.name, date: formatDate(day) })} title={entry ? t(`codes.${entry.code}`) : t("notEntered")} value={entry?.code ?? ""} disabled={readOnly} className="h-7 w-full appearance-none rounded-none border-0 bg-transparent px-2 text-center text-xs font-medium text-inherit outline-none hover:bg-black/[0.03] focus:bg-black/[0.03] disabled:opacity-100 dark:hover:bg-white/[0.04] dark:focus:bg-white/[0.04]" onChange={event => {
+                <select aria-label={t("chooseFor", { name: displayName(person.name), date: formatDate(day) })} title={entry ? t(`codes.${entry.code}`) : t("notEntered")} value={entry?.code ?? ""} disabled={readOnly} className="h-7 w-full appearance-none rounded-none border-0 bg-transparent px-2 text-center text-xs font-medium text-inherit outline-none hover:bg-black/[0.03] focus:bg-black/[0.03] disabled:opacity-100 dark:hover:bg-white/[0.04] dark:focus:bg-white/[0.04]" onChange={event => {
                   const code = event.target.value;
                   changeEntry(day, person.id, code, entry?.note ?? "");
                 }}><option value="" label=" ">{t("notEntered")}</option>{ATTENDANCE_CODES.map(code => <option key={code} value={code}>{code === "OTHER" ? t("codes.OTHER") : code}</option>)}</select>
-                {entry?.code === "OTHER" ? <Input aria-label={t("noteFor", { name: person.name })} className="h-7 w-full rounded-none border-0 border-t bg-transparent px-2 text-xs text-inherit shadow-none focus-visible:ring-0" disabled={readOnly} maxLength={200} value={entry.note} onChange={event => changeEntry(day, person.id, "OTHER", event.target.value)} /> : entry?.note && <p className="max-w-44 truncate px-2 pb-1 text-[10px] text-inherit" title={entry.note}>{entry.note}</p>}
+                {entry?.code === "OTHER" ? <Input aria-label={t("noteFor", { name: displayName(person.name) })} className="h-7 w-full rounded-none border-0 border-t bg-transparent px-2 text-xs text-inherit shadow-none focus-visible:ring-0" disabled={readOnly} maxLength={200} value={entry.note} onChange={event => changeEntry(day, person.id, "OTHER", event.target.value)} /> : entry?.note && <p className="max-w-44 truncate px-2 pb-1 text-[10px] text-inherit" title={entry.note}>{entry.note}</p>}
               </td>;
             })}
           </tr>;
@@ -202,8 +207,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
     </div>
     {!staff.length && <p className="text-sm text-muted-foreground">{t("noStaff")}</p>}
     {!date && canEdit && <p className="text-xs text-muted-foreground">{t("editGridHint")}</p>}
-    <p className="text-xs text-muted-foreground">{date ? t("dailyHint") : t("gridHint")}</p>
-    {date && staff.some(person => !dayValue(date).entries.some(entry => entry.staffId === person.id)) && <p className="text-xs text-amber-700 dark:text-amber-300">{t("missingReminder")}</p>}
+    {!date && <p className="text-xs text-muted-foreground">{t("gridHint")}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
   </div>;
 }

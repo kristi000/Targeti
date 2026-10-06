@@ -505,6 +505,7 @@
   },
   "Attendance": {
     "title": "Presence & Shifts",
+    "presenceTitle": "Presence",
     "minimize": "Minimize",
     "expand": "Expand",
     "history": {
