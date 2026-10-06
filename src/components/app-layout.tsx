@@ -3,7 +3,7 @@
 
 import React from "react";
 import { SidebarNav } from "@/components/sidebar-nav";
-import { TrendingUp } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Sidebar,
@@ -35,10 +35,7 @@ export function AppShellFallback() {
       <Sidebar collapsible="offcanvas">
         <SidebarHeader>
           <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-              <TrendingUp className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <span className="text-lg font-semibold text-foreground">Target</span>
+            <BrandLogo />
           </div>
         </SidebarHeader>
         <SidebarContent className="space-y-3 px-2 pt-3">

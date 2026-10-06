@@ -5,7 +5,6 @@ import {
   LayoutDashboard,
   Banknote,
   Lightbulb,
-  TrendingUp,
   Github,
   Languages,
   LogOut,
@@ -33,6 +32,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ReportingDateSelector } from "@/components/reporting-date-selector";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
+import { BrandLogo } from "@/components/brand-logo";
 
 
 export function SidebarNav() {
@@ -83,10 +83,7 @@ export function SidebarNav() {
     <>
       <SidebarHeader>
         <Link href={`/${locale}/`} className="flex items-center gap-2.5">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary">
-            <TrendingUp className="h-6 w-6 text-primary-foreground" />
-          </div>
-          <span className="text-lg font-semibold text-foreground no-underline">Target</span>
+          <BrandLogo />
         </Link>
       </SidebarHeader>
       <SidebarContent className="px-2">

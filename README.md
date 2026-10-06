@@ -1,6 +1,6 @@
-# Target
+# D-one
 
-Target is a client-rendered Next.js performance and bonus dashboard backed by Cloud Firestore.
+D-one is a Next.js shop operations dashboard for performance, bonuses, daily closing, and staff shifts, backed by Cloud Firestore.
 
 ## Local development
 
