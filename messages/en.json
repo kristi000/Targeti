@@ -528,7 +528,7 @@
     "noteFor": "Note for {name}",
     "addNote": "Add note",
     "totals": "Monthly counts",
-    "dailyHint": "Save attendance here before finalizing the closing. Finalization locks this date.",
+    "dailyHint": "Attendance can be updated independently of the closing, including after finalization.",
     "gridHint": "Select dates and a staff member (or all staff) to apply attendance. Copy previous week uses dates seven days earlier within this month. Blank cells mean not entered.",
     "missingReminder": "Some staff have no attendance entered. You can still finalize the closing.",
     "undo": "Undo",
@@ -569,8 +569,6 @@
     },
     "errors": {
       "conflict": "Attendance changed in another session. Cancel your draft, reload, and apply your changes again.",
-      "locked": "This month contains finalized closings. Reopen the affected closing as an administrator before changing its attendance.",
-      "lockedRoster": "Staff names and roles are locked because this month contains finalized closings.",
       "staffInUse": "The template omits staff with existing attendance. Use a template containing those staff.",
       "saveFailed": "Could not save attendance. Your draft is kept. Try again.",
       "requestFailed": "Could not process the workbook. Check its structure and try again.",

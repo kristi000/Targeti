@@ -21,7 +21,7 @@ function hasValidRequestOrigin(request: NextRequest) {
 }
 function failure(error: unknown) {
   const message = error instanceof Error ? error.message : "requestFailed";
-  const allowed = ["useMatchingSheet", "monthHasData", "fileTooLarge", "invalidTemplate", "conflict", "locked", "lockedRoster", "staffInUse", "noTemplate", "templateCapacity", "wrongShop", "UNAUTHENTICATED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"];
+  const allowed = ["useMatchingSheet", "monthHasData", "fileTooLarge", "invalidTemplate", "conflict", "staffInUse", "noTemplate", "templateCapacity", "wrongShop", "UNAUTHENTICATED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"];
   return NextResponse.json({ error: allowed.includes(message) ? message : "requestFailed" }, { status: message === "UNAUTHENTICATED" ? 401 : message === "EDITOR_REQUIRED" || message === "SHOP_ACCESS_REQUIRED" ? 403 : 400 });
 }
 export async function POST(request: NextRequest, context: Context) {

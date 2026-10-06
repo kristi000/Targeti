@@ -15,7 +15,7 @@ export async function fetchAttendanceMonth(shopId: string, month: string) {
 export async function handleSaveAttendance(input: { shopId: string; month: string; expectedRevision: number; staff?: AttendanceStaff[]; changes: z.infer<typeof attendanceChangesSchema> }) {
   try { return { success: true as const, data: await saveAttendance(attendanceSaveSchema.parse(input)) }; }
   catch (error) {
-    const known = ["conflict", "locked", "lockedRoster", "staffInUse", "UNAUTHENTICATED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"];
+    const known = ["conflict", "staffInUse", "UNAUTHENTICATED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"];
     return { success: false as const, error: error instanceof Error && known.includes(error.message) ? error.message : "saveFailed" };
   }
 }

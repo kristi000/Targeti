@@ -55,12 +55,12 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
       <p className="text-xs text-muted-foreground">{query.data?.config.template ? t("templateAttached", { name: query.data.config.template.fileName }) : t("templateHint")}</p>
       {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
       <AttendanceEditor key={`${shopId}:${month}`} shopId={shopId} month={month} canEdit={actor.role !== "viewer"} onDirtyChange={setDirty} />
-      {dialog === "staff" && query.data && <StaffDialog shopId={shopId} month={month} config={query.data.config} locked={Boolean(query.data.lockedDates.length)} onClose={() => setDialog(null)} />}
+      {dialog === "staff" && query.data && <StaffDialog shopId={shopId} month={month} config={query.data.config} onClose={() => setDialog(null)} />}
       {dialog === "template" && query.data && <TemplateDialog shopId={shopId} month={month} onClose={() => setDialog(null)} />}
     </main>
   </>;
 }
-function StaffDialog({ shopId, month, config, locked, onClose }: { shopId: string; month: string; config: AttendanceConfig; locked: boolean; onClose: () => void }) {
+function StaffDialog({ shopId, month, config, onClose }: { shopId: string; month: string; config: AttendanceConfig; onClose: () => void }) {
   const t = useTranslations("Attendance");
   const queryClient = useQueryClient();
   const [staff, setStaff] = useState<AttendanceStaff[]>(config.staff);
@@ -75,11 +75,10 @@ function StaffDialog({ shopId, month, config, locked, onClose }: { shopId: strin
     } catch { setError("saveFailed"); } finally { setBusy(false); }
   };
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>{t("manageStaff")}</DialogTitle><DialogDescription>{t("staffHint")}</DialogDescription></DialogHeader>
-    {locked && <p className="text-sm text-muted-foreground">{t("errors.lockedRoster")}</p>}
-    {staff.map((person, index) => <div key={person.id} className="flex gap-2"><Input aria-label={t("staffName")} value={person.name} disabled={busy || locked} maxLength={120} onChange={event => setStaff(previous => previous.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /><select aria-label={t("staffRole")} className="rounded border bg-background px-2" disabled={busy || locked} value={person.role} onChange={event => setStaff(previous => previous.map((item, i) => i === index ? { ...item, role: event.target.value as AttendanceStaff["role"] } : item))}><option value="SM">{t("manager")} (SM)</option><option value="SR">SR</option><option value="IE">IE</option></select></div>)}
-    <Button size="sm" variant="outline" disabled={busy || locked || staff.length >= 50} onClick={() => setStaff(previous => [...previous, { id: crypto.randomUUID(), name: "", role: "SR" }])}><Plus className="mr-1.5 h-4 w-4" />{t("addStaff")}</Button>
+    {staff.map((person, index) => <div key={person.id} className="flex gap-2"><Input aria-label={t("staffName")} value={person.name} disabled={busy} maxLength={120} onChange={event => setStaff(previous => previous.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} /><select aria-label={t("staffRole")} className="rounded border bg-background px-2" disabled={busy} value={person.role} onChange={event => setStaff(previous => previous.map((item, i) => i === index ? { ...item, role: event.target.value as AttendanceStaff["role"] } : item))}><option value="SM">{t("manager")} (SM)</option><option value="SR">SR</option><option value="IE">IE</option></select></div>)}
+    <Button size="sm" variant="outline" disabled={busy || staff.length >= 50} onClick={() => setStaff(previous => [...previous, { id: crypto.randomUUID(), name: "", role: "SR" }])}><Plus className="mr-1.5 h-4 w-4" />{t("addStaff")}</Button>
     {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
-    <DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>{t("cancel")}</Button><Button disabled={busy || locked || !staff.length || staff.some(person => !person.name.trim())} onClick={() => void save()}>{busy && <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" />}{t("save")}</Button></DialogFooter>
+    <DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>{t("cancel")}</Button><Button disabled={busy || !staff.length || staff.some(person => !person.name.trim())} onClick={() => void save()}>{busy && <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" />}{t("save")}</Button></DialogFooter>
   </DialogContent></Dialog>;
 }
 function TemplateDialog({ shopId, month, onClose }: { shopId: string; month: string; onClose: () => void }) {
@@ -146,10 +145,9 @@ function TemplateDialog({ shopId, month, onClose }: { shopId: string; month: str
       <div className="overflow-auto rounded border"><table className="w-full text-xs"><thead><tr><th className="p-2 text-left">{t("date")}</th>{sheet.staff.map(person => <th key={person.column} className="p-2">{person.name}</th>)}</tr></thead><tbody>{previewDays.slice(0, 5).map(day => <tr key={day.date} className="border-t"><td className="p-2">{day.date}</td>{day.values.map((value, index) => <td key={index} className="p-2 text-center">{value || "—"}</td>)}</tr>)}</tbody></table></div>
       {sheet.month === month && unusual.length > 0 && <p className="text-xs text-muted-foreground">{t("unusualEntries", { values: [...new Set(unusual)].join(", ") })}</p>}
       {baseline?.days.length ? <p className="text-sm text-amber-700 dark:text-amber-300">{t("replaceWarning")}</p> : null}
-      {baseline?.lockedDates.length ? <p className="text-sm text-destructive">{t("errors.locked")}</p> : null}
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={reviewed} disabled={busy} onChange={event => setReviewed(event.target.checked)} />{t(sheet.month === month ? "reviewMapping" : "reviewTemplate")}</label>
     </>}
     {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
-    <DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>{t("cancel")}</Button><Button disabled={busy || !sheet || !reviewed || Boolean(baseline?.lockedDates.length) || new Set(Object.values(mapping)).size !== sheet?.staff.length} onClick={() => void upload()}>{t(sheet?.month === month ? "importSelected" : "useTemplate")}</Button></DialogFooter>
+    <DialogFooter><Button variant="outline" disabled={busy} onClick={onClose}>{t("cancel")}</Button><Button disabled={busy || !sheet || !reviewed || new Set(Object.values(mapping)).size !== sheet?.staff.length} onClick={() => void upload()}>{t(sheet?.month === month ? "importSelected" : "useTemplate")}</Button></DialogFooter>
   </DialogContent></Dialog>;
 }

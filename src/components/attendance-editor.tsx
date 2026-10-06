@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 
 type DraftDay = { entries: AttendanceEntry[]; expectedUpdatedAt: string | null };
 type Draft = { revision: number; days: Record<string, DraftDay> };
-type Props = { shopId: string; month: string; canEdit: boolean; date?: string; locked?: boolean; onDirtyChange?: (dirty: boolean) => void };
+type Props = { shopId: string; month: string; canEdit: boolean; date?: string; onDirtyChange?: (dirty: boolean) => void };
 export function AttendanceEditor(props: Props) {
   const t = useTranslations("Attendance");
   const query = useQuery({ queryKey: attendanceQueryKey(props.shopId, props.month), queryFn: () => fetchAttendanceMonth(props.shopId, props.month) });
@@ -25,7 +25,7 @@ export function AttendanceManagerName({ shopId, month }: Pick<Props, "shopId" | 
   const query = useQuery({ queryKey: attendanceQueryKey(shopId, month), queryFn: () => fetchAttendanceMonth(shopId, month) });
   return <>{query.data?.config.staff.filter(person => person.role === "SM").map(manager => <span key={manager.id} className="inline-flex items-center gap-1.5 rounded-md border border-primary/25 bg-primary/10 px-2.5 py-1 text-sm font-semibold text-primary dark:text-purple-300"><BriefcaseBusiness className="h-4 w-4" />{manager.name}<span className="text-xs font-normal">{t("manager")}</span></span>)}</>;
 }
-function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, data }: Props & { data: AttendanceMonth }) {
+function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: Props & { data: AttendanceMonth }) {
   const t = useTranslations("Attendance");
   const locale = useLocale();
   const { toast } = useToast();
@@ -48,7 +48,6 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
   }, [draft]);
   const dates = date ? [date] : monthDates(month);
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tirane", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const isLocked = (day: string) => locked || data.lockedDates.includes(day);
   const dayValue = (day: string): DraftDay => draft?.days[day] ?? { entries: data.days.find(item => item.date === day)?.entries ?? [], expectedUpdatedAt: data.days.find(item => item.date === day)?.updatedAt ?? null };
   const changeDays = (updates: Record<string, DraftDay>) => {
     setUndo(previous => [...previous.slice(-9), draft]);
@@ -56,7 +55,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
     setError(null);
   };
   const changeEntry = (day: string, staffId: string, code: string, note = "") => {
-    if (isLocked(day) || !canEdit) return;
+    if (!canEdit) return;
     const current = dayValue(day);
     const entries = current.entries.filter(entry => entry.staffId !== staffId);
     if (code) entries.push({ staffId, code: code as AttendanceEntry["code"], note });
@@ -90,7 +89,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
       <select aria-label={t("bulkCode")} value={bulkCode} disabled={busy} onChange={event => setBulkCode(event.target.value as AttendanceEntry["code"])} className="h-9 rounded-md border bg-background px-2 text-sm">{ATTENDANCE_CODES.map(code => <option key={code} value={code}>{t(`codes.${code}`)}</option>)}</select>
       <Input value={bulkNote} onChange={event => setBulkNote(event.target.value)} maxLength={200} disabled={busy} placeholder={t("notePlaceholder")} aria-label={t("note")} className="h-9 max-w-56" />
       <Button size="sm" variant="outline" disabled={busy || !selected.length || bulkCode === "OTHER" && !bulkNote.trim()} onClick={() => {
-        const updates = Object.fromEntries(selected.filter(day => !isLocked(day)).map(day => {
+        const updates = Object.fromEntries(selected.map(day => {
           const current = dayValue(day);
           const affected = data.config.staff.filter(person => !bulkStaffId || person.id === bulkStaffId);
           return [day, { ...current, entries: [...current.entries.filter(entry => !affected.some(person => person.id === entry.staffId)), ...affected.map(person => ({ staffId: person.id, code: bulkCode, note: bulkNote.trim() }))] }];
@@ -102,7 +101,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
         for (const day of selected) {
           const previous = new Date(`${day}T12:00:00Z`); previous.setUTCDate(previous.getUTCDate() - 7);
           const previousDate = previous.toISOString().slice(0, 10);
-          if (previousDate.startsWith(month) && !isLocked(day)) {
+          if (previousDate.startsWith(month)) {
             const copied = dayValue(previousDate).entries.filter(entry => !bulkStaffId || entry.staffId === bulkStaffId).map(entry => ({ staffId: entry.staffId, code: entry.code, note: entry.note }));
             updates[day] = { ...dayValue(day), entries: [...dayValue(day).entries.filter(entry => bulkStaffId && entry.staffId !== bulkStaffId), ...copied] };
           }
@@ -119,7 +118,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, locked, onDirtyChange, d
         <tbody>{dates.map(day => {
           const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
           const current = dayValue(day);
-          const readOnly = !canEdit || Boolean(isLocked(day)) || busy;
+          const readOnly = !canEdit || busy;
           return <tr key={day} className={cn("border-b last:border-b-0", [0, 6].includes(weekday) && "bg-muted/25", day === today && "bg-primary/[0.06]")}>
             <th className="sticky left-0 z-[1] border-r bg-background px-3 py-2 text-left font-medium"><div className="flex items-center gap-2">{!date && canEdit && <input type="checkbox" aria-label={t("selectDate", { date: formatDate(day) })} disabled={readOnly} checked={selected.includes(day)} onChange={event => setSelected(previous => event.target.checked ? [...previous, day] : previous.filter(value => value !== day))} />}<span>{formatDate(day)}{day === today && <span className="ml-1 text-xs text-primary">{t("today")}</span>}</span></div></th>
             {data.config.staff.map(person => {

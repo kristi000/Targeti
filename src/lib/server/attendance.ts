@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { requireEditorForShops, requireShopAccess } from "@/lib/access";
-import { attendanceDateSchema, attendanceEntrySchema, attendanceDaySchema, attendanceMonthConfigSchema, attendanceMonthSchema, attendanceRosterSchema, attendanceStaffSchema, dailyClosingSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
+import { attendanceDateSchema, attendanceEntrySchema, attendanceDaySchema, attendanceMonthConfigSchema, attendanceMonthSchema, attendanceRosterSchema, attendanceStaffSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
 import { getMonthlyRepresentatives, type Shop } from "@/lib/types";
 import { monthDates, type AttendanceConfig, type AttendanceDay, type AttendanceMonth } from "@/lib/attendance";
 import { createActivity, toFirestoreData } from "@/app/actions/shared";
@@ -18,18 +18,16 @@ export async function loadAttendanceMonth(shopId: string, month: string): Promis
   attendanceMonthSchema.parse(month);
   await requireShopAccess(shopId);
   const shopRef = db.collection("shops").doc(shopId);
-  const [shopSnapshot, configSnapshot, daySnapshot, closingSnapshot] = await Promise.all([
+  const [shopSnapshot, configSnapshot, daySnapshot] = await Promise.all([
     shopRef.get(), shopRef.collection("attendanceMonths").doc(month).get(),
     shopRef.collection("attendanceDays").where("date", ">=", `${month}-01`).where("date", "<=", `${month}-31`).limit(31).get(),
-    shopRef.collection("dailyClosings").where("date", ">=", `${month}-01`).where("date", "<=", `${month}-31`).limit(31).get(),
   ]);
   if (!shopSnapshot.exists) throw new Error("notFound");
   const shop = shopSchema.parse({ id: shopId, ...shopSnapshot.data() }) as Shop;
   const config: AttendanceConfig = configSnapshot.exists ? attendanceMonthConfigSchema.parse(configSnapshot.data()) : {
     revision: 0, staff: z.array(attendanceStaffSchema).max(50).parse(getMonthlyRepresentatives(shop, month).map(rep => ({ ...rep, role: "SR" as const }))),
   };
-  return { config, days: daySnapshot.docs.map(document => attendanceDaySchema.parse(document.data())),
-    lockedDates: closingSnapshot.docs.filter(document => dailyClosingSchema.shape.status.parse(document.data().status) === "finalized").map(document => document.id) };
+  return { config, days: daySnapshot.docs.map(document => attendanceDaySchema.parse(document.data())) };
 }
 
 type SaveOptions = {
@@ -60,15 +58,10 @@ export async function saveAttendance(options: SaveOptions) {
     const configSnapshot = await transaction.get(ref.collection("attendanceMonths").doc(month));
     const current = configSnapshot.exists ? attendanceMonthConfigSchema.parse(configSnapshot.data()) : loaded.config;
     if (current.revision !== expectedRevision) throw new Error("conflict");
-    const monthClosings = options.staff ? await transaction.get(ref.collection("dailyClosings").where("date", ">=", `${month}-01`).where("date", "<=", `${month}-31`).limit(31)) : null;
     const snapshots = await Promise.all(changes.map(async change => ({ change,
       day: await transaction.get(ref.collection("attendanceDays").doc(change.date)),
-      closing: await transaction.get(ref.collection("dailyClosings").doc(change.date)),
     })));
-    // Roster changes on a locked month could change names or roles in historical exports.
-    if (options.staff && JSON.stringify(staff) !== JSON.stringify(current.staff) && monthClosings?.docs.some(document => dailyClosingSchema.shape.status.parse(document.data().status) === "finalized")) throw new Error("lockedRoster");
-    for (const { change, day, closing } of snapshots) {
-      if (closing.exists && dailyClosingSchema.shape.status.parse(closing.data()?.status) === "finalized") throw new Error("locked");
+    for (const { change, day } of snapshots) {
       const existing = day.exists ? attendanceDaySchema.parse(day.data()) : null;
       if ((existing?.updatedAt ?? null) !== change.expectedUpdatedAt) throw new Error("conflict");
       if (!options.templateBytes) {

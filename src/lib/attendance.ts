@@ -5,7 +5,7 @@ export type AttendanceStaff = z.infer<typeof attendanceStaffSchema>;
 export type AttendanceEntry = z.infer<typeof attendanceEntrySchema>;
 export type AttendanceDay = z.infer<typeof attendanceDaySchema>;
 export type AttendanceConfig = z.infer<typeof attendanceMonthConfigSchema>;
-export type AttendanceMonth = { config: AttendanceConfig; days: AttendanceDay[]; lockedDates: string[] };
+export type AttendanceMonth = { config: AttendanceConfig; days: AttendanceDay[] };
 export const attendanceQueryKey = (shopId: string, month: string) => ["attendance", shopId, month] as const;
 export const ATTENDANCE_CODES = ["1", "2", "1+2", "P", "LV", "R", "OTHER"] as const;
 export function monthDates(month: string) {

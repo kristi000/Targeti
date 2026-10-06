@@ -528,7 +528,7 @@
     "noteFor": "Shënim për {name}",
     "addNote": "Shto shënim",
     "totals": "Numërimet mujore",
-    "dailyHint": "Ruaj prezencën këtu para finalizimit të mbylljes. Finalizimi bllokon këtë datë.",
+    "dailyHint": "Prezenca mund të ndryshohet pavarësisht mbylljes, edhe pas finalizimit.",
     "gridHint": "Zgjidh datat dhe një punonjës (ose gjithë stafin) për të aplikuar prezencën. Kopjimi përdor datat shtatë ditë më parë brenda këtij muaji. Qelizat bosh janë pa vendosur.",
     "missingReminder": "Disa punonjës nuk kanë prezencë të vendosur. Mbyllja mund të finalizohet gjithsesi.",
     "undo": "Zhbëj",
@@ -569,8 +569,6 @@
     },
     "errors": {
       "conflict": "Prezenca ndryshoi në një sesion tjetër. Anulo ndryshimet, ringarko dhe aplikoji përsëri.",
-      "locked": "Ky muaj ka mbyllje të finalizuara. Një administrator duhet të rihapë mbylljen përkatëse para ndryshimit të prezencës.",
-      "lockedRoster": "Emrat dhe rolet e stafit janë bllokuar sepse muaji ka mbyllje të finalizuara.",
       "staffInUse": "Modeli nuk përmban staf me prezencë ekzistuese. Përdor një model me atë staf.",
       "saveFailed": "Prezenca nuk mund të ruhej. Ndryshimet u mbajtën. Provo përsëri.",
       "requestFailed": "Dokumenti nuk mund të përpunohej. Kontrollo strukturën dhe provo përsëri.",

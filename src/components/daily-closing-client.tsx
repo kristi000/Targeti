@@ -448,7 +448,7 @@ export function DailyClosingClient() {
               </Button>
             </CardHeader>
             <CardContent id="daily-attendance" hidden={attendanceMinimized} className="px-3 pb-3 pt-0">
-              <AttendanceEditor key={activeScope} shopId={shopId} month={date.slice(0, 7)} date={date} locked={isFinalized} canEdit={actor.role !== "viewer"} onDirtyChange={setAttendanceDirty} />
+              <AttendanceEditor key={activeScope} shopId={shopId} month={date.slice(0, 7)} date={date} canEdit={actor.role !== "viewer"} onDirtyChange={setAttendanceDirty} />
             </CardContent>
             {attendanceDirty && <p className="px-3 pb-3 text-xs text-amber-700 dark:text-amber-300">{attendanceTranslations("saveBeforeFinalize")}</p>}
           </Card>
