@@ -30,6 +30,7 @@ import {
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
 import { Header } from "@/components/header";
 import { AttendanceEditor, AttendanceManagerName } from "@/components/attendance-editor";
+import { AttendanceHistoryButton } from "@/components/attendance-history";
 import { attendanceQueryKey } from "@/lib/attendance";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
@@ -90,7 +91,7 @@ export function DailyClosingClient() {
   const t = useTranslations("DailyClosing");
   const attendanceTranslations = useTranslations("Attendance");
   const [attendanceDirty, setAttendanceDirty] = useState(false);
-  const [attendanceMinimized, setAttendanceMinimized] = useState(false);
+  const [attendanceMinimized, setAttendanceMinimized] = useState(true);
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
   const { selectedShop, actor, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
@@ -440,12 +441,15 @@ export function DailyClosingClient() {
           </div>
 
           <Card>
-            <CardHeader className="flex-row items-center justify-between gap-2 space-y-0 px-3 py-2">
+            <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 space-y-0 px-3 py-2">
               <div className="flex flex-wrap items-center gap-2"><CardTitle className="text-sm">{attendanceTranslations("title")}</CardTitle><AttendanceManagerName shopId={shopId} month={date.slice(0, 7)} /></div>
+              <div className="flex shrink-0 flex-wrap items-center gap-1">
+              <AttendanceHistoryButton key={`${shopId}:${date.slice(0, 7)}`} shopId={shopId} month={date.slice(0, 7)} />
               <Button type="button" size="sm" variant="ghost" className="h-8" aria-expanded={!attendanceMinimized} aria-controls="daily-attendance" onClick={() => setAttendanceMinimized(current => !current)}>
                 {attendanceMinimized ? <ChevronDown className="mr-1.5 h-4 w-4" /> : <ChevronUp className="mr-1.5 h-4 w-4" />}
                 {attendanceTranslations(attendanceMinimized ? "expand" : "minimize")}
               </Button>
+              </div>
             </CardHeader>
             <CardContent id="daily-attendance" hidden={attendanceMinimized} className="px-3 pb-3 pt-0">
               <AttendanceEditor key={activeScope} shopId={shopId} month={date.slice(0, 7)} date={date} canEdit={actor.role !== "viewer"} onDirtyChange={setAttendanceDirty} />

@@ -6,6 +6,10 @@ import { attendanceDateSchema, attendanceEntrySchema, attendanceDaySchema, atten
 import { getMonthlyRepresentatives, type Shop } from "@/lib/types";
 import { monthDates, type AttendanceConfig, type AttendanceDay, type AttendanceMonth } from "@/lib/attendance";
 import { createActivity, toFirestoreData } from "@/app/actions/shared";
+import { attendanceHistorySchema, attendanceHistoryDetailSchema, attendanceHistoryIdSchema } from "@/lib/persistence-schemas";
+import { attendanceDayCorrections, attendanceRosterCorrections } from "@/lib/attendance-history";
+import { documentId } from "@/lib/firebase-admin";
+import type { AttendanceHistoryDetail } from "@/lib/attendance";
 
 export const attendanceChangesSchema = z.array(z.object({
   date: attendanceDateSchema,
@@ -73,6 +77,21 @@ export async function saveAttendance(options: SaveOptions) {
       }
     }
     const config = attendanceMonthConfigSchema.parse({ staff, revision: current.revision + 1, template: options.template ?? current.template });
+    const details: AttendanceHistoryDetail[] = snapshots.flatMap(({ change, day }) => {
+      const correction = attendanceDayCorrections(change.date, day.exists ? attendanceDaySchema.parse(day.data()).entries : [], change.entries, [...current.staff, ...staff]);
+      return correction ? [correction] : [];
+    });
+    const rosterCorrection = attendanceRosterCorrections(current.staff, staff);
+    if (rosterCorrection) details.push(rosterCorrection);
+    const templateChanged = Boolean(options.templateBytes);
+    if (details.length || templateChanged) {
+      const history = attendanceHistorySchema.parse({ revision: config.revision, createdAt: now, actorId: actor.id, actorName: actor.name,
+        source: options.templateBytes ? "import" : options.staff ? "roster" : "edit",
+        dates: details.flatMap(detail => detail.kind === "day" ? [detail.date] : []), rosterChanged: Boolean(rosterCorrection), templateChanged });
+      const historyRef = ref.collection("attendanceMonths").doc(month).collection("history").doc(String(config.revision).padStart(16, "0"));
+      transaction.create(historyRef, history);
+      for (const detail of details) transaction.create(historyRef.collection("details").doc(detail.kind === "day" ? detail.date : "roster"), attendanceHistoryDetailSchema.parse(detail));
+    }
     transaction.set(ref.collection("attendanceMonths").doc(month), toFirestoreData(config));
     for (const { change } of snapshots) {
       const day: AttendanceDay = attendanceDaySchema.parse({ date: change.date, entries: change.entries, updatedAt: now, updatedBy: actor.id });
@@ -87,6 +106,29 @@ export async function saveAttendance(options: SaveOptions) {
     transaction.set(activity.reference, activity.data);
   });
   return loadAttendanceMonth(shopId, month);
+}
+
+export async function loadAttendanceHistory(shopId: string, month: string, cursor?: string) {
+  shopIdSchema.parse(shopId); attendanceMonthSchema.parse(month);
+  if (cursor !== undefined) attendanceHistoryIdSchema.parse(cursor);
+  await requireShopAccess(shopId);
+  let query = db.collection("shops").doc(shopId).collection("attendanceMonths").doc(month).collection("history").orderBy(documentId(), "desc");
+  if (cursor) query = query.startAfter(cursor);
+  const snapshot = await query.limit(21).get();
+  const documents = snapshot.docs.slice(0, 20);
+  return { items: documents.map(document => ({ ...attendanceHistorySchema.parse(document.data()), id: attendanceHistoryIdSchema.parse(document.id) })),
+    nextCursor: snapshot.size > 20 ? documents[documents.length - 1].id : null };
+}
+
+export async function loadAttendanceHistoryDetails(shopId: string, month: string, historyId: string) {
+  shopIdSchema.parse(shopId); attendanceMonthSchema.parse(month); attendanceHistoryIdSchema.parse(historyId);
+  await requireShopAccess(shopId);
+  const ref = db.collection("shops").doc(shopId).collection("attendanceMonths").doc(month).collection("history").doc(historyId);
+  const history = await ref.get();
+  if (!history.exists) throw new Error("notFound");
+  attendanceHistorySchema.parse(history.data());
+  const details = await ref.collection("details").orderBy(documentId()).limit(32).get();
+  return details.docs.map(document => attendanceHistoryDetailSchema.parse(document.data()));
 }
 
 export async function loadAttendanceTemplate(shopId: string, config: AttendanceConfig) {

@@ -55,6 +55,30 @@ export const attendanceMonthConfigSchema = z.object({
     columns: z.array(z.object({ column: z.number().int().min(3).max(26), staffId: documentIdSchema }).strict()).max(24),
   }).strict().optional(),
 }).strict();
+export const attendanceHistoryIdSchema = z.string().regex(/^\d{16}$/);
+export const attendanceHistorySchema = z.object({
+  revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  createdAt: z.string().datetime(),
+  actorId: documentIdSchema,
+  actorName: z.string().min(1).max(120),
+  source: z.enum(["edit", "import", "roster"]),
+  dates: z.array(attendanceDateSchema).max(31),
+  rosterChanged: z.boolean(),
+  templateChanged: z.boolean(),
+}).strict();
+export const attendanceHistoryDetailSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("day"), date: attendanceDateSchema,
+    changes: z.array(z.object({
+      staffId: documentIdSchema, name: z.string().min(1).max(120),
+      before: attendanceEntrySchema.nullable(), after: attendanceEntrySchema.nullable(),
+    }).strict()).max(100),
+  }).strict(),
+  z.object({
+    kind: z.literal("roster"),
+    changes: z.array(z.object({ before: attendanceStaffSchema.nullable(), after: attendanceStaffSchema.nullable() }).strict()).max(100),
+  }).strict(),
+]);
 export const weightProfileIdSchema = documentIdSchema;
 export const supervisorIdSchema = documentIdSchema;
 export const supervisorSchema = z.object({

@@ -9,6 +9,7 @@ import { attendanceQueryKey, monthDates, type AttendanceConfig, type AttendanceS
 import type { WorkbookSheet } from "@/lib/attendance-workbook";
 import { useShop } from "@/components/shop-provider";
 import { AttendanceEditor } from "@/components/attendance-editor";
+import { AttendanceHistoryButton } from "@/components/attendance-history";
 import { Header } from "@/components/header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
           setMonth(event.target.value); setError(null); router.replace(`/${locale}/shop/${shopId}/attendance?month=${event.target.value}`, { scroll: false });
         }} /></label>
         <div className="flex flex-wrap gap-2">
+          <AttendanceHistoryButton key={`${shopId}:${month}`} shopId={shopId} month={month} />
           {actor.role !== "viewer" && <><Button variant="outline" size="sm" disabled={dirty || !query.data} onClick={() => setDialog("staff")}><Users className="mr-1.5 h-4 w-4" />{t("manageStaff")}</Button><Button variant="outline" size="sm" disabled={dirty || !query.data} onClick={() => setDialog("template")}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("importTemplate")}</Button></>}
           <Button size="sm" disabled={dirty || exporting || !query.data?.config.template} onClick={() => void download()}>{exporting ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}{t("exportOriginal")}</Button>
         </div>

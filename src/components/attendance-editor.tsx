@@ -37,7 +37,6 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
   const [bulkStaffId, setBulkStaffId] = useState("");
   const [bulkNote, setBulkNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<{ date: string; staffId: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { onDirtyChange?.(Boolean(draft) || busy); }, [draft, busy, onDirtyChange]);
   useEffect(() => {
@@ -71,7 +70,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
       });
       if (!result.success) { setError(result.error); return; }
       queryClient.setQueryData(attendanceQueryKey(shopId, month), result.data);
-      setDraft(null); setUndo([]); setEditing(null); setError(null);
+      setDraft(null); setUndo([]); setError(null);
       toast({ title: t("saved") });
     } catch { setError("saveFailed"); }
     finally { setBusy(false); }
@@ -123,14 +122,12 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
             <th className="sticky left-0 z-[1] border-r bg-background px-3 py-2 text-left font-medium"><div className="flex items-center gap-2">{!date && canEdit && <input type="checkbox" aria-label={t("selectDate", { date: formatDate(day) })} disabled={readOnly} checked={selected.includes(day)} onChange={event => setSelected(previous => event.target.checked ? [...previous, day] : previous.filter(value => value !== day))} />}<span>{formatDate(day)}{day === today && <span className="ml-1 text-xs text-primary">{t("today")}</span>}</span></div></th>
             {data.config.staff.map(person => {
               const entry = current.entries.find(value => value.staffId === person.id);
-              const editNote = editing?.date === day && editing.staffId === person.id;
               return <td key={person.id} className={cn("border-r px-2 py-1.5 text-center", person.role === "SM" && "bg-primary/[0.04]")}>
                 <select aria-label={t("chooseFor", { name: person.name, date: formatDate(day) })} value={entry?.code ?? ""} disabled={readOnly} className={cn("h-9 w-full max-w-44 rounded border bg-background px-1 text-center text-sm", entry?.code === "LV" && "bg-amber-50 text-amber-900", entry?.code === "R" && "bg-red-50 text-red-900", entry?.code === "P" && "bg-muted", entry?.code === "OTHER" && "bg-blue-50 text-blue-900")} onChange={event => {
                   const code = event.target.value;
                   changeEntry(day, person.id, code, entry?.note ?? "");
-                  if (code === "OTHER") setEditing({ date: day, staffId: person.id });
                 }}><option value="">{t("notEntered")}</option>{ATTENDANCE_CODES.map(code => <option key={code} value={code}>{t(`codes.${code}`)}</option>)}</select>
-                {editNote || entry?.code === "OTHER" && !entry.note ? <Input aria-label={t("noteFor", { name: person.name })} className="mt-1 h-8 max-w-44 text-xs" disabled={readOnly} maxLength={200} value={entry?.note ?? ""} onChange={event => changeEntry(day, person.id, entry?.code ?? "OTHER", event.target.value)} /> : <button type="button" disabled={readOnly || !entry} className="mt-0.5 block w-full max-w-44 truncate text-[11px] text-muted-foreground disabled:cursor-default" title={entry?.note || t("addNote")} onClick={() => setEditing({ date: day, staffId: person.id })}>{entry?.note || (entry && !readOnly ? t("addNote") : "")}</button>}
+                {entry?.code === "OTHER" ? <Input aria-label={t("noteFor", { name: person.name })} className="mt-1 h-8 max-w-44 text-xs" disabled={readOnly} maxLength={200} value={entry.note} onChange={event => changeEntry(day, person.id, "OTHER", event.target.value)} /> : entry?.note && <p className="mt-0.5 max-w-44 truncate text-[11px] text-muted-foreground" title={entry.note}>{entry.note}</p>}
               </td>;
             })}
           </tr>;
@@ -144,6 +141,6 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
     <p className="text-xs text-muted-foreground">{date ? t("dailyHint") : t("gridHint")}</p>
     {date && data.config.staff.some(person => !dayValue(date).entries.some(entry => entry.staffId === person.id)) && <p className="text-xs text-amber-700 dark:text-amber-300">{t("missingReminder")}</p>}
     {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
-    {canEdit && <div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="ghost" disabled={busy || !undo.length} onClick={() => { setDraft(undo[undo.length - 1]); setUndo(previous => previous.slice(0, -1)); }}><RotateCcw className="mr-1.5 h-4 w-4" />{t("undo")}</Button><Button size="sm" variant="outline" disabled={busy || !draft} onClick={() => { setDraft(null); setUndo([]); setError(null); setEditing(null); void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(shopId, month) }); }}>{t("cancel")}</Button><Button size="sm" disabled={busy || !draft || Object.values(draft.days).some(day => day.entries.some(entry => entry.code === "OTHER" && !entry.note.trim()))} onClick={() => void save()}>{busy ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}{t("save")}</Button></div>}
+    {canEdit && <div className="flex flex-wrap justify-end gap-2"><Button size="sm" variant="ghost" disabled={busy || !undo.length} onClick={() => { setDraft(undo[undo.length - 1]); setUndo(previous => previous.slice(0, -1)); }}><RotateCcw className="mr-1.5 h-4 w-4" />{t("undo")}</Button><Button size="sm" variant="outline" disabled={busy || !draft} onClick={() => { setDraft(null); setUndo([]); setError(null); void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(shopId, month) }); }}>{t("cancel")}</Button><Button size="sm" disabled={busy || !draft || Object.values(draft.days).some(day => day.entries.some(entry => entry.code === "OTHER" && !entry.note.trim()))} onClick={() => void save()}>{busy ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}{t("save")}</Button></div>}
   </div>;
 }
