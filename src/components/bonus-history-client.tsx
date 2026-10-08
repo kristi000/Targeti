@@ -9,7 +9,6 @@ import { ArrowLeft, ArrowUpRight, Download, Loader2, Sparkles } from "lucide-rea
 import { useLocale, useTranslations } from "next-intl";
 
 import { fetchBonusHistoryPage, fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/app/actions/bonus";
-import { Header } from "@/components/header";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
 import { Button } from "@/components/ui/button";
@@ -178,15 +177,12 @@ export function BonusHistoryClient({ shopId, detail }: { shopId: string; detail?
   };
 
   if (!selectedShop) return null;
-  return <div className="flex h-full flex-col">
-    <Header title={`${t("bonusHistory")}: ${selectedShop.name}`} />
-    <div className="flex-1 overflow-y-auto p-3 md:p-4"><div className="mx-auto max-w-6xl space-y-4">
+  return <div className="space-y-4">
+    {!detail && <div className="flex flex-wrap items-center justify-end gap-2"><select aria-label={t("filterPerson")} className="h-9 rounded-md border bg-background px-3 text-sm" value={personId} onChange={event => setPersonId(event.target.value)}><option value="">{t("allPeople")}</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting || !rows.length}><Download className="mr-2 h-4 w-4" />{exporting ? t("exportingBonusHistory") : t("exportBonusHistory")}</Button></div>}
       {detail ? <><Link href={`${pathname}?view=history`} className="inline-flex items-center gap-1 text-sm text-primary hover:underline"><ArrowLeft className="h-4 w-4" />{t("backToBonusHistory")}</Link><HistoryDetail shopId={shopId} detail={detail} /></> : <>
-        <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">{t("bonusHistory")}</h2><p className="text-sm text-muted-foreground">{t("bonusHistoryDescription")}</p></div><div className="flex flex-wrap items-center gap-2"><select aria-label={t("filterPerson")} className="h-9 rounded-md border bg-background px-3 text-sm" value={personId} onChange={event => setPersonId(event.target.value)}><option value="">{t("allPeople")}</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting || !rows.length}><Download className="mr-2 h-4 w-4" />{exporting ? t("exportingBonusHistory") : t("exportBonusHistory")}</Button></div></div>
         <div className="overflow-x-auto rounded-md border bg-card"><table className="w-full min-w-[850px] text-sm"><thead className="bg-muted/50"><tr>{table.getHeaderGroups().map(group => group.headers.map(header => <th key={header.id} className="p-3 text-left font-medium">{flexRender(header.column.columnDef.header, header.getContext())}</th>))}</tr></thead><tbody>{table.getRowModel().rows.map(row => <tr key={row.original.month} className="border-t">{row.getVisibleCells().map(cell => <td key={cell.id} className="p-3 align-top tabular-nums">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table>{history.isPending && <p className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</p>}{history.isError && <p className="p-6 text-sm text-destructive">{t("tryAgain")}</p>}{history.isSuccess && !rows.length && <p className="p-6 text-sm text-muted-foreground">{t("noBonusHistory")}</p>}{history.isSuccess && !!rows.length && !visibleRows.length && <p className="p-6 text-sm text-muted-foreground">{t("noPersonBonusHistory")}</p>}</div>
         {history.hasNextPage && <Button variant="outline" onClick={() => void history.fetchNextPage()} disabled={history.isFetchingNextPage}>{history.isFetchingNextPage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{t("loadOlderBonuses")}</Button>}
       </>}
-    </div></div>
   </div>;
 }
 

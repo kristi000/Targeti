@@ -19,6 +19,41 @@ export const attendanceDateSchema = isoDateSchema.refine(value => {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }, "Invalid calendar date");
 export const attendanceMonthSchema = monthSchema.refine(value => Number(value.slice(5)) >= 1 && Number(value.slice(5)) <= 12, "Invalid month");
+const procedureTextSchema = z.string().trim().min(1).max(150).refine(value => !/[\u0000-\u001f]/.test(value), "Invalid procedure text");
+export const procedureDateTimeSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/).refine(value => attendanceDateSchema.safeParse(value.slice(0, 10)).success, "Invalid procedure date");
+export const procedureFieldsSchema = z.object({
+  orderNumber: procedureTextSchema, name: procedureTextSchema, customerId: procedureTextSchema,
+  product: z.enum(["MixMax", "TRY&BUY"]), dateTime: procedureDateTimeSchema,
+  user: procedureTextSchema, status: z.enum(["pending", "completed", "negative"]),
+}).strict();
+export const procedureFilterSchema = z.object({
+  product: procedureFieldsSchema.shape.product.optional(), status: procedureFieldsSchema.shape.status.optional(),
+}).strict();
+export const procedureRecordSchema = procedureFieldsSchema.extend({
+  productStatus: z.enum(["MixMax:pending", "MixMax:completed", "MixMax:negative", "TRY&BUY:pending", "TRY&BUY:completed", "TRY&BUY:negative"]).optional(),
+  id: documentIdSchema, month: attendanceMonthSchema, revision: z.number().int().positive(),
+  createdAt: z.string().datetime(), updatedAt: z.string().datetime(), updatedBy: documentIdSchema,
+  source: z.object({ fileHash: z.string().regex(/^[a-f0-9]{64}$/), row: z.number().int().min(2), originalDateTime: procedureDateTimeSchema }).strict().optional(),
+}).strict();
+export const deletedProcedureSchema = procedureRecordSchema.extend({
+  deletedAt: z.string().datetime(), deletedBy: documentIdSchema,
+}).strict();
+export const procedureSummarySchema = z.object({
+  filterIndexVersion: z.literal(1).optional(),
+  revision: z.number().int().nonnegative(), total: z.number().int().nonnegative(),
+  completed: z.number().int().nonnegative(), pending: z.number().int().nonnegative(), negative: z.number().int().nonnegative(),
+  completedMixMax: z.number().int().nonnegative(),
+  totalMixMax: z.number().int().nonnegative().optional(), pendingMixMax: z.number().int().nonnegative().optional(),
+  totalTryBuy: z.number().int().nonnegative().optional(), pendingTryBuy: z.number().int().nonnegative().optional(),
+}).strict().refine(value => {
+  if (value.total !== value.completed + value.pending + value.negative || value.completedMixMax > value.completed) return false;
+  const products = [value.totalMixMax, value.pendingMixMax, value.totalTryBuy, value.pendingTryBuy];
+  if (products.every(count => count === undefined)) return true; // Older summaries are rebuilt on first access.
+  return value.totalMixMax !== undefined && value.pendingMixMax !== undefined && value.totalTryBuy !== undefined && value.pendingTryBuy !== undefined
+    && value.totalMixMax + value.totalTryBuy === value.total && value.pendingMixMax + value.pendingTryBuy === value.pending
+    && value.completedMixMax + value.pendingMixMax <= value.totalMixMax
+    && value.completed - value.completedMixMax + value.pendingTryBuy <= value.totalTryBuy;
+}, "Invalid procedure totals");
 export const attendanceStaffSchema = z.object({
   id: documentIdSchema,
   name: z.string().trim().min(1).max(120).pipe(attendanceTextSchema),
@@ -356,7 +391,7 @@ export const quarterlyBonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["attendance_saved", "excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),
+  action: z.enum(["procedures_saved", "procedures_imported", "procedures_deleted", "procedures_restored", "attendance_saved", "excel_imported", "excel_import_undone", "excel_import_removed", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),

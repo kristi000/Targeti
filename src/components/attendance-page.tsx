@@ -11,6 +11,7 @@ import { useShop } from "@/components/shop-provider";
 import { AttendanceEditor } from "@/components/attendance-editor";
 import { AttendanceHistoryButton } from "@/components/attendance-history";
 import { Header } from "@/components/header";
+import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -59,18 +60,17 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
   };
   return <>
     <Header title={`${shop?.name ?? ""} · ${t("title")}`} />
-    <main className="space-y-4 p-3 md:p-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-sm font-medium">{t("month")}<Input type="month" value={month} min="2000-01" max="2099-12" disabled={dirty || exporting || reusing || dialog !== null} className="w-44" onChange={event => {
+    <main className="shop-page-content space-y-4">
+      <ShopPageToolbar periodSelector={
+        <Input aria-label={t("month")} type="month" value={month} min="2000-01" max="2099-12" disabled={dirty || exporting || reusing || dialog !== null} className="h-9 w-full" onChange={event => {
           if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) return;
           setMonth(event.target.value); setError(null); router.replace(`/${locale}/shop/${shopId}/attendance?month=${event.target.value}`, { scroll: false });
-        }} /></label>
-        <div className="flex flex-wrap gap-2">
+        }} />
+      }>
           <AttendanceHistoryButton key={`${shopId}:${month}`} shopId={shopId} month={month} />
           {actor.role !== "viewer" && <><Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => setDialog("staff")}><Users className="mr-1.5 h-4 w-4" />{t("manageStaff")}</Button><Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => setDialog("template")}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("importTemplate")}</Button>{!query.data?.config.template && <Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => void reuseTemplate()}>{reusing ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-4 w-4" />}{t("usePreviousTemplate", { month: previousMonthLabel })}</Button>}</>}
           <Button size="sm" disabled={dirty || exporting || reusing || !query.data?.config.template} onClick={() => void download()}>{exporting ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}{t("exportOriginal")}</Button>
-        </div>
-      </div>
+      </ShopPageToolbar>
       <p className="text-xs text-muted-foreground">{query.data?.config.template ? t("templateAttached", { name: query.data.config.template.fileName }) : t("templateHint")}</p>
       {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
       <AttendanceEditor key={`${shopId}:${month}`} shopId={shopId} month={month} canEdit={actor.role !== "viewer" && !reusing} onDirtyChange={setDirty} />

@@ -319,7 +319,7 @@ export function ManageShopsDialog({
           />
         ) : (
           <>
-            <DialogHeader className="border-b border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
+            <DialogHeader className="border-b border-border bg-muted/40 px-5 py-4 pr-12 text-left sm:px-6">
               <div className="flex items-center gap-3">
                 <span className="rounded-md bg-emerald-700 p-2 text-white"><Store className="h-5 w-5" /></span>
                 <div>
@@ -330,13 +330,13 @@ export function ManageShopsDialog({
             </DialogHeader>
 
             <div className="flex min-h-0 flex-1 flex-col">
-              <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div className="flex flex-col gap-3 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                 <div className="relative w-full sm:max-w-sm">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("searchShops")} className="pl-9" />
                 </div>
                 <div className="flex items-center justify-between gap-3 sm:justify-end">
-                  <span className="text-sm text-slate-500">{t("shopCount", { count: shops.length })}</span>
+                  <span className="text-sm text-muted-foreground">{t("shopCount", { count: shops.length })}</span>
                   <Button type="button" variant="outline" size="sm" onClick={handleOpenBulkMetrics} disabled={!shops.length}>
                     <Layers3 className="mr-2 h-4 w-4" />{t("bulkMetrics")}
                   </Button>
@@ -371,23 +371,23 @@ export function ManageShopsDialog({
                   <>
                     <div className="hidden md:block">
                       <table className="w-full border-collapse text-sm">
-                        <thead className="sticky top-0 z-10 bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                        <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-foreground">
                           <tr>
-                            <th className="w-14 border-b border-r border-slate-300 px-3 py-2 text-center">#</th>
-                            <th className="border-b border-r border-slate-300 px-3 py-2 text-left">{t("shopName")}</th>
-                            <th className="border-b border-r border-slate-300 px-3 py-2 text-left">{t("description")}</th>
-                            <th className="w-36 border-b border-r border-slate-300 px-3 py-2 text-left">{t("salesReps")}</th>
-                            <th className="w-40 border-b border-slate-300 px-3 py-2 text-right">{t("actions")}</th>
+                            <th className="w-14 border-b border-r border-border px-3 py-2 text-center">#</th>
+                            <th className="border-b border-r border-border px-3 py-2 text-left">{t("shopName")}</th>
+                            <th className="border-b border-r border-border px-3 py-2 text-left">{t("description")}</th>
+                            <th className="w-36 border-b border-r border-border px-3 py-2 text-left">{t("salesReps")}</th>
+                            <th className="w-40 border-b border-border px-3 py-2 text-right">{t("actions")}</th>
                           </tr>
                         </thead>
                         <tbody>
                           {filteredShops.map((shop, index) => (
-                            <tr key={shop.id} className="bg-white even:bg-slate-50/70 hover:bg-emerald-50/70">
-                              <td className="border-b border-r border-slate-200 bg-slate-100 px-3 py-3 text-center font-mono text-xs text-slate-500">{index + 1}</td>
-                              <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left"><span className="block font-medium text-slate-900">{shop.name}</span><span className="mt-0.5 block text-xs font-normal text-slate-500">Supervisor: {supervisorsById.get(shop.supervisorId ?? "") ?? "Unassigned"}</span></th>
-                              <td className="max-w-sm truncate border-b border-r border-slate-200 px-3 py-3 text-slate-500">{shop.description || "—"}</td>
-                              <td className="border-b border-r border-slate-200 px-3 py-3 text-slate-600"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{shop.salesRepresentatives?.length ?? 0}</span></td>
-                              <td className="border-b border-slate-200 px-3 py-2"><ShopActions shop={shop} onEdit={setEditingShop} onDelete={onDelete} canDelete={isAdmin} /></td>
+                            <tr key={shop.id} className="bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
+                              <td className="border-b border-r border-border bg-muted px-3 py-3 text-center font-mono text-xs text-muted-foreground">{index + 1}</td>
+                              <th scope="row" className="border-b border-r border-border px-3 py-3 text-left"><span className="block font-medium text-foreground">{shop.name}</span><span className="mt-0.5 block text-xs font-normal text-muted-foreground">Supervisor: {supervisorsById.get(shop.supervisorId ?? "") ?? "Unassigned"}</span></th>
+                              <td className="max-w-sm truncate border-b border-r border-border px-3 py-3 text-muted-foreground">{shop.description || "—"}</td>
+                              <td className="border-b border-r border-border px-3 py-3 text-muted-foreground"><span className="inline-flex items-center gap-1.5"><Users className="h-4 w-4" />{shop.salesRepresentatives?.length ?? 0}</span></td>
+                              <td className="border-b border-border px-3 py-2"><ShopActions shop={shop} onEdit={setEditingShop} onDelete={onDelete} canDelete={isAdmin} /></td>
                             </tr>
                           ))}
                         </tbody>
@@ -403,7 +403,7 @@ export function ManageShopsDialog({
                     </div>
                   </>
                 ) : (
-                  <div className="flex h-56 flex-col items-center justify-center gap-2 text-center text-slate-500"><Search className="h-8 w-8 text-slate-300" /><p className="font-medium">{t("noMatchingShops")}</p><p className="text-sm">{t("tryAnotherSearch")}</p></div>
+                  <div className="flex h-56 flex-col items-center justify-center gap-2 text-center text-muted-foreground"><Search className="h-8 w-8 text-muted-foreground" /><p className="font-medium">{t("noMatchingShops")}</p><p className="text-sm">{t("tryAnotherSearch")}</p></div>
                 )}
               </ScrollArea>
             </div>
@@ -458,7 +458,7 @@ function ShopEditor({ shop, representativeMonth, saving, nameExists, hasInvalidR
   const weightsValid = Math.abs(metricConfiguration.totalWeight - 1) < 0.00001;
   const canSave = shop.name.trim() && !nameExists && !hasInvalidRepresentatives && weightsValid && !saving;
   return <>
-    <DialogHeader className="border-b border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
+    <DialogHeader className="border-b border-border bg-muted/40 px-5 py-4 pr-12 text-left sm:px-6">
       <div className="flex items-center gap-3">
         <Button type="button" variant="outline" size="icon" aria-label={t("backToShops")} onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button>
         <div><DialogTitle>{t("editShopTitle", { shopName: shop.name })}</DialogTitle><DialogDescription className="mt-1">{representativeMonth ? t("editMonthlyRosterDescription", { shopName: shop.name, month: representativeMonth }) : t("editShopDescription", { shopName: shop.name })}</DialogDescription></div>
@@ -474,18 +474,18 @@ function ShopEditor({ shop, representativeMonth, saving, nameExists, hasInvalidR
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3"><div><h3 className="font-semibold">{t("salesReps")}</h3><p className="text-sm text-muted-foreground">{t("representativeCount", { count: representatives.length })}</p></div><Button type="button" variant="outline" size="sm" onClick={onAddRepresentative}><Plus className="mr-2 h-4 w-4" />{t("add")}</Button></div>
           <div className="overflow-hidden rounded-md border">
-            {representatives.length ? <table className="w-full text-sm"><thead className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="w-14 border-r border-slate-300 px-3 py-2 text-center">#</th><th className="px-3 py-2 text-left">{t("salesReps")}</th><th className="w-16 px-3 py-2"><span className="sr-only">{t("actions")}</span></th></tr></thead><tbody>{representatives.map((representative, index) => <tr key={representative.id} className="border-t"><td className="border-r bg-slate-50 px-3 py-2 text-center font-mono text-xs text-slate-500">{index + 1}</td><td className="px-3 py-2"><Input aria-label={`${t("salesReps")} ${index + 1}`} value={representative.name} onChange={event => onRepresentativeChange(index, event.target.value)} placeholder={`${t("salesReps")} ${index + 1}`} /></td><td className="px-3 py-2 text-right"><Button type="button" variant="ghost" size="icon" aria-label={`Hide ${representative.name || index + 1}`} onClick={() => onRemoveRepresentative(index)}><EyeOff className="h-4 w-4 text-destructive" /></Button></td></tr>)}</tbody></table> : <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><Users className="h-6 w-6 text-slate-300" />{t("noSalesReps")}</div>}
+            {representatives.length ? <table className="w-full text-sm"><thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-foreground"><tr><th className="w-14 border-r border-border px-3 py-2 text-center">#</th><th className="px-3 py-2 text-left">{t("salesReps")}</th><th className="w-16 px-3 py-2"><span className="sr-only">{t("actions")}</span></th></tr></thead><tbody>{representatives.map((representative, index) => <tr key={representative.id} className="border-t"><td className="border-r bg-muted/40 px-3 py-2 text-center font-mono text-xs text-muted-foreground">{index + 1}</td><td className="px-3 py-2"><Input aria-label={`${t("salesReps")} ${index + 1}`} value={representative.name} onChange={event => onRepresentativeChange(index, event.target.value)} placeholder={`${t("salesReps")} ${index + 1}`} /></td><td className="px-3 py-2 text-right"><Button type="button" variant="ghost" size="icon" aria-label={`Hide ${representative.name || index + 1}`} onClick={() => onRemoveRepresentative(index)}><EyeOff className="h-4 w-4 text-destructive" /></Button></td></tr>)}</tbody></table> : <div className="flex h-28 flex-col items-center justify-center gap-2 text-sm text-muted-foreground"><Users className="h-6 w-6 text-muted-foreground" />{t("noSalesReps")}</div>}
           </div>
           {hasInvalidRepresentatives && <p className="text-xs font-medium text-destructive">{t("invalidRepresentatives")}</p>}
         </section>
         <section className="space-y-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div><h3 className="flex items-center gap-2 font-semibold"><SlidersHorizontal className="h-4 w-4 text-primary" />{t("metricWeights")}</h3><p className="text-sm text-muted-foreground">{t("metricWeightsDescription", { quarter: getQuarterKey(`${settingsMonth}-01`) })}</p></div>
-            <span className={weightsValid ? "text-sm font-semibold text-emerald-700" : "text-sm font-semibold text-destructive"}>{t("totalWeight")}: {(metricConfiguration.totalWeight * 100).toFixed(1)}%</span>
+            <span className={weightsValid ? "text-sm font-semibold text-emerald-700 dark:text-emerald-300" : "text-sm font-semibold text-destructive"}>{t("totalWeight")}: {(metricConfiguration.totalWeight * 100).toFixed(1)}%</span>
           </div>
           <div className="overflow-hidden rounded-md border">
             <table className="w-full text-sm">
-              <thead className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="px-3 py-2 text-left">{t("metric")}</th><th className="w-40 px-3 py-2 text-right">{t("weight")}</th></tr></thead>
+              <thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-foreground"><tr><th className="px-3 py-2 text-left">{t("metric")}</th><th className="w-40 px-3 py-2 text-right">{t("weight")}</th></tr></thead>
               <tbody>{metricConfiguration.metrics.map(metric => <tr key={metric} className="border-t"><th scope="row" className="px-3 py-2 text-left font-medium">{getMetricLabel(metric, metricConfiguration.metricSettings)}</th><td className="px-3 py-2"><div className="ml-auto flex max-w-32 items-center gap-2"><Input type="number" min="0" max="100" step="0.1" className="text-right tabular-nums" value={Number(((metricConfiguration.metricSettings?.[metric]?.weight ?? getMetricWeight(metric)) * 100).toFixed(2))} onChange={event => onMetricWeightChange(metric, Number(event.target.value))} /><span className="text-muted-foreground">%</span></div></td></tr>)}</tbody>
             </table>
           </div>
@@ -493,7 +493,7 @@ function ShopEditor({ shop, representativeMonth, saving, nameExists, hasInvalidR
         </section>
       </div>
     </ScrollArea>
-    <DialogFooter className="border-t bg-slate-50 px-5 py-4 sm:px-6">
+    <DialogFooter className="border-t bg-muted/40 px-5 py-4 sm:px-6">
       <Button type="button" variant="outline" onClick={onBack}>{t("cancel")}</Button>
       <Button type="button" onClick={onSave} disabled={!canSave}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t("saveChanges")}</Button>
     </DialogFooter>
@@ -560,28 +560,28 @@ function BulkMetricEditor({ state, shops, settingsMonth, saving, removingMetric,
   }, [shops, state.selectedShopIds]);
 
   return <>
-    <DialogHeader className="border-b border-slate-200 bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
+    <DialogHeader className="border-b border-border bg-muted/40 px-5 py-4 pr-12 text-left sm:px-6">
       <div className="flex items-center gap-3"><Button type="button" variant="outline" size="icon" aria-label={t("backToShops")} onClick={onBack}><ArrowLeft className="h-4 w-4" /></Button><div><DialogTitle>{t("bulkMetricsTitle")}</DialogTitle><DialogDescription className="mt-1">{t("bulkMetricsDescription", { quarter: getQuarterKey(`${settingsMonth}-01`) })}</DialogDescription></div></div>
     </DialogHeader>
     <ScrollArea className="h-[min(68vh,600px)]">
       <div className="space-y-4 p-5 sm:p-6">
         <section className="space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h3 className="font-semibold">{t("selectShops")}</h3><p className="text-sm text-muted-foreground">{t("selectedShopCount", { selected: shopCount, total: shops.length })}</p></div><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => onShopSelectionChange(shops.map(shop => shop.id))}>{t("selectAll")}</Button><Button type="button" variant="ghost" size="sm" onClick={() => onShopSelectionChange([])} disabled={!shopCount}>{t("clearSelection")}</Button></div></div>
-          <div className="rounded-md border"><div className="border-b p-2"><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={shopQuery} onChange={event => setShopQuery(event.target.value)} placeholder={t("searchShops")} className="h-9 pl-9" /></div></div><div className="grid max-h-44 gap-px overflow-y-auto bg-border sm:grid-cols-2 lg:grid-cols-3">{sortedShops.map(shop => { const checked = state.selectedShopIds.includes(shop.id); return <label key={shop.id} className="flex cursor-pointer items-center gap-2 bg-background px-3 py-2.5 text-sm hover:bg-emerald-50"><Checkbox checked={checked} onCheckedChange={value => onShopSelectionChange(value ? [...state.selectedShopIds, shop.id] : state.selectedShopIds.filter(id => id !== shop.id))} /><span className="truncate">{shop.name}</span></label>; })}</div></div>
+          <div className="rounded-md border"><div className="border-b p-2"><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={shopQuery} onChange={event => setShopQuery(event.target.value)} placeholder={t("searchShops")} className="h-9 pl-9" /></div></div><div className="grid max-h-44 gap-px overflow-y-auto bg-border sm:grid-cols-2 lg:grid-cols-3">{sortedShops.map(shop => { const checked = state.selectedShopIds.includes(shop.id); return <label key={shop.id} className="flex cursor-pointer items-center gap-2 bg-background px-3 py-2.5 text-sm hover:bg-emerald-50 dark:hover:bg-emerald-950/40"><Checkbox checked={checked} onCheckedChange={value => onShopSelectionChange(value ? [...state.selectedShopIds, shop.id] : state.selectedShopIds.filter(id => id !== shop.id))} /><span className="truncate">{shop.name}</span></label>; })}</div></div>
         </section>
         {shopCount ? <>
-          <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{t("bulkMetricsWarning", { count: shopCount })}</p></div>
+          <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm text-amber-900 dark:text-amber-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><p>{t("bulkMetricsWarning", { count: shopCount })}</p></div>
           {disabledMetrics.length > 0 && <section className="space-y-2">
             <div><h3 className="font-semibold">{t("disabledMetrics")}</h3><p className="text-sm text-muted-foreground">{t("disabledMetricsDescription")}</p></div>
             <div className="divide-y overflow-hidden rounded-md border">{disabledMetrics.map(item => <div key={item.metric} className="flex items-center justify-between gap-3 px-3 py-2.5"><div className="min-w-0"><p className="truncate text-sm font-medium">{item.label}</p><p className="text-xs text-muted-foreground">{t("disabledInShopCount", { count: item.count })}</p></div><Button type="button" variant="outline" size="sm" disabled={Boolean(restoringMetric) || Boolean(removingMetric)} onClick={() => onRestore(item.metric)}>{restoringMetric === item.metric ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-2 h-4 w-4" />}{t("restoreMetric")}</Button></div>)}</div>
           </section>}
-          <div className="flex items-end justify-between gap-3"><div><h3 className="font-semibold">{t("metricWeights")}</h3><p className="text-sm text-muted-foreground">{t("mixedWeightsHint")}</p></div><span className={totalValid ? "text-sm font-semibold text-emerald-700" : "text-sm font-semibold text-destructive"}>{t("totalWeight")}: {total.toFixed(1)}%</span></div>
-          <div className="overflow-hidden rounded-md border"><table className="w-full text-sm"><thead className="bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700"><tr><th className="px-3 py-2 text-left">{t("metric")}</th><th className="w-44 px-3 py-2 text-right">{t("weight")}</th><th className="w-20 px-3 py-2 text-right">{t("actions")}</th></tr></thead><tbody>{state.metrics.map(metric => <tr key={metric} className="border-t"><th scope="row" className="px-3 py-2 text-left font-medium">{state.labels[metric]}</th><td className="px-3 py-2"><div className="ml-auto flex max-w-36 items-center gap-2"><Input type="number" min="0" max="100" step="0.1" placeholder={t("mixed")} className="text-right tabular-nums" value={state.values[metric]} onChange={event => onChange(metric, event.target.value)} /><span className="text-muted-foreground">%</span></div></td><td className="px-3 py-2 text-right">{canDelete && <AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={t("removeMetric", { metric: state.labels[metric] })} disabled={Boolean(removingMetric)} className="text-destructive hover:bg-destructive/10 hover:text-destructive">{removingMetric === metric ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("removeMetricTitle", { metric: state.labels[metric] })}</AlertDialogTitle><AlertDialogDescription>{t("removeMetricDescription", { metric: state.labels[metric], count: shopCount })}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => onRemove(metric)}>{t("removeFromSelected")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</td></tr>)}</tbody></table></div>
-          {!valuesComplete && <p className="text-xs font-medium text-amber-700">{t("completeAllWeights")}</p>}
+          <div className="flex items-end justify-between gap-3"><div><h3 className="font-semibold">{t("metricWeights")}</h3><p className="text-sm text-muted-foreground">{t("mixedWeightsHint")}</p></div><span className={totalValid ? "text-sm font-semibold text-emerald-700 dark:text-emerald-300" : "text-sm font-semibold text-destructive"}>{t("totalWeight")}: {total.toFixed(1)}%</span></div>
+          <div className="overflow-hidden rounded-md border"><table className="w-full text-sm"><thead className="bg-muted text-xs font-semibold uppercase tracking-wide text-foreground"><tr><th className="px-3 py-2 text-left">{t("metric")}</th><th className="w-44 px-3 py-2 text-right">{t("weight")}</th><th className="w-20 px-3 py-2 text-right">{t("actions")}</th></tr></thead><tbody>{state.metrics.map(metric => <tr key={metric} className="border-t"><th scope="row" className="px-3 py-2 text-left font-medium">{state.labels[metric]}</th><td className="px-3 py-2"><div className="ml-auto flex max-w-36 items-center gap-2"><Input type="number" min="0" max="100" step="0.1" placeholder={t("mixed")} className="text-right tabular-nums" value={state.values[metric]} onChange={event => onChange(metric, event.target.value)} /><span className="text-muted-foreground">%</span></div></td><td className="px-3 py-2 text-right">{canDelete && <AlertDialog><AlertDialogTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={t("removeMetric", { metric: state.labels[metric] })} disabled={Boolean(removingMetric)} className="text-destructive hover:bg-destructive/10 hover:text-destructive">{removingMetric === metric ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("removeMetricTitle", { metric: state.labels[metric] })}</AlertDialogTitle><AlertDialogDescription>{t("removeMetricDescription", { metric: state.labels[metric], count: shopCount })}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => onRemove(metric)}>{t("removeFromSelected")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</td></tr>)}</tbody></table></div>
+          {!valuesComplete && <p className="text-xs font-medium text-amber-700 dark:text-amber-300">{t("completeAllWeights")}</p>}
           {valuesComplete && !totalValid && <p className="text-xs font-medium text-destructive">{t("weightsMustTotal")}</p>}
         </> : <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">{t("selectShopsToContinue")}</div>}
       </div>
     </ScrollArea>
-    <DialogFooter className="border-t bg-slate-50 px-5 py-4 sm:px-6"><Button type="button" variant="outline" onClick={onBack}>{t("cancel")}</Button><Button type="button" onClick={onApply} disabled={!shopCount || !totalValid || saving || Boolean(removingMetric) || Boolean(restoringMetric)}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t("applyToSelectedShops", { count: shopCount })}</Button></DialogFooter>
+    <DialogFooter className="border-t bg-muted/40 px-5 py-4 sm:px-6"><Button type="button" variant="outline" onClick={onBack}>{t("cancel")}</Button><Button type="button" onClick={onApply} disabled={!shopCount || !totalValid || saving || Boolean(removingMetric) || Boolean(restoringMetric)}>{saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}{t("applyToSelectedShops", { count: shopCount })}</Button></DialogFooter>
   </>;
 }

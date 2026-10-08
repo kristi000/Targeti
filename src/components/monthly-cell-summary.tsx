@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowUpRight, RefreshCw } from "lucide-react";
@@ -8,20 +8,21 @@ import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { fetchMonthlyCellSummary } from "@/app/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { ReportExportButtons } from "@/components/report-export-buttons";
+import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";
 import { useToast } from "@/hooks/use-toast";
 import { monthlyCellQueryKey } from "@/lib/monthly-closing";
 import { exportReport, type ReportExportFormat } from "@/lib/report-export";
-import { formatReportingMonth } from "@/lib/reporting-month";
 
 type Props = {
   shopId: string;
   shopName: string;
   month: string;
+  periodSelector?: ReactNode;
   onOpenReport: (date: string) => void;
 };
 
-export function MonthlyCellSummary({ shopId, shopName, month, onOpenReport }: Props) {
+export function MonthlyCellSummary({ shopId, shopName, month, onOpenReport, periodSelector }: Props) {
   const t = useTranslations("MonthlyCell");
   const exportTranslations = useTranslations("ReportExport");
   const locale = useLocale();
@@ -57,17 +58,11 @@ export function MonthlyCellSummary({ shopId, shopName, month, onOpenReport }: Pr
     }
   };
 
-  return <section className="w-fit max-w-[720px] space-y-2" aria-label={t("title")}>
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h2 className="text-lg font-semibold">{t("title")} · {formatReportingMonth(month, locale)}</h2>
-        <p className="text-xs text-muted-foreground">{t("description")}</p>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        <Button variant="outline" size="sm" className="h-8" disabled={summary.isFetching} onClick={() => void summary.refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("refresh")}</Button>
-        <ReportExportButtons disabled={!summary.data?.rows.length} exporting={exporting} onExport={format => void handleExport(format)} />
-      </div>
-    </div>
+  return <section className="w-fit max-w-[min(100%,720px)] space-y-2" aria-label={t("title")}>
+    <ShopPageToolbar periodSelector={periodSelector}>
+      <Button variant="outline" size="sm" className="h-8" disabled={summary.isFetching} onClick={() => void summary.refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("refresh")}</Button>
+      <ReportExportButtons disabled={!summary.data?.rows.length} exporting={exporting} onExport={format => void handleExport(format)} />
+    </ShopPageToolbar>
     {summary.isPending ? <p role="status" className="rounded-lg border p-8 text-center">{t("loading")}</p>
       : summary.isError ? <p role="alert" className="rounded-lg border border-destructive p-6 text-destructive">{t("loadFailed")}</p>
       : <>

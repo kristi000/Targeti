@@ -6,6 +6,7 @@ import { refreshDashboardSummaries } from "@/app/dashboard-actions";
 import { mutationError, recordActivity } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { deleteShopAttendance } from "@/lib/server/attendance";
+import { deleteShopProcedures } from "@/lib/server/procedures";
 
 export async function handleClearAllData() {
   try {
@@ -17,6 +18,7 @@ export async function handleClearAllData() {
     const references: DocumentReference[] = supervisors.docs.map(document => document.ref);
     await Promise.all(shops.docs.map(async shop => {
       await deleteShopAttendance(shop.id);
+      await deleteShopProcedures(shop.id);
       const [performance, bonusSnapshots, quarterlyBonusSnapshots, dailyClosings] = await Promise.all([
         getDocs(collection(db, "shops", shop.id, "performance")),
         getDocs(collection(db, "shops", shop.id, "bonusSnapshots")),

@@ -23,7 +23,7 @@ export function DetailedDashboardRoute({ shopId, requestedMonth }: { shopId: str
   if (selectedShop?.id === shopId) return <DetailedDashboardClient key={`${shopId}:${requestedMonth ?? ""}`} requestedMonth={requestedMonth} />;
 
   return (
-    <div className="flex h-full flex-col p-4 md:p-6 lg:p-8">
+    <div className="shop-page-content flex h-full flex-col">
       <Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4 w-fit")}>
         <ArrowLeft className="mr-2" /> {t("backToOverview")}
       </Link>

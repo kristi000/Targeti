@@ -281,6 +281,10 @@ export type QuarterlyBonusSnapshot = {
 };
 
 export type ActivityAction =
+  | "procedures_saved"
+  | "procedures_imported"
+  | "procedures_deleted"
+  | "procedures_restored"
   | "attendance_saved"
   | "excel_imported"
   | "excel_import_undone"

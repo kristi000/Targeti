@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -41,16 +42,17 @@
   }
 
   .dark {
+    color-scheme: dark;
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
     --card: 222 47% 11%;
     --card-foreground: 210 40% 98%;
     --popover: 222 47% 11%;
     --popover-foreground: 210 40% 98%;
-    --primary: 275 53% 37%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 275 65% 65%;
+    --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 45 100% 52%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
     --muted: 217 33% 17%;
     --muted-foreground: 215 20% 65%;
     --accent: 33 100% 65%;
@@ -78,10 +80,27 @@
 }
 
 @layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
   * {
     @apply border-border;
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer components {
+  .shop-page-content {
+    @apply p-3 md:p-5;
+  }
+
+  .shop-page-toolbar button {
+    @apply h-9;
+  }
+
+  .shop-page-toolbar [role="tablist"] {
+    @apply h-11;
   }
 }

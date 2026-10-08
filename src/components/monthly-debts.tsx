@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import { useLocale, useTranslations } from "next-intl";
@@ -8,10 +8,10 @@ import { ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw, Search, Pencil, Che
 import { fetchMonthlyDebts, handleUpdateDebt } from "@/app/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { ReportExportButtons } from "@/components/report-export-buttons";
+import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { Input } from "@/components/ui/input";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";
 import { monthlyDebtsQueryKey, type MonthlyDebtRow } from "@/lib/monthly-closing";
-import { formatReportingMonth } from "@/lib/reporting-month";
 
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -27,7 +27,7 @@ class DebtLoadError extends Error {
   }
 }
 
-export function MonthlyDebts({ shopId, month, onOpenReport, canEdit, onUpdated }: { shopId: string; month: string; onOpenReport: (date: string) => void; canEdit: boolean; onUpdated: () => void }) {
+export function MonthlyDebts({ shopId, month, onOpenReport, canEdit, onUpdated, periodSelector }: { shopId: string; month: string; onOpenReport: (date: string) => void; canEdit: boolean; onUpdated: () => void; periodSelector?: ReactNode }) {
   const t = useTranslations("MonthlyDebts");
   const exportTranslations = useTranslations("ReportExport");
   const locale = useLocale();
@@ -136,14 +136,11 @@ export function MonthlyDebts({ shopId, month, onOpenReport, canEdit, onUpdated }
     }),
     getRowId: row => row.id,
   });
-  return <section className="w-fit max-w-[800px] space-y-2" aria-label={t("title")}>
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">{t("title")} · {formatReportingMonth(month, locale)}</h2><p className="text-xs text-muted-foreground">{t("description")}</p></div>
-      <div className="flex flex-wrap gap-1.5">
-        <Button variant="outline" size="sm" className="h-8" disabled={debts.isFetching} onClick={() => void debts.refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("refresh")}</Button>
-        <ReportExportButtons disabled={!debts.data?.rowCount} exporting={exporting} onExport={format => void handleExport(format)} />
-      </div>
-    </div>
+  return <section className="w-fit max-w-[min(100%,800px)] space-y-2" aria-label={t("title")}>
+    <ShopPageToolbar periodSelector={periodSelector}>
+      <Button variant="outline" size="sm" className="h-8" disabled={debts.isFetching} onClick={() => void debts.refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("refresh")}</Button>
+      <ReportExportButtons disabled={!debts.data?.rowCount} exporting={exporting} onExport={format => void handleExport(format)} />
+    </ShopPageToolbar>
     <div className="border border-slate-300 bg-slate-50 p-1.5 dark:border-slate-600 dark:bg-slate-900"><div className="relative max-w-md"><Search className="absolute left-2 top-2 h-3.5 w-3.5 text-muted-foreground" /><Input className="h-7 rounded-none pl-7 text-xs" aria-label={t("search")} placeholder={t("search")} maxLength={200} value={search} onChange={event => { setSearch(event.target.value); setPagination({ pageIndex: 0, pageSize: 20 }); }} /></div></div>
     {debts.isPending ? <p role="status" className="p-8 text-center">{t("loading")}</p>
       : debts.isError ? <div role="alert" className="space-y-2 rounded-lg border border-destructive p-6 text-destructive">

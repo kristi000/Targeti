@@ -8,6 +8,7 @@ import { getInitialTargets, type Shop } from "@/lib/types";
 import { createActivity, mutationError, parseFirestoreDocument, recordActivity, toFirestoreData } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { deleteShopAttendance } from "@/lib/server/attendance";
+import { deleteShopProcedures } from "@/lib/server/procedures";
 
 export async function handleAddShop(shopName: string, description?: string) {
   try {
@@ -88,6 +89,7 @@ export async function handleDeleteShop(shopId: string) {
     }
     const activity = await createActivity({ action: "shop_deleted", summary: `Deleted shop ${shopName}.`, shopIds: [validShopId], shopNames: [shopName] });
     await deleteShopAttendance(validShopId);
+    await deleteShopProcedures(validShopId);
     const finalBatch = writeBatch(db);
     finalBatch.delete(shopRef);
     finalBatch.set(activity.reference, activity.data);

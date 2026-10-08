@@ -7,6 +7,7 @@ import { ArrowLeft, Banknote, ClipboardCheck, Loader2, MessageSquareText, Pencil
 import { format, isSameMonth, parseISO } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { Header } from "@/components/header";
+import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { PerformanceTable } from "@/components/performance-table";
 import { WorkerPerformanceList } from "@/components/worker-performance-list";
 import { useShop } from "@/components/shop-provider";
@@ -201,41 +202,43 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
   };
 
   if (indexQuery.isPending || performanceQuery.isPending) {
-    return <div className="flex min-h-64 items-center justify-center p-6" role="status"><Loader2 className="h-5 w-5 animate-spin" />{t("loading")}</div>;
+    return <div className="shop-page-content flex min-h-64 items-center justify-center" role="status"><Loader2 className="h-5 w-5 animate-spin" />{t("loading")}</div>;
   }
   if (indexQuery.isError || performanceQuery.isError) {
-    return <div className="p-6 text-destructive" role="alert">{t("tryAgain")}</div>;
+    return <div className="shop-page-content text-destructive" role="alert">{t("tryAgain")}</div>;
   }
   if (!selectedShop || !monthlyTargets) {
-    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="flex-1 p-4 md:p-6 lg:p-8"><Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
+    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="shop-page-content flex-1"><Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
   }
 
   return (
     <div className="flex h-full flex-col">
-      <Header
-        title={`${t("title")}: ${selectedShop.name}`}
-        actions={<Select value={selectedReportValue} onValueChange={value => {
+      <Header title={`${t("title")}: ${selectedShop.name}`} />
+      <div className="shop-page-content flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-6xl space-y-2 sm:space-y-3">
+          <ShopPageToolbar id="edit-achievements-controls" className="scroll-mt-4 rounded-md border bg-background px-3 py-2"
+            periodSelector={<Select value={selectedReportValue} onValueChange={value => {
             const option = reportOptions.find(item => item.value === value);
             if (!option) return;
             setMonthSelection({ shopId: selectedShop.id, month: option.month });
             setSelectedDatasetId(option.month);
             setVersionSelection({ shopId: selectedShop.id, versionId: option.versionId });
           }}>
-            <SelectTrigger className="h-9 w-36 shrink-0 sm:w-56" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-9 w-full" aria-label={t("reportingPeriod")}><SelectValue /></SelectTrigger>
             <SelectContent>{reportOptions.map((option, index) => <SelectItem key={option.value} value={option.value}>
-              {option.report ? formatReportingDate(option.report.asOfDate ?? option.report.date, locale) : formatReportingMonth(option.month, locale)}
+              <span className="sm:hidden">{option.report ? formatReportingDate(option.report.asOfDate ?? option.report.date, locale, "short") : formatReportingMonth(option.month, locale, "short")}</span>
+              <span className="hidden sm:inline">{option.report ? formatReportingDate(option.report.asOfDate ?? option.report.date, locale) : formatReportingMonth(option.month, locale)}</span>
               {option.versionId !== "active" ? ` · ${option.report?.importName ?? `Older import ${index + 1}`}` : ""}
             </SelectItem>)}</SelectContent>
           </Select>}
-      />
-      <div className="flex-1 overflow-y-auto p-2 sm:p-3 md:p-4">
-        <div className="mx-auto w-full max-w-6xl space-y-2 sm:space-y-3">
+          >
           {actor.role !== "viewer" && !selectedVersion && monthlyRepresentatives.length > 0 && (
-            <div id="edit-achievements-controls" className="flex scroll-mt-4 flex-wrap items-center justify-between gap-2 rounded-md border bg-background px-3 py-2">
-              <p className="text-xs text-muted-foreground">{activeDraft ? t("editAchievementsHint") : t("editAchievementsAvailable")}</p>
+            <>
+              {activeDraft && <p className="mr-auto text-xs text-muted-foreground">{t("editAchievementsHint")}</p>}
               {activeDraft ? <div className="flex gap-2"><Button type="button" size="sm" variant="outline" disabled={isSavingAchievements} onClick={() => setAchievementDraft(null)}>{t("cancel")}</Button><Button type="button" size="sm" disabled={isSavingAchievements || !hasAchievementChanges} onClick={() => void saveAchievements()}>{isSavingAchievements ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}{t("saveAchievements")}</Button></div> : <Button type="button" size="sm" variant="outline" onClick={() => setAchievementDraft({ key: draftKey, reps: initialAchievementReps })}><Pencil className="mr-1.5 h-4 w-4" />{t("editAchievements")}</Button>}
-            </div>
+            </>
           )}
+          </ShopPageToolbar>
           {excelReport?.achievementOverride && (
             <div className="flex flex-col gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between">
               <div>

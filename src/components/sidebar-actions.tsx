@@ -306,17 +306,17 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                     <>
                     <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Dashboard actions</p>
                     {canEdit && <>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
-                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsImportManagementDialogOpen(true)}><FileClock />Manage imports</Button>}
-                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenManageShops}><Store />{t('manageShops')}</Button>}
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsRepresentativeDialogOpen(true)}><UsersRound />Manage representatives</Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet /><span className="truncate" title="Import Excel">Import Excel</span></Button>
+                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsImportManagementDialogOpen(true)}><FileClock /><span className="truncate" title="Manage imports">Manage imports</span></Button>}
+                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={handleOpenManageShops}><Store /><span className="truncate" title={t('manageShops')}>{t('manageShops')}</span></Button>}
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsRepresentativeDialogOpen(true)}><UsersRound /><span className="truncate" title="Manage representatives">Manage representatives</span></Button>
                     </>}
-                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsSupervisorDialogOpen(true)}><UserRoundCog />Manage supervisors</Button>}
-                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsActivityHistoryDialogOpen(true)}><History />Activity history</Button>}
+                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsSupervisorDialogOpen(true)}><UserRoundCog /><span className="truncate" title="Manage supervisors">Manage supervisors</span></Button>}
+                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsActivityHistoryDialogOpen(true)}><History /><span className="truncate" title="Activity history">Activity history</span></Button>}
                     {isAdmin && <>
                         <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Administration</p>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsUserManagementOpen(true)}><UserRoundCog />Manage users</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsWeightProfileManagerOpen(true)}><SlidersHorizontal />Manage weight profiles</Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsUserManagementOpen(true)}><UserRoundCog /><span className="truncate" title="Manage users">Manage users</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsWeightProfileManagerOpen(true)}><SlidersHorizontal /><span className="truncate" title="Manage weight profiles">Manage weight profiles</span></Button>
                     </>}
                     {isExcelImportDialogOpen && <ExcelImportDialog open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                     {isActivityHistoryDialogOpen && <ActivityHistoryDialog open onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />}
@@ -326,11 +326,10 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 )}
                 {selectedShop && !isDashboard && canEdit && (
                     <>
-                        <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Shop actions</p>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet />Import Excel</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings />{t('setMonthlyTargets')}</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={() => requestAchievementEdit(selectedShop.id, activeMonth)} disabled={isHistoricalReport || monthlyRepresentatives.length === 0} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil />{t('editAchievements')}</Button>
-                        <Button type="button" variant="ghost" size="sm" className="justify-start" onClick={handleOpenEditShop}><Edit />{t('editShop')}</Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet /><span className="truncate" title="Import Excel">Import Excel</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings /><span className="truncate" title={t('setMonthlyTargets')}>{t('setMonthlyTargets')}</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => requestAchievementEdit(selectedShop.id, activeMonth)} disabled={isHistoricalReport || monthlyRepresentatives.length === 0} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil /><span className="truncate" title={t('editAchievements')}>{t('editAchievements')}</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={handleOpenEditShop}><Edit /><span className="truncate" title={t('editShop')}>{t('editShop')}</span></Button>
                         {isExcelImportDialogOpen && <ExcelImportDialog restrictToSelectedShop open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogContent className="sm:max-w-2xl">

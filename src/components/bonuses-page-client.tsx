@@ -29,7 +29,7 @@ export function BonusesPageClient({ periods }: { periods: DashboardPeriod[] }) {
   };
 
   return <div className="flex h-svh min-h-0 flex-col overflow-hidden bg-muted/20">
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 md:px-4"><SidebarTrigger className="h-9 w-9" /><span className="font-semibold">{t("title")}</span></header>
+    <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 md:px-4"><SidebarTrigger className="h-9 w-9" /><h1 className="font-semibold">{t("title")}</h1></header>
     <div className="min-h-0 flex-1 overflow-hidden"><BonusOverviewClient month={month} months={months} onMonthChange={changeMonth} /></div>
   </div>;
 }

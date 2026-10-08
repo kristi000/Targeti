@@ -204,14 +204,14 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
   return <>
     <Dialog open={open} onOpenChange={handleDialogChange}>
       <DialogContent className="flex h-[calc(100vh-2rem)] max-h-[760px] flex-col gap-0 overflow-hidden p-0 sm:h-[90vh] sm:max-w-4xl">
-        <DialogHeader className="shrink-0 border-b bg-slate-50 px-5 py-4 pr-12 text-left sm:px-6">
+        <DialogHeader className="shrink-0 border-b bg-muted/40 px-5 py-4 pr-12 text-left sm:px-6">
           <div className="flex items-center gap-3">
             <span className="rounded-md bg-emerald-700 p-2 text-white"><UserRoundCog className="h-5 w-5" /></span>
             <div><DialogTitle>Manage representatives</DialogTitle><DialogDescription>Hide representatives persistently or restore them for {month}.</DialogDescription></div>
           </div>
         </DialogHeader>
 
-        <div className="flex shrink-0 gap-2 border-b bg-slate-50 px-5 py-3 sm:px-6">
+        <div className="flex shrink-0 gap-2 border-b bg-muted/40 px-5 py-3 sm:px-6">
           <Button type="button" size="sm" variant={view === "visible" ? "default" : "outline"} onClick={() => changeView("visible")} disabled={processing}>
             <Eye className="mr-2 h-4 w-4" />Visible ({representatives.filter(representative => !representative.hidden).length})
           </Button>
@@ -235,27 +235,27 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
 
         <ScrollArea className="min-h-0 flex-1">
           {performanceQuery.isPending ? <div role="status" className="flex h-64 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Loading performance…</div> : performanceQuery.isError ? <div role="alert" className="flex h-64 items-center justify-center gap-2 text-sm text-destructive">Could not load performance data.<Button type="button" size="sm" variant="outline" onClick={() => void performanceQuery.refetch()}><RotateCcw className="mr-2 h-4 w-4" />Retry</Button></div> : filteredRepresentatives.length ? <table className="w-full border-collapse text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
+            <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-foreground">
               <tr>
-                <th className="w-14 border-b border-r border-slate-300 px-3 py-2 text-center"><Checkbox checked={allFilteredSelected} onCheckedChange={value => toggleFiltered(Boolean(value))} aria-label="Select all visible representatives" /></th>
-                <th className="border-b border-r border-slate-300 px-3 py-2 text-left">Representative</th>
-                <th className="border-b border-r border-slate-300 px-3 py-2 text-left">Shop</th>
-                <th className="w-32 border-b border-slate-300 px-3 py-2 text-right">Performance</th>
+                <th className="w-14 border-b border-r border-border px-3 py-2 text-center"><Checkbox checked={allFilteredSelected} onCheckedChange={value => toggleFiltered(Boolean(value))} aria-label="Select all visible representatives" /></th>
+                <th className="border-b border-r border-border px-3 py-2 text-left">Representative</th>
+                <th className="border-b border-r border-border px-3 py-2 text-left">Shop</th>
+                <th className="w-32 border-b border-border px-3 py-2 text-right">Performance</th>
               </tr>
             </thead>
             <tbody>{filteredRepresentatives.map(representative => {
               const checked = selectedKeySet.has(representative.key);
-              return <tr key={representative.key} className="bg-white even:bg-slate-50/70 hover:bg-emerald-50/70">
-                <td className="border-b border-r border-slate-200 px-3 py-3 text-center"><Checkbox checked={checked} onCheckedChange={value => setSelectedKeys(current => value ? [...current, representative.key] : current.filter(key => key !== representative.key))} aria-label={`Select ${representative.name}`} /></td>
-                <th scope="row" className="border-b border-r border-slate-200 px-3 py-3 text-left font-medium">{representative.name}</th>
-                <td className="border-b border-r border-slate-200 px-3 py-3 text-muted-foreground">{representative.shopName}</td>
-                <td className="border-b border-slate-200 px-3 py-3 text-right font-semibold tabular-nums">{representative.achievement === null ? "—" : `${representative.achievement.toFixed(1)}%`}</td>
+              return <tr key={representative.key} className="bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
+                <td className="border-b border-r border-border px-3 py-3 text-center"><Checkbox checked={checked} onCheckedChange={value => setSelectedKeys(current => value ? [...current, representative.key] : current.filter(key => key !== representative.key))} aria-label={`Select ${representative.name}`} /></td>
+                <th scope="row" className="border-b border-r border-border px-3 py-3 text-left font-medium">{representative.name}</th>
+                <td className="border-b border-r border-border px-3 py-3 text-muted-foreground">{representative.shopName}</td>
+                <td className="border-b border-border px-3 py-3 text-right font-semibold tabular-nums">{representative.achievement === null ? "—" : `${representative.achievement.toFixed(1)}%`}</td>
               </tr>;
             })}</tbody>
-          </table> : <div className="flex h-64 flex-col items-center justify-center gap-2 text-center text-muted-foreground"><Users className="h-8 w-8 text-slate-300" /><p className="font-medium">No representatives found</p><p className="text-sm">Try another search or reporting month.</p></div>}
+          </table> : <div className="flex h-64 flex-col items-center justify-center gap-2 text-center text-muted-foreground"><Users className="h-8 w-8 text-muted-foreground" /><p className="font-medium">No representatives found</p><p className="text-sm">Try another search or reporting month.</p></div>}
         </ScrollArea>
 
-        <DialogFooter className="shrink-0 gap-2 border-t bg-slate-50 px-5 py-4 sm:space-x-0 sm:px-6">
+        <DialogFooter className="shrink-0 gap-2 border-t bg-muted/40 px-5 py-4 sm:space-x-0 sm:px-6">
           <Button type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={processing}>Close</Button>
           {view === "visible"
             ? <Button type="button" variant="destructive" onClick={() => setConfirming(true)} disabled={!selectedKeys.length || processing || !performanceByShop}><EyeOff className="mr-2 h-4 w-4" />Hide selected ({selectedKeys.length})</Button>

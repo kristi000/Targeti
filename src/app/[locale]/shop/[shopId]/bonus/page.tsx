@@ -47,7 +47,7 @@ export default async function BonusPage({ params, searchParams }: { params: Prom
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>
-      <BonusDashboardRoute shopId={shopId} requestedMonth={requestedMonth && months.includes(requestedMonth) ? requestedMonth : undefined} requestedQuarter={requestedQuarter} initialView={initialView} historyDetail={historyDetail} />
+      <BonusDashboardRoute shopId={shopId} requestedMonth={requestedMonth && months.includes(requestedMonth) ? requestedMonth : undefined} requestedQuarter={requestedQuarter} historyDetail={historyDetail} />
     </HydrationBoundary>
   );
 }

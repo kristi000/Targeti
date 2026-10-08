@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BarChart3, BadgeDollarSign, CalendarRange, ClipboardCheck, KeyRound, Smartphone, Store, UserMinus, Wallet } from "lucide-react";
+import { ArrowLeft, BarChart3, BadgeDollarSign, CalendarRange, ClipboardCheck, ListChecks, KeyRound, Smartphone, Store, UserMinus, Wallet } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useSearchParams } from "next/navigation";
 import { closingViewHref, getClosingView, type ClosingView } from "@/lib/closing-navigation";
@@ -28,6 +28,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
   const unsubscribes = useTranslations("MonthlyUnsubscribes");
   const cell = useTranslations("MonthlyCell");
   const attendance = useTranslations("Attendance");
+  const procedures = useTranslations("Procedures");
   const restricted = useTranslations("RestrictedAccess");
   const accessQuery = useRestrictedAccess();
   const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
@@ -43,6 +44,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
     { path: `${basePath}/bonus`, href: `${basePath}/bonus${monthQuery}`, icon: BadgeDollarSign, label: t("bonusPage") },
     { path: closingPath, href: closingPath, icon: ClipboardCheck, label: t("closingPage") },
     { path: `${basePath}/attendance`, href: `${basePath}/attendance${monthQuery}`, icon: CalendarRange, label: attendance("title") },
+    { path: `${basePath}/procedures`, href: `${basePath}/procedures${monthQuery}`, icon: ListChecks, label: procedures("title") },
   ];
   const protectedItems: { view: Exclude<ClosingView, "daily">; icon: typeof CalendarRange; label: string }[] = [
     { view: "monthly", icon: CalendarRange, label: monthly("title") },
@@ -56,7 +58,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
       <SidebarGroupLabel className="h-auto px-2 pb-2">
         <span className="flex min-w-0 items-center gap-2 text-sidebar-foreground">
           <Store className="h-4 w-4 shrink-0 text-primary" />
-          <span className="truncate font-medium">{shopName ?? t("title")}</span>
+          <span className="truncate font-medium" title={shopName ?? t("title")}>{shopName ?? t("title")}</span>
         </span>
       </SidebarGroupLabel>
       <SidebarGroupContent>

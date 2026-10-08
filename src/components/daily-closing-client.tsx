@@ -24,7 +24,9 @@ import {
 
 import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
 import { Header } from "@/components/header";
+import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { AttendanceEditor } from "@/components/attendance-editor";
+import { ProcedureEntry } from "@/components/procedure-entry";
 import { attendanceQueryKey } from "@/lib/attendance";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
@@ -58,7 +60,7 @@ type Adjustments = { boss: number; invoice: number; unsubscribe: number };
 type AutosaveStatus = "ready" | "pending" | "saving" | "saved" | "error";
 const EMPTY_ADJUSTMENTS: Adjustments = { boss: 0, invoice: 0, unsubscribe: 0 };
 
-const closingToolbarItemClassName = "h-8 gap-1.5 rounded-md px-3 py-0 text-xs font-medium whitespace-nowrap shadow-none";
+const closingToolbarItemClassName = "h-9 gap-1.5 rounded-md px-3 py-0 text-xs font-medium whitespace-nowrap shadow-none";
 const primaryAmountInputClassName = "h-9 border-primary/40 bg-primary/[0.06] px-2 text-right text-base font-semibold tabular-nums shadow-sm focus-visible:ring-primary/40 dark:bg-primary/10";
 
 function numericValue(value: string) {
@@ -86,6 +88,7 @@ export function DailyClosingClient() {
   const t = useTranslations("DailyClosing");
   const attendanceTranslations = useTranslations("Attendance");
   const [attendanceDirty, setAttendanceDirty] = useState(false);
+  const [procedureDirty, setProcedureDirty] = useState(false);
   const [attendanceMinimized, setAttendanceMinimized] = useState(true);
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
@@ -281,7 +284,7 @@ export function DailyClosingClient() {
   };
 
   const finalize = async () => {
-    if (attendanceDirty) return;
+    if (attendanceDirty || procedureDirty) return;
     if (saveInFlightRef.current) return;
     const requestScope = activeScope;
     saveInFlightRef.current = true;
@@ -367,22 +370,18 @@ export function DailyClosingClient() {
 
   const dailyActivityCard = <Card><CardHeader className="p-2.5 pb-1.5"><div className="flex flex-wrap items-center justify-end gap-2"><div className="text-right"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("dailyIncrease")}</p><p className="text-xs font-semibold">{percentFormatter.format(calculation.totals.performanceScore)}</p></div></div></CardHeader><CardContent className="p-2.5 pt-0"><div className="grid gap-1">{metrics.map(metric => <div key={metric} className="grid grid-cols-[minmax(0,1fr)_4rem_3.5rem] items-center gap-1 rounded border px-2 py-0.5"><div className="min-w-0"><p className="truncate text-xs font-medium leading-tight" title={metricLabel(metric)}>{metricLabel(metric)}</p><p className="truncate text-[10px] leading-tight text-muted-foreground">{t("targetAndWeight", { target: formatter.format(targets?.[metric] ?? 0), weight: percentFormatter.format(calculation.metricWeights[metric] ?? 0) })}</p></div><Input aria-label={`${metricLabel(metric)} ${t("quantity")}`} type="number" min={0} step="any" disabled={isReadOnly} className="h-7 px-1.5 text-right text-sm tabular-nums" value={activities[metric] ?? 0} onChange={event => setActivities(current => ({ ...current, [metric]: numericValue(event.target.value) }))} /><span className="text-right text-xs font-medium tabular-nums">{percentFormatter.format(calculation.totals.activityContributions[metric] ?? 0)}</span></div>)}</div></CardContent></Card>;
 
+  const monthSelector = <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-full" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />;
+
   return <div className="flex h-full flex-col">
-    <Header title={view === "daily" ? selectedShop.name : `${view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} actions={
-      view === "daily"
-        ? undefined
-        : <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-32 sm:w-44" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />
-    } />
-    <main className="flex-1 overflow-y-auto p-2 md:p-3">
+    <Header title={view === "daily" ? selectedShop.name : `${view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} />
+    <main className="shop-page-content flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1500px] space-y-2.5">
-        {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} />}
-        {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
-        {view === "unsubscribes" && <MonthlyUnsubscribes key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
-        {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
+        {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} periodSelector={monthSelector} />}
+        {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
+        {view === "unsubscribes" && <MonthlyUnsubscribes key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
+        {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
         <div hidden={view !== "daily"} className="space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Input aria-label={t("date")} type="date" disabled={attendanceDirty} className="h-9 w-32 sm:w-40" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />
-          <div className="flex flex-wrap items-center justify-end gap-2">
+        <ShopPageToolbar periodSelector={<Input aria-label={t("date")} type="date" disabled={attendanceDirty || procedureDirty} className="h-9 w-full" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />}>
             <Button type="button" size="sm" variant="outline" className={closingToolbarItemClassName} disabled={loading} onClick={() => setIsSummaryOpen(true)}><ClipboardCopy className="h-4 w-4" />{t("generateSummary")}</Button>
             <Button type="button" size="sm" variant="outline" className={closingToolbarItemClassName} disabled={loading || submitting !== null} onClick={() => setDebtRevision(current => current + 1)}><RefreshCw className="h-4 w-4" />{t("refresh")}</Button>
             {!isFinalized && actor.role !== "viewer" && <Badge variant="outline" role="status" aria-live="polite" className={cn(closingToolbarItemClassName, "bg-background", autosaveStatus === "error" && "border-destructive/50 text-destructive", autosaveStatus === "saved" && "border-emerald-500/50 text-emerald-700 dark:text-emerald-300")}>
@@ -390,8 +389,7 @@ export function DailyClosingClient() {
               {autosaveStatus === "pending" ? "Autosaving in 10 seconds" : autosaveStatus === "saving" ? "Autosaving" : autosaveStatus === "saved" ? "Autosaved" : autosaveStatus === "error" ? "Autosave failed" : "Autosave ready"}
             </Badge>}
             <Badge variant="outline" className={cn(closingToolbarItemClassName, isFinalized ? "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-200" : "border-amber-300 bg-amber-100 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200")}><LockKeyhole className="h-4 w-4" />{t(isFinalized ? "statusFinalized" : "statusDraft")}</Badge>
-          </div>
-        </div>
+        </ShopPageToolbar>
 
         {isFinalized && <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{t("lockedMessage")}</span>{actor.role === "admin" && <Button size="sm" variant="outline" className="h-7" disabled={submitting !== null} onClick={() => void reopen()}><RotateCcw className="mr-1.5 h-3.5 w-3.5" />{submitting === "reopen" ? t("reopening") : t("reopen")}</Button>}</div>}
 
@@ -440,6 +438,7 @@ export function DailyClosingClient() {
             {attendanceDirty && <p className="px-3 pb-3 text-xs text-amber-700 dark:text-amber-300">{attendanceTranslations("saveBeforeFinalize")}</p>}
           </Card>
 
+              <ProcedureEntry key={activeScope} shopId={shopId} date={date} disabled={isReadOnly || submitting !== null} onDirtyChange={setProcedureDirty} />
               {unsubscribeEntriesCard}
               {debtEntriesCard}
             </div>
@@ -448,7 +447,7 @@ export function DailyClosingClient() {
 
 
 
-          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || attendanceDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
+          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || attendanceDirty || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
         </>}
         </div>
         <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>

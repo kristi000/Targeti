@@ -125,7 +125,7 @@ export function BonusOverviewClient({ month, months, onMonthChange }: { month: s
 
   return <section className="h-full min-h-0 overflow-y-auto overscroll-contain p-3 md:p-4">
     <div className="mx-auto max-w-6xl space-y-4 pb-6">
-      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-2xl font-semibold">{t("title")}</h2><p className="text-sm text-muted-foreground">{allTime ? t("allTimeDescription") : t("description")}</p></div>
+      <div className="flex flex-wrap items-end justify-end gap-3">
         <div className="flex flex-wrap gap-2"><label className="grid gap-1 text-xs font-medium text-muted-foreground">{t("period")}<select aria-label={t("period")} className="h-9 min-w-40 rounded-md border bg-background px-2 text-sm text-foreground" value={allTime ? "all" : month} onChange={event => changePeriod(event.target.value)}><option value="all">{t("allTime")}</option>{months.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <label className="grid gap-1 text-xs font-medium text-muted-foreground">{t("valueType")}<select aria-label={t("valueType")} className="h-9 min-w-40 rounded-md border bg-background px-2 text-sm text-foreground" value={allTime ? "current" : bonusMode} disabled={allTime} onChange={event => { table.setPageIndex(0); setBonusMode(event.target.value as "current" | "forecast"); }}><option value="current">{t("currentBonus")}</option><option value="forecast">{t("eomForecast")}</option></select></label></div>
       </div>

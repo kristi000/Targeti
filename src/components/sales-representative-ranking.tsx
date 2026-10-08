@@ -31,11 +31,11 @@ export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRep
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="space-y-3 border-b border-slate-300 bg-slate-50 px-4 py-3">
-        <div><h2 className="font-semibold text-slate-900">{t("topSalesReps")}</h2><p className="text-xs text-slate-500">Network leaderboard by shop</p></div>
+      <div className="space-y-3 border-b border-border bg-muted/40 px-4 py-3">
+        <div><h2 className="font-semibold text-foreground">{t("topSalesReps")}</h2><p className="text-xs text-muted-foreground">Network leaderboard by shop</p></div>
         <div className="flex gap-2">
-          <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search representatives…" aria-label="Search representatives" className="h-9 bg-white pl-9" /></div>
-          <select value={shopId} onChange={event => { setShopId(event.target.value); setExpanded(false); }} aria-label="Filter representatives by shop" className="h-9 min-w-0 max-w-32 rounded-md border bg-white px-2 text-sm">
+          <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search representatives…" aria-label="Search representatives" className="h-9 bg-background pl-9" /></div>
+          <select value={shopId} onChange={event => { setShopId(event.target.value); setExpanded(false); }} aria-label="Filter representatives by shop" className="h-9 min-w-0 max-w-32 rounded-md border bg-background px-2 text-sm">
             <option value="all">All shops</option>
             {shops.map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
           </select>
@@ -52,7 +52,7 @@ export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRep
         {!visibleRepresentatives.length && <div className="p-8 text-center text-sm text-muted-foreground">No representatives match these filters.</div>}
       </div>
 
-      {filteredRepresentatives.length > 5 && <div className="flex items-center justify-between gap-3 border-t bg-slate-50 px-4 py-3"><p className="text-sm text-muted-foreground">Showing {visibleRepresentatives.length} of {filteredRepresentatives.length}</p><Button type="button" variant="outline" size="sm" onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}{expanded ? "Show top 5" : "View all"}</Button></div>}
+      {filteredRepresentatives.length > 5 && <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-4 py-3"><p className="text-sm text-muted-foreground">Showing {visibleRepresentatives.length} of {filteredRepresentatives.length}</p><Button type="button" variant="outline" size="sm" onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}{expanded ? "Show top 5" : "View all"}</Button></div>}
     </div>
   );
 }

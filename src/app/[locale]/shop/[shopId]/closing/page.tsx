@@ -20,7 +20,7 @@ export default function DailyClosingPage() {
   }, [shops, shopId, selectedShop?.id, setSelectedShop]);
 
   if (selectedShop?.id === shopId) return <DailyClosingClient />;
-  return <div className="flex min-h-64 items-center justify-center p-6">{routeShop
+  return <div className="shop-page-content flex min-h-64 items-center justify-center">{routeShop
     ? <p role="status" className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</p>
     : <p>{t("shopNotFound")}</p>}
   </div>;

@@ -134,21 +134,21 @@ export function DashboardClient() {
           <SidebarTrigger className="h-9 w-9 shrink-0" />
 
           <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0">
-            <div className="flex flex-col gap-3 border-b border-slate-300 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0">
+            <div className="flex flex-col gap-3 border-b border-border bg-muted/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <span className="rounded bg-emerald-700 p-1.5 text-white"><Store className="h-4 w-4" /></span>
-                <div><h3 className="font-semibold text-slate-900">{selectedSupervisor ? `${selectedSupervisor.name}'s shops` : "All shops"}</h3><p className="text-xs text-slate-500">{resultCount} matching locations</p></div>
-                {selectedSupervisor && <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-slate-500" onClick={() => selectSupervisor(selectedSupervisor.id)} aria-label={`Show all shops instead of ${selectedSupervisor.name}'s shops`}><X className="h-4 w-4" /></Button>}
+                <div><h3 className="font-semibold text-foreground">{selectedSupervisor ? `${selectedSupervisor.name}'s shops` : "All shops"}</h3><p className="text-xs text-muted-foreground">{resultCount} matching locations</p></div>
+                {selectedSupervisor && <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => selectSupervisor(selectedSupervisor.id)} aria-label={`Show all shops instead of ${selectedSupervisor.name}'s shops`}><X className="h-4 w-4" /></Button>}
               </div>
               <div className="flex w-full gap-2 sm:max-w-md">
                 <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                  <Input value={shopSearch} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-white pl-9" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input value={shopSearch} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-background pl-9" />
                 </div>
                 <select
                   aria-label="Sort shops by"
-                  className="h-9 rounded-md border bg-white px-2 text-sm text-slate-900 md:hidden"
+                  className="h-9 rounded-md border bg-background px-2 text-sm text-foreground md:hidden"
                   value={sorting[0]?.id ?? "shop"}
                   onChange={event => table.setSorting([{ id: event.target.value, desc: sorting[0]?.desc ?? false }])}
                 >
@@ -161,7 +161,7 @@ export function DashboardClient() {
                   type="button"
                   variant="outline"
                   size="icon"
-                  className="h-9 w-9 shrink-0 bg-white md:hidden"
+                  className="h-9 w-9 shrink-0 bg-background md:hidden"
                   onClick={() => table.setSorting([{ id: sorting[0]?.id ?? "shop", desc: !sorting[0]?.desc }])}
                   aria-label={sorting[0]?.desc ? "Sort ascending" : "Sort descending"}
                 >
@@ -172,26 +172,26 @@ export function DashboardClient() {
 
             <div className="hidden min-h-0 flex-1 overflow-auto md:block">
               <table className="w-full min-w-[780px] table-fixed border-collapse text-sm xl:min-w-[440px]">
-                <thead><tr className="sticky top-0 z-[1] bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
-                  <th className="w-12 border-b border-r border-slate-300 px-2 py-2 text-center">#</th>
+                <thead><tr className="sticky top-0 z-[1] bg-muted text-xs font-semibold uppercase tracking-wide text-foreground">
+                  <th className="w-12 border-b border-r border-border px-2 py-2 text-center">#</th>
                   <SortableHeader table={table} columnId="shop" label="Shop" align="left" className="w-[38%]" />
                   <SortableHeader table={table} columnId="achievement" label="Performance" className="w-20 px-1" />
                   <SortableHeader table={table} columnId="forecast" label="Forecast" className="w-[4.5rem] px-1" />
                   <SortableHeader table={table} columnId="revenue" label="Revenue" className="w-24 px-1" />
-                  <th className="w-64 border-b border-r border-slate-300 px-3 py-2 text-left xl:hidden">Target progress</th>
+                  <th className="w-64 border-b border-r border-border px-3 py-2 text-left xl:hidden">Target progress</th>
                 </tr></thead>
                 <tbody>
                   {visibleRows.map((row, rowIndex) => {
                     const item = row.original;
                     const destination = `/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`;
                     const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
-                    return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-white even:bg-slate-50/70 hover:bg-emerald-50/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{rowIndex + 1}</span></td>
-                      <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-slate-900">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-slate-500">Supervisor: {supervisorName}</span></th>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</td>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.isFinal ? <span className="font-medium text-slate-900">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
-                      <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{item.hasData ? currency.format(item.revenue) : "—"}</td>
-                      <td className="border-b border-r border-slate-200 px-3 py-1 text-center xl:hidden">{item.hasData ? <div className="flex items-center justify-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-slate-200" /><span className="w-12 text-center font-mono text-xs font-medium text-slate-600">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-slate-500">Not imported</span>}</td>
+                    return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
+                      <td className="border-b border-r border-border px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{rowIndex + 1}</span></td>
+                      <th scope="row" className="border-b border-r border-border px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-foreground">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-muted-foreground">Supervisor: {supervisorName}</span></th>
+                      <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-foreground">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</td>
+                      <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-foreground">{item.isFinal ? <span className="font-medium text-foreground">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
+                      <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-foreground">{item.hasData ? currency.format(item.revenue) : "—"}</td>
+                      <td className="border-b border-r border-border px-3 py-1 text-center xl:hidden">{item.hasData ? <div className="flex items-center justify-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-muted" /><span className="w-12 text-center font-mono text-xs font-medium text-muted-foreground">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-muted-foreground">Not imported</span>}</td>
                     </tr>;
                   })}
                 </tbody>
@@ -203,30 +203,30 @@ export function DashboardClient() {
                 const item = row.original;
                 const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
                 const rowNumber = rowIndex + 1;
-                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70">
+                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
                   <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-500">{rowNumber}</span>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">{rowNumber}</span>
                     <div className="min-w-0">
-                      <p className="truncate font-medium text-slate-900">{item.shop.name}</p>
-                      <p className="truncate text-xs text-slate-500">{supervisorName}</p>
+                      <p className="truncate font-medium text-foreground">{item.shop.name}</p>
+                      <p className="truncate text-xs text-muted-foreground">{supervisorName}</p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2 text-right">
                     <div>
-                      <p className="font-semibold tabular-nums text-slate-900">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</p>
-                      <p className="text-xs tabular-nums text-slate-500">EOM: {item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p>
+                      <p className="font-semibold tabular-nums text-foreground">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</p>
+                      <p className="text-xs tabular-nums text-muted-foreground">EOM: {item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p>
                     </div>
                   </div>
                 </Link>;
               })}
             </div>
 
-            {visibleRows.length === 0 && <div className="px-4 py-12 text-center text-sm text-slate-500">No shops match your search.</div>}
+            {visibleRows.length === 0 && <div className="px-4 py-12 text-center text-sm text-muted-foreground">No shops match your search.</div>}
           </section>
 
           <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} selectedSupervisorId={selectedSupervisorId} onSelectSupervisor={selectSupervisor} />
 
-          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0"><SalesRepresentativeRanking rows={pageQuery.data?.representativeRows ?? []} month={activeDatasetId} /></section>
+          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0"><SalesRepresentativeRanking rows={pageQuery.data?.representativeRows ?? []} month={activeDatasetId} /></section>
           </div>
         </div>
       </main>
@@ -235,35 +235,35 @@ export function DashboardClient() {
 }
 
 function SupervisorPerformanceTable({ rows, currency, selectedSupervisorId, onSelectSupervisor }: { rows: DashboardSupervisorRow[]; currency: Intl.NumberFormat; selectedSupervisorId: string | null; onSelectSupervisor: (supervisorId: string) => void }) {
-  return <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm xl:min-h-0" aria-labelledby="supervisor-performance-heading">
-    <div className="flex items-center gap-2 border-b border-slate-300 bg-slate-50 px-4 py-3">
+  return <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0" aria-labelledby="supervisor-performance-heading">
+    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
       <span className="rounded bg-indigo-700 p-1.5 text-white"><UserRoundCog className="h-4 w-4" /></span>
-      <div><h3 id="supervisor-performance-heading" className="font-semibold text-slate-900">Supervisor performance</h3><p className="text-xs text-slate-500">All assigned shops in the selected reporting period</p></div>
+      <div><h3 id="supervisor-performance-heading" className="font-semibold text-foreground">Supervisor performance</h3><p className="text-xs text-muted-foreground">All assigned shops in the selected reporting period</p></div>
     </div>
     <div className="hidden min-h-0 flex-1 overflow-auto md:block">
       <table className="w-full min-w-[760px] table-fixed border-collapse text-sm xl:min-w-[360px]">
-        <thead><tr className="sticky top-0 z-[1] bg-slate-200 text-xs font-semibold uppercase tracking-wide text-slate-700">
-          <th className="w-12 border-b border-r border-slate-300 px-2 py-2 text-center">#</th>
-          <th className="w-[45%] border-b border-r border-slate-300 px-2 py-2 text-left">Supervisor</th>
-          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-center">Performance</th>
-          <th className="w-20 border-b border-r border-slate-300 px-1 py-2 text-center">Forecast</th>
-          <th className="border-b border-r border-slate-300 px-3 py-2 text-center xl:hidden">Revenue</th>
+        <thead><tr className="sticky top-0 z-[1] bg-muted text-xs font-semibold uppercase tracking-wide text-foreground">
+          <th className="w-12 border-b border-r border-border px-2 py-2 text-center">#</th>
+          <th className="w-[45%] border-b border-r border-border px-2 py-2 text-left">Supervisor</th>
+          <th className="w-20 border-b border-r border-border px-1 py-2 text-center">Performance</th>
+          <th className="w-20 border-b border-r border-border px-1 py-2 text-center">Forecast</th>
+          <th className="border-b border-r border-border px-3 py-2 text-center xl:hidden">Revenue</th>
         </tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.id} className={cn("bg-white even:bg-slate-50/70", selectedSupervisorId === row.id && "bg-indigo-50 even:bg-indigo-50")}>
-          <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", index < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{index + 1}</span></td>
-          <th scope="row" className="border-b border-r border-slate-200 px-2 py-0.5 text-left leading-tight"><button type="button" aria-pressed={selectedSupervisorId === row.id} className="text-left hover:text-indigo-700 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600" onClick={() => onSelectSupervisor(row.id)}><span className="block whitespace-nowrap text-[13px] font-medium underline-offset-2 hover:underline">{row.name}</span><span className="block text-[11px] font-normal text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></button></th>
-          <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
-          <td className="border-b border-r border-slate-200 px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-slate-700">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
-          <td className="border-b border-r border-slate-200 px-3 py-0.5 text-center leading-tight tabular-nums text-slate-700 xl:hidden">{currency.format(row.revenue)}</td>
+        <tbody>{rows.map((row, index) => <tr key={row.id} className={cn("bg-background even:bg-muted/40", selectedSupervisorId === row.id && "bg-indigo-50 dark:bg-indigo-950/40 even:bg-indigo-50 dark:even:bg-indigo-950/40")}>
+          <td className="border-b border-r border-border px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", index < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{index + 1}</span></td>
+          <th scope="row" className="border-b border-r border-border px-2 py-0.5 text-left leading-tight"><button type="button" aria-pressed={selectedSupervisorId === row.id} className="text-left hover:text-indigo-700 dark:text-indigo-300 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600" onClick={() => onSelectSupervisor(row.id)}><span className="block whitespace-nowrap text-[13px] font-medium underline-offset-2 hover:underline">{row.name}</span><span className="block text-[11px] font-normal text-muted-foreground">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></button></th>
+          <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-foreground">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
+          <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-foreground">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
+          <td className="border-b border-r border-border px-3 py-0.5 text-center leading-tight tabular-nums text-foreground xl:hidden">{currency.format(row.revenue)}</td>
         </tr>)}</tbody>
       </table>
     </div>
-    <div className="divide-y md:hidden">{rows.map((row, index) => <button type="button" key={row.id} aria-pressed={selectedSupervisorId === row.id} onClick={() => onSelectSupervisor(row.id)} className={cn("flex w-full items-center gap-3 p-2 text-left transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600", selectedSupervisorId === row.id && "bg-indigo-50")}>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold text-indigo-700">{index + 1}</span>
-      <div className="min-w-0 flex-1"><p className="truncate font-medium text-slate-900">{row.name}</p><p className="text-xs text-slate-500">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</p></div>
-      <div className="shrink-0 text-right"><p className="font-semibold tabular-nums text-slate-900">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</p><p className="text-xs tabular-nums text-slate-500">EOM {row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</p></div>
+    <div className="divide-y md:hidden">{rows.map((row, index) => <button type="button" key={row.id} aria-pressed={selectedSupervisorId === row.id} onClick={() => onSelectSupervisor(row.id)} className={cn("flex w-full items-center gap-3 p-2 text-left transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600", selectedSupervisorId === row.id && "bg-indigo-50 dark:bg-indigo-950/40")}>
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-xs font-semibold text-indigo-700 dark:text-indigo-300">{index + 1}</span>
+      <div className="min-w-0 flex-1"><p className="truncate font-medium text-foreground">{row.name}</p><p className="text-xs text-muted-foreground">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</p></div>
+      <div className="shrink-0 text-right"><p className="font-semibold tabular-nums text-foreground">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</p><p className="text-xs tabular-nums text-muted-foreground">EOM {row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</p></div>
     </button>)}</div>
-    {!rows.length && <div className="px-4 py-10 text-center text-sm text-slate-500">No supervisors have assigned shops.</div>}
+    {!rows.length && <div className="px-4 py-10 text-center text-sm text-muted-foreground">No supervisors have assigned shops.</div>}
   </section>;
 }
 
@@ -273,5 +273,5 @@ function SortableHeader({ table, columnId, label, align = "center", className }:
   const column = table.getColumn(columnId);
   const direction = column?.getIsSorted();
   const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
-  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-slate-300 px-3 py-2", align === "left" ? "text-left" : "text-center", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-center")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
+  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-border px-3 py-2", align === "left" ? "text-left" : "text-center", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-center")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
 }

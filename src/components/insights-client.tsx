@@ -68,12 +68,12 @@ export function InsightsClient() {
           </div>
         </header>
 
-        <section className="overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm" aria-labelledby="kpi-insights-heading">
-          <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-3">
+        <section className="overflow-hidden rounded-lg border border-border bg-background shadow-sm" aria-labelledby="kpi-insights-heading">
+          <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
             <span className="rounded bg-amber-500 p-1.5 text-white"><Lightbulb className="h-4 w-4" /></span>
             <div>
-              <h2 id="kpi-insights-heading" className="font-semibold text-slate-900">Performance overview</h2>
-              <p className="text-xs text-slate-500">Summary for the selected reporting period</p>
+              <h2 id="kpi-insights-heading" className="font-semibold text-foreground">Performance overview</h2>
+              <p className="text-xs text-muted-foreground">Summary for the selected reporting period</p>
             </div>
           </div>
           <div className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-4">
