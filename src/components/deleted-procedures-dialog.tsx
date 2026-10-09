@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { LoaderCircle, Undo2 } from "lucide-react";
 import { fetchDeletedProcedures, handleRestoreProcedures } from "@/app/actions/procedures";
 import { deletedProceduresQueryKey, proceduresQueryKey } from "@/lib/procedures";
+import { dailyActivityMonthQueryKey } from "@/lib/daily-activity";
 import { ProcedureStatus } from "@/components/procedure-status";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -28,7 +29,10 @@ export function DeletedProceduresDialog({ shopId, month, onClose, onRestored }: 
       const result = await handleRestoreProcedures({ shopId, month, records });
       if (!result.success) { setError(result.error); return; }
       setSelection({}); setCursor(undefined); setPreviousCursors([]); onRestored();
-      await client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) }),
+        client.invalidateQueries({ queryKey: dailyActivityMonthQueryKey(shopId, month) }),
+      ]);
     } catch { setError("restoreFailed"); } finally { setBusy(false); }
   };
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent className="max-w-3xl"><DialogHeader><DialogTitle>{t("deletedRecords")}</DialogTitle><DialogDescription>{t("restoreHint", { month })}</DialogDescription></DialogHeader>

@@ -9,6 +9,7 @@ import { fetchProcedures, handleSaveProcedures, handleDeleteProcedures, handleRe
 import { DeletedProceduresDialog } from "@/components/deleted-procedures-dialog";
 import { ProcedureStatus } from "@/components/procedure-status";
 import { procedureFieldsSchema, procedureSummarySchema } from "@/lib/persistence-schemas";
+import { dailyActivityMonthQueryKey } from "@/lib/daily-activity";
 import { PROCEDURE_PRODUCTS, proceduresQueryKey, procedurePageQueryKey, type ProcedureFields, type ProcedureFilter, type ProcedureRecord, type ProcedureSummary, type ProceduresPage } from "@/lib/procedures";
 import { useShop } from "@/components/shop-provider";
 import { Header } from "@/components/header";
@@ -41,6 +42,10 @@ export function ProceduresPage({ shopId, initialMonth }: { shopId: string; initi
   const [deletedOpen, setDeletedOpen] = useState(false);
   const [lastDeletion, setLastDeletion] = useState<{ month: string; records: Array<{ id: string; expectedRevision: number }> } | null>(null);
   const client = useQueryClient();
+  const refreshMonth = () => Promise.all([
+    client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) }),
+    client.invalidateQueries({ queryKey: dailyActivityMonthQueryKey(shopId, month) }),
+  ]);
   const query = useQuery({ queryKey: procedurePageQueryKey(shopId, month, filter, cursor), queryFn: () => fetchProcedures(shopId, month, cursor, filter) });
   const summary = query.data?.summary ?? client.getQueryData<ProceduresPage>(procedurePageQueryKey(shopId, month))?.summary;
   const dirty = Object.keys(drafts).length > 0;
@@ -83,7 +88,7 @@ export function ProceduresPage({ shopId, initialMonth }: { shopId: string; initi
       if (!result.success) { setError(result.error); setDeleteTargets([]); return; }
       setLastDeletion({ month, records: deleteTargets.map(record => ({ ...record, expectedRevision: record.expectedRevision + 1 })) });
       setDeleteTargets([]); setSelection({}); setCursor(undefined); setPreviousCursors([]);
-      await client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) });
+      await refreshMonth();
     } catch { setError("deleteFailed"); setDeleteTargets([]); } finally { setBusy(false); }
   };
   const undoDelete = async () => {
@@ -93,7 +98,7 @@ export function ProceduresPage({ shopId, initialMonth }: { shopId: string; initi
       const result = await handleRestoreProcedures({ shopId, month, records: lastDeletion.records });
       if (!result.success) { setError(result.error); return; }
       setLastDeletion(null); setSelection({}); setCursor(undefined); setPreviousCursors([]);
-      await client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) });
+      await refreshMonth();
     } catch { setError("restoreFailed"); } finally { setBusy(false); }
   };
   const save = async () => {
@@ -104,7 +109,7 @@ export function ProceduresPage({ shopId, initialMonth }: { shopId: string; initi
     try {
       const result = await handleSaveProcedures({ shopId, month, changes });
       if (!result.success) { setError(result.error); return; }
-      setDrafts({}); setSelection({}); await client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) });
+      setDrafts({}); setSelection({}); await refreshMonth();
     } catch { setError("saveFailed"); } finally { setBusy(false); }
   };
   return <><Header title={`${shop?.name ?? ""} · ${t("title")}`} /><main className="shop-page-content space-y-3">
@@ -124,7 +129,7 @@ export function ProceduresPage({ shopId, initialMonth }: { shopId: string; initi
           <Button size="sm" disabled={!dirty || busy} onClick={() => void save()}>{busy ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}{t("save")}</Button>
           <Button size="sm" variant="outline" disabled={!dirty || busy} onClick={() => { setDrafts({}); setError(null); }}><X className="mr-1.5 h-4 w-4" />{t("cancel")}</Button>
         </>}
-        <Button size="icon" variant="ghost" className="w-9" aria-label={t("reload")} title={t("reload")} disabled={dirty || busy || query.isFetching} onClick={() => void client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) })}><RefreshCw className="h-4 w-4" /></Button>
+        <Button size="icon" variant="ghost" className="w-9" aria-label={t("reload")} title={t("reload")} disabled={dirty || busy || query.isFetching} onClick={() => void refreshMonth()}><RefreshCw className="h-4 w-4" /></Button>
     </ShopPageToolbar>
     {(error || query.isError) && <p role="alert" className="text-sm text-destructive">{t(`errors.${error ?? "loadFailed"}`)}</p>}
     {dirty && <p className="text-xs text-amber-700 dark:text-amber-300">{t("unsaved")}</p>}
@@ -192,7 +197,13 @@ function ProcedureImportDialog({ shopId, month, revision, onClose }: { shopId: s
       const result = await response.json();
       if (!response.ok) { setError(result.error ?? "importFailed"); return; }
       if (mode === "preview") setPreview({ summary: procedureSummarySchema.parse(result.summary), correctedDates: result.correctedDates });
-      else { await client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) }); onClose(); }
+      else {
+        await Promise.all([
+          client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, month) }),
+          client.invalidateQueries({ queryKey: dailyActivityMonthQueryKey(shopId, month) }),
+        ]);
+        onClose();
+      }
     } catch { setError("importFailed"); } finally { setBusy(false); }
   };
   return <Dialog open onOpenChange={open => { if (!open && !busy) onClose(); }}><DialogContent><DialogHeader><DialogTitle>{t("import")}</DialogTitle><DialogDescription>{t("importHint", { month })}</DialogDescription></DialogHeader>

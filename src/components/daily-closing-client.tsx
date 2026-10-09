@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -28,6 +28,8 @@ import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { AttendanceEditor } from "@/components/attendance-editor";
 import { ProcedureEntry } from "@/components/procedure-entry";
 import { attendanceQueryKey } from "@/lib/attendance";
+import { dailyActivityMonthQueryKey, dailyActivitySettingsQueryKey } from "@/lib/daily-activity";
+import { fetchDailyActivitySettings } from "@/app/actions/daily-activity";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
 import { useShop } from "@/components/shop-provider";
@@ -116,6 +118,13 @@ export function DailyClosingClient() {
   const closingPath = `/${locale}/shop/${shopId}/closing`;
   const activeScope = `${shopId}:${date}`;
   activeScopeRef.current = activeScope;
+  const activitySettingsQuery = useQuery({
+    queryKey: dailyActivitySettingsQueryKey(shopId, date.slice(0, 7)),
+    queryFn: () => fetchDailyActivitySettings(shopId, date.slice(0, 7)),
+    enabled: Boolean(shopId),
+    staleTime: 15_000,
+  });
+  const activitySettingsUnavailable = activitySettingsQuery.isPending || activitySettingsQuery.isError;
 
   useEffect(() => {
     if (requestedView !== "daily" && previousViewRef.current === "daily") setMonth(date.slice(0, 7));
@@ -142,8 +151,18 @@ export function DailyClosingClient() {
   }, [date, month, view, setSelectedDatasetId, setSelectedPerformanceId]);
 
   const metricConfig = useMemo(
-    () => selectedShop ? getDailyClosingMetricConfig(selectedShop, date) : { metrics: [], metricSettings: undefined, targets: undefined },
-    [selectedShop, date],
+    () => {
+      if (!selectedShop) return { metrics: [], metricSettings: undefined, targets: undefined };
+      const config = getDailyClosingMetricConfig(selectedShop, date, activitySettingsQuery.data, Object.keys(activities) as PerformanceMetric[]);
+      if (closing?.status !== "finalized") return config;
+      const savedMetrics = Object.keys(closing.activities) as PerformanceMetric[];
+      return {
+        metrics: savedMetrics,
+        metricSettings: Object.fromEntries(savedMetrics.map(metric => [metric, { ...config.metricSettings?.[metric], weight: closing.metricWeights[metric] ?? 0 }])),
+        targets: closing.metricTargets,
+      };
+    },
+    [selectedShop, date, activitySettingsQuery.data, activities, closing],
   );
   const { metrics, metricSettings, targets } = metricConfig;
   const unsubscribeTotal = useMemo(
@@ -155,7 +174,7 @@ export function DailyClosingClient() {
     [adjustments, unsubscribeTotal],
   );
 
-  const calculation = useMemo(() => calculateDailyClosing({
+  const calculation = useMemo(() => closing?.status === "finalized" ? { totals: closing.totals, metricWeights: closing.metricWeights } : calculateDailyClosing({
     cashCounts,
     exchangeRate,
     adjustments: effectiveAdjustments,
@@ -164,7 +183,7 @@ export function DailyClosingClient() {
     metrics,
     metricSettings,
     targets,
-  }), [cashCounts, exchangeRate, effectiveAdjustments, debts, activities, metrics, metricSettings, targets]);
+  }), [closing, cashCounts, exchangeRate, effectiveAdjustments, debts, activities, metrics, metricSettings, targets]);
 
   useEffect(() => {
     if (!selectedShop) return;
@@ -202,8 +221,8 @@ export function DailyClosingClient() {
   }, [selectedShop, date, t, toast, debtRevision]);
 
   const isFinalized = closing?.status === "finalized";
-  const isReadOnly = isFinalized || actor.role === "viewer";
-  const isCellReadOnly = isFinalized || actor.role !== "admin";
+  const isReadOnly = isFinalized || actor.role === "viewer" || activitySettingsUnavailable;
+  const isCellReadOnly = isReadOnly || actor.role !== "admin";
   const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
   const percentFormatter = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 1 });
   const saveInput = useMemo(() => ({
@@ -228,11 +247,15 @@ export function DailyClosingClient() {
     adjustments: effectiveAdjustments,
     debts: debts.filter(debt => debt.description.trim() || debt.amount > 0),
     unsubscribeEntries: unsubscribeEntries.filter(entry => entry.invoice.trim() || entry.msisdn.trim() || entry.amount > 0),
-    activities: Object.fromEntries(metrics.map(metric => [metric, activities[metric] ?? 0])),
-  }), [selectedShop?.id, date, cashCounts, exchangeRate, cell, effectiveAdjustments, debts, unsubscribeEntries, metrics, activities]);
+    activities: Object.fromEntries(Object.entries(activities)
+      .filter(([, value]) => value !== 0)
+      .sort(([left], [right]) => left.localeCompare(right))),
+  }), [selectedShop?.id, date, cashCounts, exchangeRate, cell, effectiveAdjustments, debts, unsubscribeEntries, activities]);
 
   const applySavedClosing = useCallback((data: DailyClosing, savedShopId: string) => {
     const savedMonth = data.date.slice(0, 7);
+    void queryClient.invalidateQueries({ queryKey: dailyActivityMonthQueryKey(savedShopId, savedMonth) });
+    void queryClient.invalidateQueries({ queryKey: dailyActivitySettingsQueryKey(savedShopId, savedMonth) });
     void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(savedShopId, savedMonth) });
     void queryClient.invalidateQueries({ queryKey: monthlyClosingQueryKey(savedShopId, savedMonth) });
     void queryClient.invalidateQueries({ queryKey: monthlyDebtsQueryKey(savedShopId, savedMonth) });
@@ -250,7 +273,7 @@ export function DailyClosingClient() {
   }, [queryClient]);
 
   const saveDraft = useCallback(async (input: typeof saveInput, snapshot: string, notify: boolean) => {
-    if (saveInFlightRef.current) return;
+    if (saveInFlightRef.current || activitySettingsUnavailable) return;
     const requestScope = `${input.shopId}:${input.date}`;
     let retry = false;
     saveInFlightRef.current = true;
@@ -277,14 +300,14 @@ export function DailyClosingClient() {
       setSubmitting(null);
       if (retry && activeScopeRef.current === requestScope) setAutosaveAttempt(attempt => attempt + 1);
     }
-  }, [applySavedClosing, t, toast]);
+  }, [activitySettingsUnavailable, applySavedClosing, t, toast]);
 
   const save = async () => {
     await saveDraft(saveInput, autosaveSnapshot, true);
   };
 
   const finalize = async () => {
-    if (attendanceDirty || procedureDirty) return;
+    if (attendanceDirty || procedureDirty || activitySettingsUnavailable) return;
     if (saveInFlightRef.current) return;
     const requestScope = activeScope;
     saveInFlightRef.current = true;
@@ -313,7 +336,7 @@ export function DailyClosingClient() {
   };
 
   useEffect(() => {
-    if (!selectedShop || !autosaveReady || loading || isFinalized || actor.role === "viewer" || saveInFlightRef.current) return;
+    if (!selectedShop || !autosaveReady || loading || activitySettingsUnavailable || isFinalized || actor.role === "viewer" || saveInFlightRef.current) return;
 
     if (autosaveBaselineRef.current === null) {
       autosaveBaselineRef.current = autosaveSnapshot;
@@ -328,7 +351,7 @@ export function DailyClosingClient() {
     }, 10_000);
 
     return () => window.clearTimeout(timer);
-  }, [actor.role, autosaveAttempt, autosaveReady, autosaveSnapshot, isFinalized, loading, saveDraft, saveInput, selectedShop]);
+  }, [activitySettingsUnavailable, actor.role, autosaveAttempt, autosaveReady, autosaveSnapshot, isFinalized, loading, saveDraft, saveInput, selectedShop]);
 
   if (!selectedShop) return null;
 
@@ -382,8 +405,8 @@ export function DailyClosingClient() {
         {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
         <div hidden={view !== "daily"} className="space-y-2.5">
         <ShopPageToolbar periodSelector={<Input aria-label={t("date")} type="date" disabled={attendanceDirty || procedureDirty} className="h-9 w-full" value={date} onChange={event => { if (/^\d{4}-\d{2}-\d{2}$/.test(event.target.value)) setDate(event.target.value); }} />}>
-            <Button type="button" size="sm" variant="outline" className={closingToolbarItemClassName} disabled={loading} onClick={() => setIsSummaryOpen(true)}><ClipboardCopy className="h-4 w-4" />{t("generateSummary")}</Button>
-            <Button type="button" size="sm" variant="outline" className={closingToolbarItemClassName} disabled={loading || submitting !== null} onClick={() => setDebtRevision(current => current + 1)}><RefreshCw className="h-4 w-4" />{t("refresh")}</Button>
+            <Button type="button" size="sm" variant="outline" className={closingToolbarItemClassName} disabled={loading || activitySettingsUnavailable} onClick={() => setIsSummaryOpen(true)}><ClipboardCopy className="h-4 w-4" />{t("generateSummary")}</Button>
+            <Button type="button" size="sm" variant="outline" className={closingToolbarItemClassName} disabled={loading || submitting !== null} onClick={() => { setDebtRevision(current => current + 1); void queryClient.invalidateQueries({ queryKey: dailyActivitySettingsQueryKey(shopId, date.slice(0, 7)) }); }}><RefreshCw className="h-4 w-4" />{t("refresh")}</Button>
             {!isFinalized && actor.role !== "viewer" && <Badge variant="outline" role="status" aria-live="polite" className={cn(closingToolbarItemClassName, "bg-background", autosaveStatus === "error" && "border-destructive/50 text-destructive", autosaveStatus === "saved" && "border-emerald-500/50 text-emerald-700 dark:text-emerald-300")}>
               {autosaveStatus === "saving" ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" /> : autosaveStatus === "error" ? <CircleAlert className="h-3.5 w-3.5" /> : autosaveStatus === "saved" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Clock3 className="h-3.5 w-3.5" />}
               {autosaveStatus === "pending" ? "Autosaving in 10 seconds" : autosaveStatus === "saving" ? "Autosaving" : autosaveStatus === "saved" ? "Autosaved" : autosaveStatus === "error" ? "Autosave failed" : "Autosave ready"}
@@ -393,7 +416,8 @@ export function DailyClosingClient() {
 
         {isFinalized && <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-800 dark:text-emerald-200"><span className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{t("lockedMessage")}</span>{actor.role === "admin" && <Button size="sm" variant="outline" className="h-7" disabled={submitting !== null} onClick={() => void reopen()}><RotateCcw className="mr-1.5 h-3.5 w-3.5" />{submitting === "reopen" ? t("reopening") : t("reopen")}</Button>}</div>}
 
-        {loading ? <div className="rounded-lg border p-10 text-center text-sm text-muted-foreground">{t("loading")}</div> : <>
+        {activitySettingsQuery.isError && <p role="alert" className="text-sm text-destructive">{t("loadFailed")} {t("tryAgain")}</p>}
+        {loading || activitySettingsQuery.isPending ? <div className="rounded-lg border p-10 text-center text-sm text-muted-foreground">{t("loading")}</div> : <>
           <div className="grid items-start gap-2.5 xl:grid-cols-[minmax(0,1.5fr)_minmax(22rem,1fr)]">
             <div className="min-w-0 space-y-2.5">
               <div className="grid items-start gap-2.5 md:grid-cols-[minmax(15rem,0.5fr)_minmax(18rem,0.65fr)]">
@@ -447,7 +471,7 @@ export function DailyClosingClient() {
 
 
 
-          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || attendanceDirty || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
+          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null || activitySettingsUnavailable} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || activitySettingsUnavailable || attendanceDirty || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
         </>}
         </div>
         <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>

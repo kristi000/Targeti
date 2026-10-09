@@ -1,5 +1,6 @@
 import { getMetricWeight } from "@/lib/data";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
+import type { DailyActivitySettings } from "@/lib/daily-activity";
 import { getMetricOrder, getQuarterKey, getShopTargetMetrics, type DailyClosingDebt, type DailyClosingTotals, type MetricSettings, type PerformanceMetric, type Shop, type Target } from "@/lib/types";
 
 export const DEFAULT_EXCHANGE_RATE = 85;
@@ -27,7 +28,32 @@ export function createEmptyCashCounts(): Record<string, number> {
   ]);
 }
 
-export function getDailyClosingMetricConfig(shop: Shop, date: string) {
+export function getDailyClosingMetricConfig(
+  shop: Shop,
+  date: string,
+  dailyActivitySettings?: DailyActivitySettings | null,
+  activityMetrics: readonly PerformanceMetric[] = [],
+) {
+  const config = dailyActivitySettings ? {
+    metrics: dailyActivitySettings.metricOrder,
+    metricSettings: dailyActivitySettings.metricSettings,
+    targets: dailyActivitySettings.targets,
+  } : getFallbackDailyClosingMetricConfig(shop, date);
+  const archivedMetrics = [...new Set(activityMetrics)].filter(metric => !config.metrics.includes(metric));
+  if (!archivedMetrics.length) return config;
+  return {
+    metrics: [...config.metrics, ...archivedMetrics],
+    metricSettings: {
+      ...config.metricSettings,
+      ...Object.fromEntries(archivedMetrics.map(metric => [metric, {
+        ...config.metricSettings?.[metric], weight: 0,
+      }])),
+    } as MetricSettings,
+    targets: { ...config.targets, ...Object.fromEntries(archivedMetrics.map(metric => [metric, 0])) } as Target,
+  };
+}
+
+function getFallbackDailyClosingMetricConfig(shop: Shop, date: string) {
   const month = date.slice(0, 7);
   const monthData = shop.monthlyData?.[month];
   const quarterData = shop.quarterSettings?.[getQuarterKey(date)];
@@ -70,7 +96,7 @@ export function calculateDailyClosing(input: {
   activities: Partial<Record<PerformanceMetric, number>>;
   metrics: readonly PerformanceMetric[];
   metricSettings?: MetricSettings;
-  targets?: Target;
+  targets?: Partial<Target>;
 }): { totals: DailyClosingTotals; metricWeights: Partial<Record<PerformanceMetric, number>> } {
   const countedCash = CASH_DENOMINATIONS.reduce(
     (total, denomination) => total + denomination.value * (input.cashCounts[denomination.key] ?? 0),

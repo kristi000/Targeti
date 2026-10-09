@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, BarChart3, BadgeDollarSign, CalendarRange, ClipboardCheck, ListChecks, KeyRound, Smartphone, Store, UserMinus, Wallet } from "lucide-react";
+import { Activity, ArrowLeft, BarChart3, BadgeDollarSign, CalendarRange, ClipboardCheck, ListChecks, KeyRound, Smartphone, Store, UserMinus, Wallet } from "lucide-react";
 import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useSearchParams } from "next/navigation";
 import { closingViewHref, getClosingView, type ClosingView } from "@/lib/closing-navigation";
@@ -29,6 +29,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
   const cell = useTranslations("MonthlyCell");
   const attendance = useTranslations("Attendance");
   const procedures = useTranslations("Procedures");
+  const dailyActivity = useTranslations("DailyActivity");
   const restricted = useTranslations("RestrictedAccess");
   const accessQuery = useRestrictedAccess();
   const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
@@ -37,12 +38,15 @@ export function ShopPageNav({ shopId, shopName }: Props) {
   const { selectedDatasetId } = useShop();
   const basePath = `/${locale}/shop/${shopId}`;
   const monthQuery = /^\d{4}-\d{2}$/.test(selectedDatasetId) ? `?month=${selectedDatasetId}` : "";
+  const requestedMonth = searchParams.get("month");
+  const dailyActivityMonthQuery = requestedMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth) ? `?month=${requestedMonth}` : "";
   const closingPath = `${basePath}/closing`;
   const closingView = getClosingView(searchParams.get("view"));
   const items = [
     { path: basePath, href: `${basePath}${monthQuery}`, icon: BarChart3, label: t("performancePage") },
     { path: `${basePath}/bonus`, href: `${basePath}/bonus${monthQuery}`, icon: BadgeDollarSign, label: t("bonusPage") },
     { path: closingPath, href: closingPath, icon: ClipboardCheck, label: t("closingPage") },
+    { path: `${basePath}/daily-activity`, href: `${basePath}/daily-activity${dailyActivityMonthQuery}`, icon: Activity, label: dailyActivity("title") },
     { path: `${basePath}/attendance`, href: `${basePath}/attendance${monthQuery}`, icon: CalendarRange, label: attendance("title") },
     { path: `${basePath}/procedures`, href: `${basePath}/procedures${monthQuery}`, icon: ListChecks, label: procedures("title") },
   ];

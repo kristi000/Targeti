@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, LoaderCircle, Plus } from "lucide-react";
 import { handleSaveProcedures } from "@/app/actions/procedures";
 import { PROCEDURE_PRODUCTS, proceduresQueryKey } from "@/lib/procedures";
+import { dailyActivityMonthQueryKey } from "@/lib/daily-activity";
 import { getMonthlyRepresentatives } from "@/lib/types";
 import { useShop } from "@/components/shop-provider";
 import { Button } from "@/components/ui/button";
@@ -47,7 +48,10 @@ export function ProcedureEntry({ shopId, date, disabled, onDirtyChange }: { shop
       const result = await handleSaveProcedures({ shopId, month: date.slice(0, 7), changes: [{ id: recordId, expectedRevision: 0, representativeId,
         fields: { orderNumber, name, customerId, product: product as typeof PROCEDURE_PRODUCTS[number], user: representative.name, status: "pending", dateTime: `${date}T${now}` } }] });
       if (!result.success) { setError(result.error); return; }
-      await client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, date.slice(0, 7)) });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: proceduresQueryKey(shopId, date.slice(0, 7)) }),
+        client.invalidateQueries({ queryKey: dailyActivityMonthQueryKey(shopId, date.slice(0, 7)) }),
+      ]);
       reset(); toast({ title: t("saved") });
     } catch { setError("saveFailed"); } finally { setBusy(false); }
   };

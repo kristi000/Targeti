@@ -19,16 +19,18 @@ export async function handleClearAllData() {
     await Promise.all(shops.docs.map(async shop => {
       await deleteShopAttendance(shop.id);
       await deleteShopProcedures(shop.id);
-      const [performance, bonusSnapshots, quarterlyBonusSnapshots, dailyClosings] = await Promise.all([
+      const [performance, bonusSnapshots, quarterlyBonusSnapshots, dailyClosings, dailyActivityMonths] = await Promise.all([
         getDocs(collection(db, "shops", shop.id, "performance")),
         getDocs(collection(db, "shops", shop.id, "bonusSnapshots")),
         getDocs(collection(db, "shops", shop.id, "quarterlyBonusSnapshots")),
         getDocs(collection(db, "shops", shop.id, "dailyClosings")),
+        getDocs(collection(db, "shops", shop.id, "dailyActivityMonths")),
       ]);
       references.push(...performance.docs.map(item => item.ref));
       references.push(...bonusSnapshots.docs.map(item => item.ref));
       references.push(...quarterlyBonusSnapshots.docs.map(item => item.ref));
       references.push(...dailyClosings.docs.map(item => item.ref));
+      references.push(...dailyActivityMonths.docs.map(item => item.ref));
       references.push(shop.ref);
     }));
     for (let start = 0; start < references.length; start += 450) {

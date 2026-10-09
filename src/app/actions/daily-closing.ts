@@ -4,6 +4,7 @@ import { z } from "zod";
 import { collection, doc, documentId, getDoc, getDocs, orderBy, query, runTransaction, where } from "@/lib/firebase-admin";
 import { getCurrentActor, requireAdmin, requireEditorForShops, requireShopAccess } from "@/lib/access";
 import { calculateDailyClosing, getDailyClosingMetricConfig } from "@/lib/daily-closing";
+import { dailyActivitySettingsSchema, type DailyActivitySettings } from "@/lib/daily-activity";
 import { closingMonthSchema, monthlyDebtsInputSchema, monthlyUnsubscribesInputSchema, type MonthlyCellSummary, type MonthlyClosingSummary, type MonthlyDebtsPage, type MonthlyUnsubscribesPage } from "@/lib/monthly-closing";
 import { attendanceDaySchema, attendanceMonthConfigSchema, dailyClosingInputSchema, dailyClosingSchema, debtMutationSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
 import { type DailyClosing, type PerformanceMetric, type Shop } from "@/lib/types";
@@ -34,37 +35,19 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
   await requireEditorForShops([value.shopId]);
   const reference = doc(db, "shops", value.shopId, "dailyClosings", value.date);
   const shop = await getClosingShop(value.shopId);
-  const { metrics, metricSettings, targets } = getDailyClosingMetricConfig(shop, value.date);
-  const activities = Object.fromEntries(
-    metrics.map(metric => [metric, value.activities[metric] ?? 0]),
-  ) as Record<PerformanceMetric, number>;
   const unsubscribeEntries = value.unsubscribeEntries ?? [];
   const adjustments = {
     ...value.adjustments,
     unsubscribe: unsubscribeEntries.reduce((total, entry) => total + entry.amount, 0),
   };
-  const calculation = calculateDailyClosing({
-    cashCounts: value.cashCounts,
-    exchangeRate: value.exchangeRate,
-    adjustments,
-    debts: value.debts,
-    activities,
-    metrics,
-    metricSettings,
-    targets,
-  });
   const now = new Date().toISOString();
   const actor = await getCurrentActor();
-  const activity = await createActivity({
-    action: status === "finalized" ? "daily_closing_finalized" : "daily_closing_saved",
-    summary: `${status === "finalized" ? "Finalized" : "Saved"} the daily closing for ${shop.name} on ${value.date}.`,
-    shopIds: [shop.id],
-    shopNames: [shop.name],
-    metadata: { date: value.date, status, difference: calculation.totals.difference },
-  }, actor);
   let closing: DailyClosing | null = null;
   await runTransaction(db, async transaction => {
     const existingSnapshot = await transaction.get(reference);
+    const settingsRef = doc(db, "shops", value.shopId, "dailyActivityMonths", value.date.slice(0, 7));
+    const settingsSnapshot = await transaction.get(settingsRef);
+    const settings = settingsSnapshot.exists ? dailyActivitySettingsSchema.parse(settingsSnapshot.data()) as DailyActivitySettings : null;
     const attendanceRef = doc(db, "shops", value.shopId, "attendanceDays", value.date);
     const attendanceSnapshot = status === "finalized" ? await transaction.get(attendanceRef) : null;
     const attendance = attendanceSnapshot?.exists ? attendanceDaySchema.parse(attendanceSnapshot.data()) : null;
@@ -78,6 +61,28 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
     if (actor.role !== "admin" && value.cell.note !== existingCell.note) {
       throw new Error("ADMIN_REQUIRED");
     }
+    const activityMetrics = Object.keys({ ...existing?.activities, ...value.activities }) as PerformanceMetric[];
+    const { metrics, metricSettings, targets } = getDailyClosingMetricConfig(shop, value.date, settings, activityMetrics);
+    const activities = Object.fromEntries(metrics.map(metric => [
+      metric, value.activities[metric] ?? existing?.activities[metric] ?? 0,
+    ])) as Record<PerformanceMetric, number>;
+    const calculation = calculateDailyClosing({
+      cashCounts: value.cashCounts,
+      exchangeRate: value.exchangeRate,
+      adjustments,
+      debts: value.debts,
+      activities,
+      metrics,
+      metricSettings,
+      targets,
+    });
+    const activity = await createActivity({
+      action: status === "finalized" ? "daily_closing_finalized" : "daily_closing_saved",
+      summary: `${status === "finalized" ? "Finalized" : "Saved"} the daily closing for ${shop.name} on ${value.date}.`,
+      shopIds: [shop.id],
+      shopNames: [shop.name],
+      metadata: { date: value.date, status, difference: calculation.totals.difference },
+    }, actor);
     closing = dailyClosingSchema.parse({
       date: value.date,
       status,

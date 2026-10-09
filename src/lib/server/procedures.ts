@@ -4,7 +4,7 @@ import { z } from "zod";
 import { adminDb as db, documentId } from "@/lib/firebase-admin";
 import { requireAdmin, requireEditorForShops, requireShopAccess } from "@/lib/access";
 import { attendanceMonthSchema, procedureFieldsSchema, procedureRecordSchema, procedureSummarySchema, procedureFilterSchema, shopIdSchema, shopSchema, deletedProcedureSchema } from "@/lib/persistence-schemas";
-import { adjustProcedureSummary, EMPTY_PROCEDURE_SUMMARY, procedureProductStatus, type ProcedureFilter, type ProceduresPage } from "@/lib/procedures";
+import { adjustProcedureSummary, EMPTY_PROCEDURE_SUMMARY, procedureProductStatus, type ProcedureFilter, type ProcedureSummary, type ProceduresPage } from "@/lib/procedures";
 import { createActivity, toFirestoreData } from "@/app/actions/shared";
 
 export const procedureCursorSchema = z.string().regex(/^[01]-[a-zA-Z0-9-]{1,120}$/);
@@ -40,6 +40,15 @@ async function ensureProductSummary(shopId: string, month: string) {
     if (snapshot.exists || summary.total > 0) transaction.set(ref, parsed);
     return parsed;
   });
+}
+
+export async function getProcedureSummary(shopId: string, month: string): Promise<ProcedureSummary | null> {
+  const validShopId = shopIdSchema.parse(shopId);
+  const validMonth = attendanceMonthSchema.parse(month);
+  await requireShopAccess(validShopId);
+  const snapshot = await db.collection("shops").doc(validShopId).collection("procedureMonths").doc(validMonth).get();
+  if (!snapshot.exists) return null;
+  return ensureProductSummary(validShopId, validMonth);
 }
 
 // Build the single-field combined-filter projection in bounded transactions. Business revisions stay unchanged.
