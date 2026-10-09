@@ -242,7 +242,7 @@ export type MonthlyShopData = {
   qualityMetrics?: QualityMetrics;
 };
 
-export function getMonthlyRepresentatives(shop: Shop, month: string): SalesRepresentative[] {
+export function getMonthlyRepresentatives(shop: Pick<Shop, "salesRepresentatives"> & { monthlyData?: Record<string, { representatives?: SalesRepresentative[] }> }, month: string): SalesRepresentative[] {
   return shop.monthlyData?.[month]?.representatives ?? shop.salesRepresentatives ?? [];
 }
 

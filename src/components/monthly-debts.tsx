@@ -74,7 +74,7 @@ export function MonthlyDebts({ shopId, month, onOpenReport, canEdit, onUpdated, 
     retry: (attempt, error) => !(error instanceof DebtLoadError) && attempt < 1,
     staleTime: 0,
   });
-  const formatter = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatter = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
   const invalidReportDate = debts.error instanceof DebtLoadError ? debts.error.date : undefined;
   const money = (value: number) => `${formatter.format(value)} Lek`;
   const handleExport = async (exportFormat: ReportExportFormat) => {
@@ -95,7 +95,7 @@ export function MonthlyDebts({ shopId, month, onOpenReport, canEdit, onUpdated, 
         columns: [
           { header: t("date"), value: row => row.date, width: 13 },
           { header: t("reference"), value: row => row.description, width: 36 },
-          { header: `${t("amount")} (Lek)`, value: row => row.amount, width: 16 },
+          { header: `${t("amount")} (Lek)`, value: row => row.amount, width: 16, numberFormat: "0" },
           { header: t("status"), value: row => t(row.paidAt ? "paid" : "unpaid"), width: 14 },
           { header: t("paidAt"), value: row => row.paidAt ?? "", width: 20 },
         ],

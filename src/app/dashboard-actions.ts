@@ -14,6 +14,7 @@ import { calculateTotalAchievement } from "@/lib/utils";
 import { getMonthlyRepresentatives, getOverviewPerformanceData, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceMetric, type Shop, type Supervisor } from "@/lib/types";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
+import { measureServerOperation } from "@/lib/server/performance";
 
 export type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 export type DashboardPeriod = { month: string; reportDate: string | null };
@@ -71,6 +72,30 @@ const searchIndexSchema = z.object({
   entries: z.array(searchEntrySchema).max(5000),
 });
 const MAX_SEARCH_INDEX_BYTES = 750_000;
+const representativeRowSchema = z.object({
+  id: shopIdSchema,
+  name: z.string().min(1).max(120),
+  shopId: shopIdSchema,
+  shopName: z.string().min(1).max(120),
+  achievement: z.number().finite(),
+  forecastAchievement: z.number().finite().nullable(),
+});
+const shopSummarySchema = searchEntrySchema.extend({
+  schemaVersion: z.literal(4),
+  searchPrefixes: z.array(z.string()),
+  representativeRows: z.array(representativeRowSchema).max(500),
+  updatedAt: z.string().datetime({ offset: true }),
+});
+const incrementalMonthSchema = z.object({
+  schemaVersion: z.literal(4),
+  searchIndexAvailable: z.literal(true),
+  summary: z.object({ activeShops: z.number().int().nonnegative() }),
+  representativeRows: z.array(representativeRowSchema.extend({
+    rank: z.number().int().positive(),
+    supervisorId: supervisorIdSchema.nullable(),
+  })),
+  updatedAt: z.string().datetime({ offset: true }),
+});
 
 type MonthMeta = {
   schemaVersion: 4;
@@ -95,6 +120,7 @@ const refreshSchema = z.object({
   months: z.array(monthSchema).max(120).optional(),
   performanceChanged: z.boolean().optional(),
   periodsChanged: z.boolean().optional(),
+  importsChanged: z.boolean().optional(),
 }).strict();
 
 function normalizeText(value: string) {
@@ -271,8 +297,7 @@ function summarizeSupervisorRows(values: SummaryValue[]): DashboardSupervisorRow
   }).sort((left, right) => right.averageAchievement - left.averageAchievement || left.name.localeCompare(right.name));
 }
 
-function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]): MonthMeta {
-  const values = documents.map(document => document.data() as ShopSummary);
+function summarizeShops(values: ShopSummary[]): MonthMeta {
   const supervisorRows = summarizeSupervisorRows(values);
   const supervisors = new Map<string, ShopSummary[]>();
   values.forEach(value => {
@@ -295,41 +320,90 @@ function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]
   };
 }
 
-async function writeMonthMeta(month: string) {
+function compareShopIds(left: { shopId: string }, right: { shopId: string }) {
+  return left.shopId < right.shopId ? -1 : left.shopId > right.shopId ? 1 : 0;
+}
+
+function toSearchEntry(summary: ShopSummary): SearchEntry {
+  return searchEntrySchema.parse(summary);
+}
+
+function parseShopSummary(document: FirebaseFirestore.DocumentSnapshot): ShopSummary {
+  const summary = shopSummarySchema.parse({ ...document.data(), shopId: document.id });
+  if (summary.representativeRows.some(row => row.shopId !== document.id)) {
+    throw new Error("Dashboard summary contains a representative from another shop.");
+  }
+  return summary;
+}
+
+function summarizeDocuments(documents: FirebaseFirestore.QueryDocumentSnapshot[]): MonthMeta {
+  return summarizeShops(documents.map(parseShopSummary));
+}
+
+function mergeMonthSummaries(
+  metaValue: unknown,
+  indexValue: unknown,
+  changedDocuments: FirebaseFirestore.DocumentSnapshot[],
+): ShopSummary[] | null {
+  const meta = incrementalMonthSchema.safeParse(metaValue);
+  const index = searchIndexSchema.safeParse(indexValue);
+  if (!meta.success || !index.success || meta.data.updatedAt !== index.data.updatedAt
+    || meta.data.summary.activeShops !== index.data.entries.length
+    || Buffer.byteLength(JSON.stringify(index.data.entries), "utf8") > MAX_SEARCH_INDEX_BYTES) return null;
+  const entries = new Map(index.data.entries.map(entry => [entry.shopId, entry]));
+  if (entries.size !== index.data.entries.length) return null;
+  const representatives = new Map<string, Array<Omit<DashboardRepresentativeRow, "rank">>>();
+  const representativeIds = new Set<string>();
+  for (const row of meta.data.representativeRows) {
+    const entry = entries.get(row.shopId);
+    const key = JSON.stringify([row.shopId, row.id]);
+    if (!entry || row.supervisorId !== entry.supervisorId || row.shopName !== entry.shopName || representativeIds.has(key)) return null;
+    representativeIds.add(key);
+    const rows = representatives.get(row.shopId) ?? [];
+    rows.push(representativeRowSchema.parse(row));
+    representatives.set(row.shopId, rows);
+  }
+  const summaries = new Map<string, ShopSummary>([...entries].map(([shopId, entry]) => [shopId, {
+    ...entry,
+    schemaVersion: 4,
+    searchPrefixes: [],
+    representativeRows: representatives.get(shopId) ?? [],
+    updatedAt: meta.data.updatedAt,
+  }]));
+  for (const document of changedDocuments) {
+    if (document.exists) summaries.set(document.id, parseShopSummary(document));
+    else summaries.delete(document.id);
+  }
+  return [...summaries.values()].sort(compareShopIds);
+}
+
+async function writeMonthMeta(month: string, changedShopIds?: string[]) {
   const monthReference = adminDb.collection("dashboardSummaries").doc(month);
-  const shops = await monthReference.collection("shops").get();
-  const searchEntries: SearchEntry[] = shops.docs.map(document => {
-    const summary = document.data() as ShopSummary;
-    return {
-      shopId: document.id,
-      shopName: summary.shopName,
-      normalizedShopName: summary.normalizedShopName,
-      supervisorId: summary.supervisorId,
-      supervisorName: summary.supervisorName,
-      achievement: summary.achievement,
-      achievementAsc: summary.achievementAsc,
-      achievementDesc: summary.achievementDesc,
-      forecast: summary.forecast,
-      forecastAsc: summary.forecastAsc,
-      forecastDesc: summary.forecastDesc,
-      revenue: summary.revenue,
-      revenueAsc: summary.revenueAsc,
-      revenueDesc: summary.revenueDesc,
-      isFinal: summary.isFinal,
-      hasData: summary.hasData,
-    };
-  });
-  const canIndexSearch = searchEntries.length <= 5000
-    && Buffer.byteLength(JSON.stringify(searchEntries), "utf8") <= MAX_SEARCH_INDEX_BYTES
-    && searchEntries.every(entry => searchEntrySchema.safeParse(entry).success);
-  const meta = { ...summarizeDocuments(shops.docs), searchIndexAvailable: canIndexSearch };
-  const batch = adminDb.batch();
-  batch.set(monthReference, meta);
   const indexReference = monthReference.collection("metadata").doc("searchIndex");
-  if (canIndexSearch) batch.set(indexReference, { schemaVersion: 1, updatedAt: meta.updatedAt, entries: searchEntries });
-  else batch.delete(indexReference);
-  await batch.commit();
-  return meta;
+  return adminDb.runTransaction(async transaction => {
+    let summaries: ShopSummary[] | null = null;
+    if (changedShopIds?.length) {
+      const [meta, index, ...changedDocuments] = await transaction.getAll(
+        monthReference, indexReference,
+        ...[...new Set(changedShopIds)].map(shopId => monthReference.collection("shops").doc(shopId)),
+      );
+      summaries = mergeMonthSummaries(meta.data(), index.data(), changedDocuments);
+    }
+    // Missing, legacy or oversized compact indexes retain the complete rebuild
+    // path. Reads and both writes share a transaction, including this fallback.
+    if (!summaries) {
+      const shops = await transaction.get(monthReference.collection("shops"));
+      summaries = shops.docs.map(parseShopSummary).sort(compareShopIds);
+    }
+    const searchEntries = summaries.map(toSearchEntry);
+    const canIndexSearch = searchEntries.length <= 5000
+      && Buffer.byteLength(JSON.stringify(searchEntries), "utf8") <= MAX_SEARCH_INDEX_BYTES;
+    const meta = { ...summarizeShops(summaries), searchIndexAvailable: canIndexSearch };
+    transaction.set(monthReference, meta);
+    if (canIndexSearch) transaction.set(indexReference, { schemaVersion: 1, updatedAt: meta.updatedAt, entries: searchEntries });
+    else transaction.delete(indexReference);
+    return meta;
+  });
 }
 
 async function loadSearchIndex(month: string, initialMeta: MonthMeta) {
@@ -395,6 +469,10 @@ async function ensureMonth(month: string) {
 }
 
 export async function fetchPerformanceDataForMonth(month: string): Promise<Record<string, PerformanceData[]>> {
+  return measureServerOperation("performance.month-all", () => loadPerformanceDataForMonth(month));
+}
+
+async function loadPerformanceDataForMonth(month: string): Promise<Record<string, PerformanceData[]>> {
   const actor = await getCurrentActor();
   const validMonth = monthSchema.parse(month);
   const scopedShopIds = actor.role !== "admin" ? [...new Set(actor.shopIds)] : [];
@@ -420,6 +498,10 @@ export async function fetchPerformanceDataForMonth(month: string): Promise<Recor
 }
 
 export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
+  return measureServerOperation("dashboard.periods", loadDashboardPeriods);
+}
+
+async function loadDashboardPeriods(): Promise<DashboardPeriod[]> {
   const actor = await getCurrentActor();
   const sources = await loadDashboardPeriodSources();
   const assignedShopIds = new Set(actor.shopIds);
@@ -449,33 +531,59 @@ export async function fetchDashboardPeriods(): Promise<DashboardPeriod[]> {
 
 async function performDashboardSummaryRefresh(input: z.infer<typeof refreshSchema>) {
   const value = refreshSchema.parse(input);
-  const supervisors = new Map((await loadSupervisors()).map(supervisor => [supervisor.id, supervisor]));
-  const touchedMonths = new Set(value.months ?? []);
-  if (!value.months) {
-    const existingMonths = await adminDb.collection("dashboardSummaries").listDocuments();
-    existingMonths.forEach(document => touchedMonths.add(document.id));
+  if (value.months) {
+    const months = [...new Set(value.months)];
+    await Promise.all(months.map(ensureMonth));
+    for (const shopId of new Set(value.shopIds)) {
+      for (const month of months) {
+        const shopReference = adminDb.collection("shops").doc(shopId);
+        const summaryReference = adminDb.collection("dashboardSummaries").doc(month).collection("shops").doc(shopId);
+        const source = await adminDb.runTransaction(async transaction => {
+          const [shopDocument, performance] = await Promise.all([
+            transaction.get(shopReference),
+            transaction.get(shopReference.collection("performance")
+              .where("date", ">=", `${month}-01`)
+              .where("date", "<=", `${month}-31`)
+              .orderBy("date", "asc")),
+          ]);
+          const shop = shopDocument.exists ? parseShop(shopDocument) : null;
+          const entries = performance.docs.flatMap(document => {
+            const entry = parsePerformance(document);
+            return entry ? [entry] : [];
+          });
+          const supervisors = new Map<string, Supervisor>();
+          if (shop?.supervisorId) {
+            const document = await transaction.get(adminDb.collection("supervisors").doc(shop.supervisorId));
+            const parsed = supervisorSchema.safeParse({ ...document.data(), id: document.id });
+            if (parsed.success) supervisors.set(parsed.data.id, parsed.data);
+          }
+          if (shop) transaction.set(summaryReference, createShopSummary(shop, entries, supervisors));
+          else transaction.delete(summaryReference);
+          return { shop, entries };
+        });
+        if (source.shop) await syncBonusOverviewProjection(source.shop, month, source.entries);
+        else await bonusOverviewReference(month, shopId).delete();
+      }
+    }
+    await Promise.all(months.map(month => writeMonthMeta(month, value.shopIds)));
+    return;
   }
+  const supervisors = new Map((await loadSupervisors()).map(supervisor => [supervisor.id, supervisor]));
+  const touchedMonths = new Set<string>();
+  const existingMonths = await adminDb.collection("dashboardSummaries").listDocuments();
+  existingMonths.forEach(document => touchedMonths.add(document.id));
   const shops = await Promise.all(value.shopIds.map(shopId => adminDb.collection("shops").doc(shopId).get()));
   const performanceByShop = await Promise.all(shops.map(async shopDocument => {
     if (!shopDocument.exists) return null;
-    const performance = shopDocument.ref.collection("performance");
-    if (!value.months) return (await performance.get()).docs;
-    const snapshots = await Promise.all([...touchedMonths].map(month => performance
-      .where("date", ">=", `${month}-01`)
-      .where("date", "<=", `${month}-31`)
-      .orderBy("date", "asc")
-      .get()));
-    return snapshots.flatMap(snapshot => snapshot.docs);
+    return (await shopDocument.ref.collection("performance").get()).docs;
   }));
-  if (!value.months) {
-    shops.forEach((shopDocument, index) => {
-      performanceByShop[index]?.forEach(document => {
-        const entry = parsePerformance(document);
-        if (entry) touchedMonths.add(entry.date.slice(0, 7));
-      });
-      Object.keys((shopDocument.exists ? parseShop(shopDocument) : null)?.monthlyData ?? {}).forEach(month => touchedMonths.add(month));
+  shops.forEach((shopDocument, index) => {
+    performanceByShop[index]?.forEach(document => {
+      const entry = parsePerformance(document);
+      if (entry) touchedMonths.add(entry.date.slice(0, 7));
     });
-  }
+    Object.keys((shopDocument.exists ? parseShop(shopDocument) : null)?.monthlyData ?? {}).forEach(month => touchedMonths.add(month));
+  });
   await Promise.all([...touchedMonths].map(ensureMonth));
 
   for (const [shopIndex, shopDocument] of shops.entries()) {
@@ -497,22 +605,26 @@ async function performDashboardSummaryRefresh(input: z.infer<typeof refreshSchem
       ]);
     }
   }
-  await Promise.all([...touchedMonths].map(writeMonthMeta));
+  await Promise.all([...touchedMonths].map(month => writeMonthMeta(month, value.shopIds)));
 }
 
 async function refreshDashboardProjections(input: z.infer<typeof refreshSchema>) {
   const [performanceRefreshId, periodsRefreshId] = await Promise.all([
-    input.performanceChanged ? markPerformanceIndexesDirty(input.shopIds) : Promise.resolve(null),
-    input.periodsChanged ? markDashboardPeriodIndexDirty() : Promise.resolve(null),
+    input.performanceChanged ? markPerformanceIndexesDirty(input.shopIds, input.months) : Promise.resolve(null),
+    input.periodsChanged ? markDashboardPeriodIndexDirty({
+      shopIds: input.shopIds,
+      months: input.months,
+      importsChanged: input.importsChanged,
+    }) : Promise.resolve(null),
   ]);
   await Promise.all([
     performDashboardSummaryRefresh(input),
-    performanceRefreshId ? syncPerformanceIndexes(input.shopIds, performanceRefreshId) : Promise.resolve(),
+    performanceRefreshId ? syncPerformanceIndexes(input.shopIds, performanceRefreshId, input.months) : Promise.resolve(),
     periodsRefreshId ? syncDashboardPeriodIndex(periodsRefreshId) : Promise.resolve(),
   ]);
 }
 
-export async function refreshDashboardSummaries(input: { shopIds: string[]; months?: string[]; performanceChanged?: boolean; periodsChanged?: boolean }) {
+export async function refreshDashboardSummaries(input: { shopIds: string[]; months?: string[]; performanceChanged?: boolean; periodsChanged?: boolean; importsChanged?: boolean }) {
   const value = refreshSchema.parse(input);
   const actor = await requireEditorForShops(value.shopIds);
   try {
@@ -571,6 +683,10 @@ export async function rebuildDashboardSummaryMonths(months: string[]) {
 }
 
 export async function fetchDashboardInsights(month: string): Promise<DashboardSummary> {
+  return measureServerOperation("dashboard.insights", () => loadDashboardInsights(month));
+}
+
+async function loadDashboardInsights(month: string): Promise<DashboardSummary> {
   const actor = await getCurrentActor();
   const validMonth = monthSchema.parse(month);
   const meta = await ensureMonth(validMonth);
@@ -584,7 +700,11 @@ export async function fetchDashboardInsights(month: string): Promise<DashboardSu
   return summarizeDocuments(documents.docs.filter(document => actor.shopIds.includes(document.id))).summary;
 }
 
-export async function fetchDashboardPage(input: { month: string; search?: string; supervisorId?: string | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
+export async function fetchDashboardPage(input: Parameters<typeof loadDashboardPage>[0]) {
+  return measureServerOperation("dashboard.page", () => loadDashboardPage(input));
+}
+
+async function loadDashboardPage(input: { month: string; search?: string; supervisorId?: string | null; sortBy?: DashboardSortKey; sortDirection?: "asc" | "desc" }) {
   const actor = await getCurrentActor();
   const value = dashboardPageSchema.parse(input);
   let meta = await ensureMonth(value.month);

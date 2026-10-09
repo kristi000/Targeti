@@ -1,10 +1,11 @@
 "use server";
 import { z } from "zod";
+import { measureServerOperation } from "@/lib/server/performance";
 import { loadProcedures, saveProcedures, deleteProcedures, loadDeletedProcedures, restoreProcedures, type saveProceduresSchema, type deleteProceduresSchema } from "@/lib/server/procedures";
-import type { ProcedureFilter } from "@/lib/procedures";
+import type { ProcedureFilter, ProcedureSort } from "@/lib/procedures";
 
-export async function fetchProcedures(shopId: string, month: string, cursor?: string, filter?: ProcedureFilter) {
-  return loadProcedures(shopId, month, cursor, filter);
+export async function fetchProcedures(shopId: string, month: string, cursor?: string, filter?: ProcedureFilter, sort?: ProcedureSort) {
+  return measureServerOperation("procedures.page", () => loadProcedures(shopId, month, cursor, filter, sort));
 }
 
 export async function fetchDeletedProcedures(shopId: string, month: string, cursor?: string) {

@@ -40,7 +40,7 @@ export function MonthlyUnsubscribes({ shopId, month, onOpenReport, periodSelecto
     retry: (attempt, error) => !(error instanceof UnsubscribeLoadError) && attempt < 1,
     staleTime: 0,
   });
-  const formatter = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatter = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
   const invalidReportDate = unsubscribes.error instanceof UnsubscribeLoadError ? unsubscribes.error.date : undefined;
   const exportFiltered = async (exportFormat: ReportExportFormat) => {
     setExporting(exportFormat);
@@ -61,7 +61,7 @@ export function MonthlyUnsubscribes({ shopId, month, onOpenReport, periodSelecto
           { header: t("date"), value: row => row.date, width: 13 },
           { header: t("invoice"), value: row => row.invoice, width: 24 },
           { header: t("msisdn"), value: row => row.msisdn, width: 18 },
-          { header: `${t("amount")} (Lek)`, value: row => row.amount, width: 16 },
+          { header: `${t("amount")} (Lek)`, value: row => row.amount, width: 16, numberFormat: "0" },
         ],
         fileName: `unsubscribes-${month}`,
         sheetName: t("sheetName"),

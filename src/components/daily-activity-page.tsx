@@ -12,6 +12,7 @@ import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { useShop } from "@/components/shop-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { monthDates } from "@/lib/attendance";
@@ -201,14 +202,14 @@ export function DailyActivityPage({ shopId, initialMonth }: { shopId: string; in
           {editing && <div className="space-y-2 rounded-md border bg-muted/20 p-3">
             <label className="flex flex-wrap items-center gap-2 text-xs font-medium">
               {t("weightProfile")}
-              <select className="h-8 max-w-full rounded-md border bg-background px-2 text-sm" aria-label={t("chooseProfile")} disabled={saving} value={draft.weightProfileId ?? "custom"} onChange={event => {
-                if (event.target.value === "custom") setDraft({ ...draft, weightProfileId: undefined });
-                else { const profile = weightProfiles.find(item => item.id === event.target.value); if (profile) applyProfile(profile); }
-              }}>
-                <option value="custom">{t("customWeights")}</option>
-                {draft.weightProfileId && !weightProfiles.some(profile => profile.id === draft.weightProfileId) && <option value={draft.weightProfileId}>{t("customWeights")}</option>}
-                {weightProfiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name}</option>)}
-              </select>
+              <AppSelect className="h-8 w-64 max-w-full" aria-label={t("chooseProfile")} disabled={saving} value={draft.weightProfileId ?? "custom"} onValueChange={value => {
+                if (value === "custom") setDraft({ ...draft, weightProfileId: undefined });
+                else { const profile = weightProfiles.find(item => item.id === value); if (profile) applyProfile(profile); }
+              }} options={[
+                { value: "custom", label: t("customWeights") },
+                ...(draft.weightProfileId && !weightProfiles.some(profile => profile.id === draft.weightProfileId) ? [{ value: draft.weightProfileId, label: t("customWeights") }] : []),
+                ...weightProfiles.map(profile => ({ value: profile.id, label: profile.name })),
+              ]} />
             </label>
             <p className="text-xs text-muted-foreground">{t(weightProfiles.length ? "profileSnapshot" : "noProfiles")}</p>
             <p role="status" className="text-xs text-amber-700 dark:text-amber-300">{t("unsavedChanges")}</p>

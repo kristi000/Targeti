@@ -53,7 +53,7 @@ export function InsightsClient() {
     enabled: shops.length > 0,
   });
   const summary = insightsQuery.data ?? EMPTY_SUMMARY;
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
 
   return (
     <main className="min-h-full overflow-y-auto bg-muted/20 p-3 md:p-4">

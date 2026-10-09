@@ -131,7 +131,7 @@ export async function handleHideRepresentatives(month: string, representatives: 
       batch.set(doc(db, "shops", id), toFirestoreData(shopData));
     });
     await batch.commit();
-    await refreshDashboardSummaries({ shopIds: updatedShops.map(shop => shop.id), months: [input.month], periodsChanged: true });
+    await refreshDashboardSummaries({ shopIds: updatedShops.map(shop => shop.id), months: [input.month], periodsChanged: true, importsChanged: false });
     await recordActivity({
       action: "representatives_hidden",
       summary: `Hid ${hiddenCount} representative(s) in ${updatedShops.length} shop(s) for ${input.month}.`,
@@ -224,7 +224,7 @@ export async function handleUnhideRepresentatives(month: string, representatives
       batch.set(doc(db, "shops", id), toFirestoreData(shopData));
     });
     await batch.commit();
-    await refreshDashboardSummaries({ shopIds: updatedShops.map(shop => shop.id), months: [input.month], periodsChanged: true });
+    await refreshDashboardSummaries({ shopIds: updatedShops.map(shop => shop.id), months: [input.month], periodsChanged: true, importsChanged: false });
     await recordActivity({
       action: "representatives_unhidden",
       summary: `Unhid ${unhiddenCount} representative(s) in ${updatedShops.length} shop(s) for ${input.month}.`,

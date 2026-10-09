@@ -14,8 +14,8 @@ export function ManagerBonusCard({ result, forecast, forecastAsOf, metricSetting
   const t = useTranslations("DetailedDashboard");
   const metricT = useTranslations("Metrics");
   const locale = useLocale();
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
-  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
+  const number = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
   const forecastByMetric = new Map(forecast?.categories.map(category => [category.metric, category]));
   return <Card id="manager-bonus" className="w-full max-w-[680px] scroll-mt-4 overflow-hidden">
     <CardHeader className="flex-row items-start justify-between gap-4 space-y-0 px-4 py-3"><div><CardTitle className="flex items-center gap-2 text-base"><BriefcaseBusiness className="h-5 w-5 text-primary" />{t("managerBonus")}</CardTitle><CardDescription>{t("managerBonusDescription", { group: result.groupName, base: currency.format(result.baseBonus) })}</CardDescription></div><div className="text-right"><p className="text-xs text-muted-foreground">{t("estimatedBonus")}</p><p className="flex items-center justify-end gap-1 text-2xl font-bold"><Banknote className="h-5 w-5 text-primary" />{currency.format(result.totalBonus)}</p></div></CardHeader>

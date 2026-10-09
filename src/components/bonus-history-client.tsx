@@ -11,6 +11,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { fetchBonusHistoryPage, fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/app/actions/bonus";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
+import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { useShop } from "@/components/shop-provider";
 import { useToast } from "@/hooks/use-toast";
@@ -105,7 +106,7 @@ export function BonusHistoryClient({ shopId, detail }: { shopId: string; detail?
   const visibleRows = useMemo(() => personId
     ? rows.filter(row => [row.monthly, row.quarterly, row.prediction, row.quarterPrediction].some(record => record?.people.some(person => person.id === personId)))
     : rows, [rows, personId]);
-  const money = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 }), [locale]);
+  const money = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 }), [locale]);
   const columns = useMemo<ColumnDef<BonusHistoryMonth>[]>(() => [
     { accessorKey: "month", header: t("payoutMonth"), cell: ({ row }) => <div className="space-y-1"><span className="font-medium">{formatReportingMonth(row.original.month, locale)}</span>{(row.original.prediction || row.original.quarterPrediction) && <span className="flex w-fit items-center gap-1 rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-700 dark:text-sky-300"><Sparkles className="h-3 w-3" />{t("prediction")}</span>}</div> },
     { id: "monthly", header: t("monthlyBonuses"), cell: ({ row }) => <div>{money.format(personId ? bonusHistoryPersonAmount(row.original, personId).monthly : row.original.monthly?.total ?? row.original.prediction?.total ?? 0)}{row.original.prediction && <span className="block text-[11px] text-sky-700 dark:text-sky-300">{t("prediction")}</span>}</div> },
@@ -157,9 +158,9 @@ export function BonusHistoryClient({ shopId, detail }: { shopId: string; detail?
           { header: t("representative"), value: row => row.name },
           { header: "ID", value: row => row.role === "representative" ? row.id.slice(4) : "" },
           { header: t("role"), value: row => row.role === "manager" ? t("managerQuarterlyBonus") : t("representative") },
-          { header: t("monthlyBonuses"), value: row => row.monthly },
-          { header: t("quarterlyBonus"), value: row => row.quarterly },
-          { header: t("payoutTotal"), value: row => row.total },
+          { header: t("monthlyBonuses"), value: row => row.monthly, numberFormat: "0" },
+          { header: t("quarterlyBonus"), value: row => row.quarterly, numberFormat: "0" },
+          { header: t("payoutTotal"), value: row => row.total, numberFormat: "0" },
           { header: `${t("monthlyBonuses")} ${t("status")}`, value: row => row.monthlyStatus },
           { header: `${t("quarterlyBonus")} ${t("status")}`, value: row => row.quarterlyStatus },
           { header: `${t("monthlyBonuses")} ${t("predictionAsOfHeader")}`, value: row => row.monthlyAsOf },
@@ -178,7 +179,7 @@ export function BonusHistoryClient({ shopId, detail }: { shopId: string; detail?
 
   if (!selectedShop) return null;
   return <div className="space-y-4">
-    {!detail && <div className="flex flex-wrap items-center justify-end gap-2"><select aria-label={t("filterPerson")} className="h-9 rounded-md border bg-background px-3 text-sm" value={personId} onChange={event => setPersonId(event.target.value)}><option value="">{t("allPeople")}</option>{people.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select><Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting || !rows.length}><Download className="mr-2 h-4 w-4" />{exporting ? t("exportingBonusHistory") : t("exportBonusHistory")}</Button></div>}
+    {!detail && <div className="flex flex-wrap items-center justify-end gap-2"><AppSelect aria-label={t("filterPerson")} className="w-auto min-w-40 max-w-full" value={personId} onValueChange={setPersonId} options={[{ value: "", label: t("allPeople") }, ...people.map(([id, name]) => ({ value: id, label: name }))]} /><Button variant="outline" size="sm" onClick={exportCsv} disabled={exporting || !rows.length}><Download className="mr-2 h-4 w-4" />{exporting ? t("exportingBonusHistory") : t("exportBonusHistory")}</Button></div>}
       {detail ? <><Link href={`${pathname}?view=history`} className="inline-flex items-center gap-1 text-sm text-primary hover:underline"><ArrowLeft className="h-4 w-4" />{t("backToBonusHistory")}</Link><HistoryDetail shopId={shopId} detail={detail} /></> : <>
         <div className="overflow-x-auto rounded-md border bg-card"><table className="w-full min-w-[850px] text-sm"><thead className="bg-muted/50"><tr>{table.getHeaderGroups().map(group => group.headers.map(header => <th key={header.id} className="p-3 text-left font-medium">{flexRender(header.column.columnDef.header, header.getContext())}</th>))}</tr></thead><tbody>{table.getRowModel().rows.map(row => <tr key={row.original.month} className="border-t">{row.getVisibleCells().map(cell => <td key={cell.id} className="p-3 align-top tabular-nums">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>)}</tr>)}</tbody></table>{history.isPending && <p className="flex items-center gap-2 p-6 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</p>}{history.isError && <p className="p-6 text-sm text-destructive">{t("tryAgain")}</p>}{history.isSuccess && !rows.length && <p className="p-6 text-sm text-muted-foreground">{t("noBonusHistory")}</p>}{history.isSuccess && !!rows.length && !visibleRows.length && <p className="p-6 text-sm text-muted-foreground">{t("noPersonBonusHistory")}</p>}</div>
         {history.hasNextPage && <Button variant="outline" onClick={() => void history.fetchNextPage()} disabled={history.isFetchingNextPage}>{history.isFetchingNextPage ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}{t("loadOlderBonuses")}</Button>}
@@ -192,7 +193,7 @@ function HistoryDetail({ shopId, detail }: { shopId: string; detail: Detail }) {
   const monthly = useQuery({ queryKey: bonusSnapshotQueryKey(shopId, detail.period), queryFn: () => fetchBonusSnapshot(shopId, detail.period), enabled: detail.kind === "monthly" });
   const quarterly = useQuery({ queryKey: quarterlyBonusSnapshotQueryKey(shopId, detail.period), queryFn: () => fetchQuarterlyBonusSnapshot(shopId, detail.period), enabled: detail.kind === "quarterly" });
   const query = detail.kind === "monthly" ? monthly : quarterly;
-  const money = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
+  const money = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
   if (query.isPending) return <p className="flex items-center gap-2 text-sm"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</p>;
   if (query.isError || !query.data) return <p className="text-sm text-destructive">{t("tryAgain")}</p>;
   if (detail.kind === "monthly") {

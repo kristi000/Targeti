@@ -6,10 +6,10 @@ import { getMetricOrder, getQuarterKey, getShopTargetMetrics, type DailyClosingD
 export const DEFAULT_EXCHANGE_RATE = 85;
 
 export const CASH_DENOMINATIONS = [
-  { key: "lek_10000", label: "10,000", value: 10_000 },
-  { key: "lek_5000", label: "5,000", value: 5_000 },
-  { key: "lek_2000", label: "2,000", value: 2_000 },
-  { key: "lek_1000", label: "1,000", value: 1_000 },
+  { key: "lek_10000", label: "10000", value: 10_000 },
+  { key: "lek_5000", label: "5000", value: 5_000 },
+  { key: "lek_2000", label: "2000", value: 2_000 },
+  { key: "lek_1000", label: "1000", value: 1_000 },
   { key: "lek_500", label: "500", value: 500 },
   { key: "lek_200", label: "200", value: 200 },
   { key: "lek_100", label: "100", value: 100 },
@@ -172,6 +172,7 @@ export function createDailyClosingSummary(input: {
   metricSettings?: MetricSettings;
   performanceScore: number;
   formatNumber: (value: number) => string;
+  formatAmount: (value: number) => string;
 }) {
   const includedMetrics: PerformanceMetric[] = [];
   const includedLabels = new Set<string>();
@@ -195,8 +196,8 @@ export function createDailyClosingSummary(input: {
   return [
     `Pershendetje ${input.shopName},`,
     "",
-    `Boss:${input.formatNumber(input.boss)}`,
-    `Invoice:${input.formatNumber(input.invoice)}`,
+    `Boss:${input.formatAmount(input.boss)}`,
+    `Invoice:${input.formatAmount(input.invoice)}`,
     ...activityLines,
     `Total shop ${performancePercentage}%`,
     "",

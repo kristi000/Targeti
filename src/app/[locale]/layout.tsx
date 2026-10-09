@@ -7,6 +7,8 @@ import { QueryProvider } from "@/components/query-provider";
 import { ShopProvider } from "@/components/shop-provider";
 import { getCurrentActor } from "@/lib/access";
 import { getShopDirectory } from "@/lib/server/dashboard-loaders";
+import { PerformanceVitals } from "@/components/performance-vitals";
+import { performanceMetricsEnabled } from "@/lib/server/performance";
 
 type Props = {
   children: ReactNode;
@@ -36,6 +38,7 @@ async function AuthenticatedApplication({
 
   return (
     <QueryProvider>
+      {performanceMetricsEnabled() && <PerformanceVitals />}
       <ShopProvider initialData={initialData} actor={actor}>
         <AppLayout>{children}</AppLayout>
       </ShopProvider>

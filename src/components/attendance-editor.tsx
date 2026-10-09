@@ -1,17 +1,52 @@
 "use client";
-import { useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, ChevronDown, LoaderCircle, Plus, RotateCcw, Save, X } from "lucide-react";
 import { fetchAttendanceMonth, handleSaveAttendance } from "@/app/actions/attendance";
 import { ATTENDANCE_CODES, attendanceQueryKey, monthDates, type AttendanceEntry, type AttendanceMonth, type AttendanceStaff } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
+import { AppSelect, type AppSelectOption } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 type DraftDay = { entries: AttendanceEntry[]; expectedUpdatedAt: string | null };
 type Draft = { revision: number; days: Record<string, DraftDay>; staff?: AttendanceStaff[] };
+type DraftState = { draft: Draft | null; undo: (Draft | null)[] };
+type DraftAction = { type: "edit"; update: (draft: Draft | null) => Draft } | { type: "undo" } | { type: "reset" };
+type AttendanceTranslate = ReturnType<typeof useTranslations<"Attendance">>;
+type StaffColumn = { person: AttendanceStaff; displayName: string };
+type CalendarDay = { date: string; weekday: number; formatted: string };
+
+const EMPTY_DAY: DraftDay = { entries: [], expectedUpdatedAt: null };
+const EMPTY_DRAFT_STATE: DraftState = { draft: null, undo: [] };
+const TOTAL_CODES = ["1", "2", "P", "LV", "R"] as const;
+
+function draftReducer(state: DraftState, action: DraftAction): DraftState {
+  if (action.type === "reset") return EMPTY_DRAFT_STATE;
+  if (action.type === "undo") {
+    if (!state.undo.length) return state;
+    return { draft: state.undo[state.undo.length - 1], undo: state.undo.slice(0, -1) };
+  }
+  return { draft: action.update(state.draft), undo: [...state.undo.slice(-9), state.draft] };
+}
+
+function attendanceTotals(dates: readonly string[], dayValue: (date: string) => DraftDay) {
+  const totals = new Map<string, Record<typeof TOTAL_CODES[number], number>>();
+  for (const date of dates) {
+    for (const entry of dayValue(date).entries) {
+      let counts = totals.get(entry.staffId);
+      if (!counts) {
+        counts = { "1": 0, "2": 0, P: 0, LV: 0, R: 0 };
+        totals.set(entry.staffId, counts);
+      }
+      if (entry.code === "1+2") { counts["1"]++; counts["2"]++; }
+      else if (entry.code !== "OTHER") counts[entry.code]++;
+    }
+  }
+  return totals;
+}
 
 const attendanceColors: Record<AttendanceEntry["code"], string> = {
   "1": "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
@@ -30,6 +65,46 @@ function columnLetter(index: number): string {
   }
   return result;
 }
+
+type EntryChange = (day: string, staffId: string, code: string, note?: string) => void;
+type CellProps = {
+  day: CalendarDay;
+  person: AttendanceStaff;
+  displayName: string;
+  entry?: AttendanceEntry;
+  readOnly: boolean;
+  options: readonly AppSelectOption[];
+  t: AttendanceTranslate;
+  onEntryChange: EntryChange;
+};
+
+const AttendanceCell = memo(function AttendanceCell({ day, person, displayName, entry, readOnly, options, t, onEntryChange }: CellProps) {
+  return <td className={cn("border-b border-r border-[var(--sheet-line)] p-0 text-center focus-within:relative focus-within:z-[5] focus-within:outline focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-emerald-600", person.role === "SM" && "bg-emerald-50/30 dark:bg-emerald-950/20", day.weekday === 0 && "bg-orange-50 dark:bg-orange-950/30", entry && attendanceColors[entry.code])}>
+    <AppSelect aria-label={t("chooseFor", { name: displayName, date: day.formatted })} title={entry ? t(`codes.${entry.code}`) : t("notEntered")} value={entry?.code ?? ""} disabled={readOnly} className="relative h-7 justify-center rounded-none border-0 bg-transparent px-3 py-0 text-center text-xs font-medium text-inherit shadow-none hover:bg-black/[0.03] focus:bg-black/[0.03] focus:ring-inset focus:ring-emerald-600 focus:ring-offset-0 disabled:opacity-100 dark:hover:bg-white/[0.04] dark:focus:bg-white/[0.04] [&>svg]:absolute [&>svg]:right-1 [&>svg]:h-3 [&>svg]:w-3" onValueChange={code => onEntryChange(day.date, person.id, code, entry?.note ?? "")} options={options} displayValue={entry?.code ?? " "} />
+    {entry?.code === "OTHER" ? <Input aria-label={t("noteFor", { name: displayName })} className="h-7 w-full rounded-none border-0 border-t bg-transparent px-2 text-xs text-inherit shadow-none focus-visible:ring-0" disabled={readOnly} maxLength={200} value={entry.note} onChange={event => onEntryChange(day.date, person.id, "OTHER", event.target.value)} /> : entry?.note && <p className="max-w-44 truncate px-2 pb-1 text-[10px] text-inherit" title={entry.note}>{entry.note}</p>}
+  </td>;
+});
+
+type RowProps = Omit<CellProps, "person" | "displayName" | "entry"> & {
+  rowNumber: number;
+  daily: boolean;
+  columns: readonly StaffColumn[];
+  current: DraftDay;
+  selected: boolean;
+  today: boolean;
+  canEdit: boolean;
+  onSelectDate: (day: string, checked: boolean) => void;
+};
+
+const AttendanceRow = memo(function AttendanceRow({ day, rowNumber, daily, columns, current, selected, today, canEdit, readOnly, options, t, onEntryChange, onSelectDate }: RowProps) {
+  const entries = useMemo(() => new Map(current.entries.map(entry => [entry.staffId, entry])), [current.entries]);
+  return <tr className={cn("group", day.weekday === 6 && "bg-slate-50 dark:bg-slate-900/50", day.weekday === 0 && "bg-orange-50 dark:bg-orange-950/30", selected && "bg-emerald-50 dark:bg-emerald-950/40", today && "bg-emerald-50/60 dark:bg-emerald-950/20")}>
+    {!daily && <td aria-hidden="true" className={cn("sticky left-0 z-10 border-b border-r border-[var(--sheet-line)] bg-slate-100 px-2 text-center tabular-nums text-slate-500 dark:bg-slate-800", day.weekday === 0 && "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200")}>{rowNumber}</td>}
+    {!daily && <th scope="row" className={cn("sticky left-8 z-10 border-b border-r border-[var(--sheet-line)] bg-background px-2 py-1 text-left font-normal whitespace-nowrap", day.weekday === 0 && "border-l-2 border-l-orange-400 bg-orange-50 font-medium text-orange-800 dark:bg-orange-950 dark:text-orange-200", selected && "bg-emerald-50 dark:bg-emerald-950", today && "font-semibold text-emerald-700 dark:text-emerald-300")}><div className="flex items-center gap-2">{canEdit && <input type="checkbox" className="accent-emerald-600" aria-label={t("selectDate", { date: day.formatted })} disabled={readOnly} checked={selected} onChange={event => onSelectDate(day.date, event.target.checked)} />}<span>{day.formatted}{today && <span className="ml-1 text-[10px]">{t("today")}</span>}</span></div></th>}
+    {columns.map(column => <AttendanceCell key={column.person.id} day={day} person={column.person} displayName={column.displayName} entry={entries.get(column.person.id)} readOnly={readOnly} options={options} t={t} onEntryChange={onEntryChange} />)}
+  </tr>;
+});
+
 type Props = { shopId: string; month: string; canEdit: boolean; date?: string; onDirtyChange?: (dirty: boolean) => void };
 export function AttendanceEditor(props: Props) {
   const t = useTranslations("Attendance");
@@ -43,8 +118,7 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
   const locale = useLocale();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const [undo, setUndo] = useState<(Draft | null)[]>([]);
+  const [{ draft, undo }, dispatchDraft] = useReducer(draftReducer, EMPTY_DRAFT_STATE);
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkCode, setBulkCode] = useState<AttendanceEntry["code"]>("1");
   const [bulkStaffId, setBulkStaffId] = useState("");
@@ -58,12 +132,31 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
     window.addEventListener("beforeunload", beforeUnload);
     return () => window.removeEventListener("beforeunload", beforeUnload);
   }, [draft]);
-  const dates = date ? [date] : monthDates(month);
+  const dates = useMemo(() => date ? [date] : monthDates(month), [date, month]);
+  const calendar = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", weekday: "short", timeZone: "UTC" });
+    return dates.map(day => {
+      const value = new Date(`${day}T12:00:00Z`);
+      return { date: day, weekday: value.getUTCDay(), formatted: formatter.format(value) };
+    });
+  }, [dates, locale]);
+  const savedDays = useMemo(() => new Map(data.days.map(day => [day.date, { entries: day.entries, expectedUpdatedAt: day.updatedAt }])), [data.days]);
+  const selectedDates = useMemo(() => new Set(selected), [selected]);
   const staff = draft?.staff ?? data.config.staff;
+  const staffColumns = useMemo(() => staff.map(person => {
+    const first = person.name.trim().split(/[\s._]+/)[0] ?? "";
+    return { person, displayName: date ? first.charAt(0).toLocaleUpperCase(locale) + first.slice(1) : person.name };
+  }), [staff, date, locale]);
+  const codeOptions = useMemo(() => ATTENDANCE_CODES.map(code => ({
+    value: code,
+    label: t(`codes.${code}`),
+    marker: <span aria-hidden="true" className={cn("h-3 w-3 shrink-0 rounded-sm ring-1 ring-inset ring-black/10 dark:ring-white/15", attendanceColors[code])} />,
+  })), [t]);
+  const cellOptions = useMemo(() => [{ value: "", label: t("notEntered") }, ...codeOptions], [codeOptions, t]);
+  const roleOptions = [{ value: "SM", label: `SM · ${t("manager")}` }, { value: "SR", label: "SR" }, { value: "IE", label: "IE" }];
   const changeStaff = (next: AttendanceStaff[]) => {
     if (!canEdit || busy || date) return;
-    setUndo(previous => [...previous.slice(-9), draft]);
-    setDraft(previous => ({ revision: previous?.revision ?? data.config.revision, days: previous?.days ?? {}, staff: next }));
+    dispatchDraft({ type: "edit", update: previous => ({ revision: previous?.revision ?? data.config.revision, days: previous?.days ?? {}, staff: next }) });
     setError(null);
   };
   const moveStaff = (index: number, direction: -1 | 1) => {
@@ -74,19 +167,25 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
     changeStaff(next);
   };
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Tirane", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
-  const dayValue = (day: string): DraftDay => draft?.days[day] ?? { entries: data.days.find(item => item.date === day)?.entries ?? [], expectedUpdatedAt: data.days.find(item => item.date === day)?.updatedAt ?? null };
+  const dayValue = useCallback((day: string): DraftDay => draft?.days[day] ?? savedDays.get(day) ?? EMPTY_DAY, [draft?.days, savedDays]);
+  const totals = useMemo(() => attendanceTotals(dates, dayValue), [dates, dayValue]);
   const changeDays = (updates: Record<string, DraftDay>) => {
-    setUndo(previous => [...previous.slice(-9), draft]);
-    setDraft(previous => ({ ...previous, revision: previous?.revision ?? data.config.revision, days: { ...previous?.days, ...updates } }));
+    dispatchDraft({ type: "edit", update: previous => ({ ...previous, revision: previous?.revision ?? data.config.revision, days: { ...previous?.days, ...updates } }) });
     setError(null);
   };
-  const changeEntry = (day: string, staffId: string, code: string, note = "") => {
-    if (!canEdit) return;
-    const current = dayValue(day);
-    const entries = current.entries.filter(entry => entry.staffId !== staffId);
-    if (code) entries.push({ staffId, code: code as AttendanceEntry["code"], note });
-    changeDays({ [day]: { ...current, entries } });
-  };
+  const changeEntry = useCallback((day: string, staffId: string, code: string, note = "") => {
+    if (!canEdit || busy) return;
+    dispatchDraft({ type: "edit", update: previous => {
+      const current = previous?.days[day] ?? savedDays.get(day) ?? EMPTY_DAY;
+      const entries = current.entries.filter(entry => entry.staffId !== staffId);
+      if (code) entries.push({ staffId, code: code as AttendanceEntry["code"], note });
+      return { ...previous, revision: previous?.revision ?? data.config.revision, days: { ...previous?.days, [day]: { ...current, entries } } };
+    } });
+    setError(null);
+  }, [canEdit, busy, savedDays, data.config.revision]);
+  const selectDate = useCallback((day: string, checked: boolean) => {
+    setSelected(previous => checked ? [...previous, day] : previous.filter(value => value !== day));
+  }, []);
   const save = async () => {
     if (!draft) return;
     const savedDraft = draft;
@@ -98,36 +197,31 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
       });
       if (!result.success) { setError(result.error); return; }
       queryClient.setQueryData(attendanceQueryKey(shopId, month), result.data);
-      setDraft(null); setUndo([]); setError(null);
+      dispatchDraft({ type: "reset" }); setError(null);
       toast({ title: t("saved") });
     } catch { setError("saveFailed"); }
     finally { setBusy(false); }
   };
-  const displayName = (name: string) => {
-    if (!date) return name;
-    const first = name.trim().split(/[\s._]+/)[0] ?? "";
-    return first.charAt(0).toLocaleUpperCase(locale) + first.slice(1);
-  };
-  const formatDate = (day: string) => new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T12:00:00Z`));
   const invalidDraft = staff.some(person => !person.name.trim()) || Object.values(draft?.days ?? {}).some(day => day.entries.some(entry => entry.code === "OTHER" && !entry.note.trim()));
   const editControls = canEdit && <div className="flex flex-wrap items-center gap-1">
     {!date && <Button size="sm" className="h-7 px-2 text-xs" variant="outline" disabled={busy || staff.length >= 50} onClick={() => changeStaff([...staff, { id: crypto.randomUUID(), name: "", role: "SR" }])}><Plus className="mr-1.5 h-4 w-4" />{t("addStaff")}</Button>}
-    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("undo")} title={t("undo")} variant="ghost" disabled={busy || !undo.length} onClick={() => { setDraft(undo[undo.length - 1]); setUndo(previous => previous.slice(0, -1)); }}><RotateCcw className={date ? "h-4 w-4" : "mr-1.5 h-4 w-4"} />{!date && t("undo")}</Button>
-    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("cancel")} title={t("cancel")} variant="outline" disabled={busy || !draft} onClick={() => { setDraft(null); setUndo([]); setError(null); void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(shopId, month) }); }}>{date ? <X className="h-4 w-4" /> : t("cancel")}</Button>
+    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("undo")} title={t("undo")} variant="ghost" disabled={busy || !undo.length} onClick={() => dispatchDraft({ type: "undo" })}><RotateCcw className={date ? "h-4 w-4" : "mr-1.5 h-4 w-4"} />{!date && t("undo")}</Button>
+    <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("cancel")} title={t("cancel")} variant="outline" disabled={busy || !draft} onClick={() => { dispatchDraft({ type: "reset" }); setError(null); void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(shopId, month) }); }}>{date ? <X className="h-4 w-4" /> : t("cancel")}</Button>
     <Button size="sm" className={date ? "h-7 w-7 p-0" : "h-7 px-2 text-xs"} aria-label={t("save")} title={t("save")} disabled={busy || !draft || invalidDraft} onClick={() => void save()}>{busy ? <LoaderCircle className={cn("h-4 w-4 animate-spin", !date && "mr-1.5")} /> : <Save className={cn("h-4 w-4", !date && "mr-1.5")} />}{!date && t("save")}</Button>
   </div>;
   return <div className="space-y-2">
     {canEdit && <div className={date ? "absolute right-12 top-2" : "flex flex-wrap items-center justify-end gap-1"}>{editControls}</div>}
     {!date && canEdit && <div className="flex flex-wrap items-center gap-2 rounded-sm border bg-muted/20 p-2">
       <span className="text-xs text-muted-foreground">{t("selectedDates", { count: selected.length })}</span>
-      <select aria-label={t("applyTo")} value={bulkStaffId} disabled={busy} onChange={event => setBulkStaffId(event.target.value)} className="h-9 max-w-52 rounded-md border bg-background px-2 text-sm"><option value="">{t("allStaff")}</option>{staff.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select>
-      <select aria-label={t("bulkCode")} value={bulkCode} disabled={busy} onChange={event => setBulkCode(event.target.value as AttendanceEntry["code"])} className={cn("h-9 rounded-md border px-2 text-sm", attendanceColors[bulkCode])}>{ATTENDANCE_CODES.map(code => <option key={code} value={code}>{t(`codes.${code}`)}</option>)}</select>
+      <AppSelect aria-label={t("applyTo")} value={bulkStaffId} disabled={busy} onValueChange={setBulkStaffId} className="w-full sm:w-52" options={[{ value: "", label: t("allStaff") }, ...staff.map(person => ({ value: person.id, label: person.name }))]} />
+      <AppSelect aria-label={t("bulkCode")} value={bulkCode} disabled={busy} onValueChange={value => setBulkCode(value as AttendanceEntry["code"])} className={cn("w-full sm:w-52", attendanceColors[bulkCode])} options={codeOptions} />
       <Input value={bulkNote} onChange={event => setBulkNote(event.target.value)} maxLength={200} disabled={busy} placeholder={t("notePlaceholder")} aria-label={t("note")} className="h-9 max-w-56" />
       <Button size="sm" className="h-7 px-2 text-xs" variant="outline" disabled={busy || !selected.length || bulkCode === "OTHER" && !bulkNote.trim()} onClick={() => {
+        const affected = staff.filter(person => !bulkStaffId || person.id === bulkStaffId);
+        const affectedIds = new Set(affected.map(person => person.id));
         const updates = Object.fromEntries(selected.map(day => {
           const current = dayValue(day);
-          const affected = staff.filter(person => !bulkStaffId || person.id === bulkStaffId);
-          return [day, { ...current, entries: [...current.entries.filter(entry => !affected.some(person => person.id === entry.staffId)), ...affected.map(person => ({ staffId: person.id, code: bulkCode, note: bulkNote.trim() }))] }];
+          return [day, { ...current, entries: [...current.entries.filter(entry => !affectedIds.has(entry.staffId)), ...affected.map(person => ({ staffId: person.id, code: bulkCode, note: bulkNote.trim() }))] }];
         }));
         if (Object.keys(updates).length) changeDays(updates);
       }}>{t("applySelected")}</Button>
@@ -138,7 +232,8 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
           const previousDate = previous.toISOString().slice(0, 10);
           if (previousDate.startsWith(month)) {
             const copied = dayValue(previousDate).entries.filter(entry => !bulkStaffId || entry.staffId === bulkStaffId).map(entry => ({ staffId: entry.staffId, code: entry.code, note: entry.note }));
-            updates[day] = { ...dayValue(day), entries: [...dayValue(day).entries.filter(entry => bulkStaffId && entry.staffId !== bulkStaffId), ...copied] };
+            const current = dayValue(day);
+            updates[day] = { ...current, entries: [...current.entries.filter(entry => bulkStaffId && entry.staffId !== bulkStaffId), ...copied] };
           }
         }
         if (Object.keys(updates).length) changeDays(updates);
@@ -174,33 +269,15 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
             {staff.map((person, index) => <th key={person.id} scope="col" className={cn("border-b border-r border-[var(--sheet-line)] p-0 text-center", !date && person.role === "SM" && "bg-emerald-50 dark:bg-emerald-950")}>
               {!date && canEdit ? <>
                 <input aria-label={t("staffNameColumn", { column: columnLetter(index + 1) })} title={person.name || t("staffName")} placeholder={t("staffName")} value={person.name} maxLength={120} disabled={busy} className="h-7 w-full min-w-0 border-0 bg-transparent px-2 text-center font-semibold outline-none focus:bg-background focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-emerald-600 disabled:opacity-70" onChange={event => changeStaff(staff.map(item => item.id === person.id ? { ...item, name: event.target.value } : item))} />
-                <select aria-label={t("staffRoleColumn", { column: columnLetter(index + 1) })} title={person.role === "SM" ? t("manager") : person.role} value={person.role} disabled={busy} className="h-6 w-full border-0 border-t border-[var(--sheet-line)] bg-transparent px-2 text-center text-[11px] font-normal outline-none focus:outline focus:outline-2 focus:-outline-offset-2 focus:outline-emerald-600" onChange={event => changeStaff(staff.map(item => item.id === person.id ? { ...item, role: event.target.value as AttendanceStaff["role"] } : item))}><option value="SM">SM · {t("manager")}</option><option value="SR">SR</option><option value="IE">IE</option></select>
-              </> : date ? <div className="truncate px-2 py-1 font-medium">{displayName(person.name)}</div> : <div className="px-1.5 py-1"><div className="flex items-center justify-center gap-1 font-semibold">{person.role === "SM" && <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />}<span className="max-w-32 truncate" title={person.name}>{person.name}</span></div><span className="text-[11px] font-normal text-muted-foreground">{person.role === "SM" ? `SM · ${t("manager")}` : person.role}</span></div>}
+                <AppSelect aria-label={t("staffRoleColumn", { column: columnLetter(index + 1) })} title={person.role === "SM" ? t("manager") : person.role} value={person.role} disabled={busy} className="relative h-6 justify-center rounded-none border-0 border-t border-[var(--sheet-line)] bg-transparent px-4 py-0 text-center text-[11px] font-normal shadow-none focus:ring-inset focus:ring-emerald-600 focus:ring-offset-0 [&>svg]:absolute [&>svg]:right-1 [&>svg]:h-3 [&>svg]:w-3" onValueChange={value => changeStaff(staff.map(item => item.id === person.id ? { ...item, role: value as AttendanceStaff["role"] } : item))} options={roleOptions} />
+              </> : date ? <div className="truncate px-2 py-1 font-medium">{staffColumns[index].displayName}</div> : <div className="px-1.5 py-1"><div className="flex items-center justify-center gap-1 font-semibold">{person.role === "SM" && <BriefcaseBusiness className="h-3.5 w-3.5 shrink-0" />}<span className="max-w-32 truncate" title={person.name}>{person.name}</span></div><span className="text-[11px] font-normal text-muted-foreground">{person.role === "SM" ? `SM · ${t("manager")}` : person.role}</span></div>}
             </th>)}
           </tr>
         </thead>
-        <tbody>{dates.map((day, index) => {
-          const weekday = new Date(`${day}T12:00:00Z`).getUTCDay();
-          const current = dayValue(day);
-          const readOnly = !canEdit || busy;
-          return <tr key={day} className={cn("group", weekday === 6 && "bg-slate-50 dark:bg-slate-900/50", weekday === 0 && "bg-orange-50 dark:bg-orange-950/30", selected.includes(day) && "bg-emerald-50 dark:bg-emerald-950/40", day === today && "bg-emerald-50/60 dark:bg-emerald-950/20")}>
-            {!date && <td aria-hidden="true" className={cn("sticky left-0 z-10 border-b border-r border-[var(--sheet-line)] bg-slate-100 px-2 text-center tabular-nums text-slate-500 dark:bg-slate-800", weekday === 0 && "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-200")}>{index + 2}</td>}
-            {!date && <th scope="row" className={cn("sticky left-8 z-10 border-b border-r border-[var(--sheet-line)] bg-background px-2 py-1 text-left font-normal whitespace-nowrap", weekday === 0 && "border-l-2 border-l-orange-400 bg-orange-50 font-medium text-orange-800 dark:bg-orange-950 dark:text-orange-200", selected.includes(day) && "bg-emerald-50 dark:bg-emerald-950", day === today && "font-semibold text-emerald-700 dark:text-emerald-300")}><div className="flex items-center gap-2">{!date && canEdit && <input type="checkbox" className="accent-emerald-600" aria-label={t("selectDate", { date: formatDate(day) })} disabled={readOnly} checked={selected.includes(day)} onChange={event => setSelected(previous => event.target.checked ? [...previous, day] : previous.filter(value => value !== day))} />}<span>{formatDate(day)}{day === today && <span className="ml-1 text-[10px]">{t("today")}</span>}</span></div></th>}
-            {staff.map(person => {
-              const entry = current.entries.find(value => value.staffId === person.id);
-              return <td key={person.id} className={cn("border-b border-r border-[var(--sheet-line)] p-0 text-center focus-within:relative focus-within:z-[5] focus-within:outline focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-emerald-600", person.role === "SM" && "bg-emerald-50/30 dark:bg-emerald-950/20", weekday === 0 && "bg-orange-50 dark:bg-orange-950/30", entry && attendanceColors[entry.code])}>
-                <select aria-label={t("chooseFor", { name: displayName(person.name), date: formatDate(day) })} title={entry ? t(`codes.${entry.code}`) : t("notEntered")} value={entry?.code ?? ""} disabled={readOnly} className="h-7 w-full appearance-none rounded-none border-0 bg-transparent px-2 text-center text-xs font-medium text-inherit outline-none hover:bg-black/[0.03] focus:bg-black/[0.03] disabled:opacity-100 dark:hover:bg-white/[0.04] dark:focus:bg-white/[0.04]" onChange={event => {
-                  const code = event.target.value;
-                  changeEntry(day, person.id, code, entry?.note ?? "");
-                }}><option value="" label=" ">{t("notEntered")}</option>{ATTENDANCE_CODES.map(code => <option key={code} value={code}>{code === "OTHER" ? t("codes.OTHER") : code}</option>)}</select>
-                {entry?.code === "OTHER" ? <Input aria-label={t("noteFor", { name: displayName(person.name) })} className="h-7 w-full rounded-none border-0 border-t bg-transparent px-2 text-xs text-inherit shadow-none focus-visible:ring-0" disabled={readOnly} maxLength={200} value={entry.note} onChange={event => changeEntry(day, person.id, "OTHER", event.target.value)} /> : entry?.note && <p className="max-w-44 truncate px-2 pb-1 text-[10px] text-inherit" title={entry.note}>{entry.note}</p>}
-              </td>;
-            })}
-          </tr>;
-        })}</tbody>
+        <tbody>{calendar.map((day, index) => <AttendanceRow key={day.date} day={day} rowNumber={index + 2} daily={Boolean(date)} columns={staffColumns} current={dayValue(day.date)} selected={selectedDates.has(day.date)} today={day.date === today} canEdit={canEdit} readOnly={!canEdit || busy} options={cellOptions} t={t} onEntryChange={changeEntry} onSelectDate={selectDate} />)}</tbody>
         {!date && <tfoot className="sticky bottom-0 z-[15]"><tr className="bg-slate-100 dark:bg-slate-800"><td aria-hidden="true" className="sticky left-0 z-20 border-r border-[var(--sheet-line)] bg-slate-100 px-2 text-center text-slate-500 dark:bg-slate-800">{dates.length + 2}</td><th scope="row" className="sticky left-8 z-20 border-r border-[var(--sheet-line)] bg-slate-100 px-2 py-1 text-left text-xs dark:bg-slate-800">{t("totals")}</th>{staff.map(person => {
-          const entries = dates.flatMap(day => dayValue(day).entries.filter(entry => entry.staffId === person.id));
-          return <td key={person.id} className="border-r border-[var(--sheet-line)] px-2 py-1 text-center text-[10px] tabular-nums">{["1", "2", "P", "LV", "R"].map(code => `${code}: ${entries.filter(entry => entry.code === code || entry.code === "1+2" && (code === "1" || code === "2")).length}`).join(" · ")}</td>;
+          const counts = totals.get(person.id);
+          return <td key={person.id} className="border-r border-[var(--sheet-line)] px-2 py-1 text-center text-[10px] tabular-nums">{TOTAL_CODES.map(code => `${code}: ${counts?.[code] ?? 0}`).join(" · ")}</td>;
         })}</tr></tfoot>}
       </table>
     </div>

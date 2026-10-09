@@ -1,6 +1,7 @@
 "use server";
 import { loadAttendanceMonth, saveAttendance, attendanceChangesSchema, loadAttendanceHistory, loadAttendanceHistoryDetails, reuseAttendanceTemplate, reuseAttendanceTemplateSchema } from "@/lib/server/attendance";
 import { z } from "zod";
+import { measureServerOperation } from "@/lib/server/performance";
 import type { AttendanceStaff } from "@/lib/attendance";
 import { attendanceMonthSchema, attendanceRosterSchema, shopIdSchema } from "@/lib/persistence-schemas";
 
@@ -10,7 +11,7 @@ const attendanceSaveSchema = z.object({
 }).strict();
 
 export async function fetchAttendanceMonth(shopId: string, month: string) {
-  return loadAttendanceMonth(shopId, month);
+  return measureServerOperation("attendance.month", () => loadAttendanceMonth(shopId, month));
 }
 export async function fetchAttendanceHistory(shopId: string, month: string, cursor?: string) {
   return loadAttendanceHistory(shopId, month, cursor);

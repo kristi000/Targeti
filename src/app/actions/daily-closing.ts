@@ -11,6 +11,7 @@ import { type DailyClosing, type PerformanceMetric, type Shop } from "@/lib/type
 import { createActivity, mutationError, omitId, recordActivity, toFirestoreData } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { requireRestrictedAccess } from "@/lib/restricted-access";
+import { measureServerOperation } from "@/lib/server/performance";
 
 const dailyClosingSaveSchema = dailyClosingInputSchema.extend({ expectedUpdatedAt: z.string().datetime().nullable() });
 type DailyClosingInput = z.infer<typeof dailyClosingSaveSchema>;
@@ -308,7 +309,7 @@ export async function fetchMonthlyCellSummary(shopId: string, month: string): Pr
 
 export async function handleSaveDailyClosing(input: DailyClosingInput) {
   try {
-    return { success: true as const, data: await saveDailyClosing(input, "draft") };
+    return { success: true as const, data: await measureServerOperation("daily-closing.draft", () => saveDailyClosing(input, "draft")) };
   } catch (error) {
     if (error instanceof Error && error.message === "CLOSING_FINALIZED") {
       return { success: false as const, error: "This closing is finalized. An administrator must reopen it before changes can be saved." };
@@ -319,7 +320,7 @@ export async function handleSaveDailyClosing(input: DailyClosingInput) {
 
 export async function handleFinalizeDailyClosing(input: DailyClosingInput) {
   try {
-    return { success: true as const, data: await saveDailyClosing(input, "finalized") };
+    return { success: true as const, data: await measureServerOperation("daily-closing.finalize", () => saveDailyClosing(input, "finalized")) };
   } catch (error) {
     if (error instanceof Error && error.message === "CLOSING_FINALIZED") {
       return { success: false as const, error: "This closing has already been finalized." };

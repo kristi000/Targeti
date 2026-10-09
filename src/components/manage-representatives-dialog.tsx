@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { AppSelect } from "@/components/ui/app-select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -225,11 +226,11 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search representatives or shops…" className="pl-9" />
           </div>
-          <select value={sortBy} onChange={event => setSortBy(event.target.value as typeof sortBy)} aria-label="Sort representatives" className="h-10 rounded-md border bg-background px-3 text-sm">
-            <option value="name">Name A–Z</option>
-            <option value="performance-desc">Performance: highest first</option>
-            <option value="performance-asc">Performance: lowest first</option>
-          </select>
+          <AppSelect value={sortBy} onValueChange={value => setSortBy(value as typeof sortBy)} aria-label="Sort representatives" className="h-10 shrink-0 sm:w-64" options={[
+            { value: "name", label: "Name A–Z" },
+            { value: "performance-desc", label: "Performance: highest first" },
+            { value: "performance-asc", label: "Performance: lowest first" },
+          ]} />
           <span className="shrink-0 text-sm text-muted-foreground">{selectedKeys.length} selected</span>
         </div>
 

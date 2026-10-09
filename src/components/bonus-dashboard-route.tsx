@@ -11,6 +11,7 @@ import { BonusDashboardClient } from "@/components/bonus-dashboard-client";
 import { BonusPageLayout } from "@/components/bonus-page-layout";
 import { QuarterlyBonusClient } from "@/components/quarterly-bonus-client";
 import { BonusHistoryClient } from "@/components/bonus-history-client";
+import { AppSelect } from "@/components/ui/app-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useShop } from "@/components/shop-provider";
@@ -94,7 +95,7 @@ export function BonusDashboardRoute({ shopId, requestedMonth, requestedQuarter, 
           <SelectTrigger aria-label={t("bonusMonth")} className="h-9 w-full"><SelectValue><span className="sm:hidden">{formatReportingMonth(selectedMonth, locale, "short")}</span><span className="hidden sm:inline">{formatReportingMonth(selectedMonth, locale)}</span></SelectValue></SelectTrigger>
           <SelectContent>{months.map(month => <SelectItem key={month} value={month}>{formatReportingMonth(month, locale)}</SelectItem>)}</SelectContent>
         </Select>
-        : view === "quarterly" ? <select aria-label={t("quarter")} className="h-9 w-full rounded-md border bg-background px-3 text-sm" value={quarter} onChange={event => selectQuarter(event.target.value)}>{quarters.map(item => <option key={item} value={item}>{item}</option>)}</select> : undefined}
+        : view === "quarterly" ? <AppSelect aria-label={t("quarter")} value={quarter} onValueChange={selectQuarter} options={quarters.map(item => ({ value: item, label: item }))} /> : undefined}
     >
       <TabsContent value="monthly" className="mt-0 space-y-4">
         {indexQuery.isError ? <div className="p-6 text-destructive" role="alert">{t("tryAgain")}</div>

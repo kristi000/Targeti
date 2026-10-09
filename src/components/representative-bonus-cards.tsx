@@ -20,8 +20,8 @@ export function RepresentativeBonusCards({ representatives, results, forecasts, 
   const t = useTranslations("DetailedDashboard");
   const metricT = useTranslations("Metrics");
   const locale = useLocale();
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
-  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
+  const number = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
 
   return <div className="grid gap-3 xl:grid-cols-2">{representatives.map(representative => {
     const result = results[representative.id];

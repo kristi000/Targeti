@@ -44,7 +44,7 @@ export function QuarterlyBonusClient({ quarter }: { quarter: string }) {
     : month === forecastMonth ? forecast?.input ?? null : null);
   const previewReady = inputs.every(item => item !== null);
   const result = snapshot?.result ?? (previewReady ? calculateQuarterlyBonus(quarter, inputs.filter((item): item is NonNullable<typeof item> => item !== null)) : null);
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
   const percent = (value: number | null) => value === null ? "—" : `${value.toFixed(1)}%`;
 
   if (!selectedShop) return null;

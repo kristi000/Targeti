@@ -125,7 +125,7 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     });
     batch.set(activity.reference, activity.data);
     await batch.commit();
-    await refreshDashboardSummaries({ shopIds: validChanges.map(change => change.shopId), months: [validMonth], performanceChanged: true, periodsChanged: true });
+    await refreshDashboardSummaries({ shopIds: validChanges.map(change => change.shopId), months: [validMonth], performanceChanged: true, periodsChanged: true, importsChanged: true });
     return { success: true as const };
   } catch (error) {
     return { success: false as const, error: mutationError("register the Excel import", error) };
@@ -242,7 +242,7 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
     }
     batch.set(activity.reference, activity.data);
     await batch.commit();
-    await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month], performanceChanged: true, periodsChanged: true });
+    await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month], performanceChanged: true, periodsChanged: true, importsChanged: true });
     return { success: true as const, fileName: String(data.fileName ?? "Excel import") };
 }
 
@@ -307,7 +307,7 @@ export async function handleRemoveImport(importId: string) {
     batch.update(importDocument.ref, { status: "removed", removedAt: new Date().toISOString(), removedBy: actor });
     batch.set(activity.reference, activity.data);
     await batch.commit();
-    await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month], performanceChanged: true, periodsChanged: true });
+    await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month], performanceChanged: true, periodsChanged: true, importsChanged: true });
     return { success: true as const, fileName: String(data.fileName ?? "Excel import"), restoredShopData: false };
   } catch (error) {
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "This import has already been removed or no longer exists." };

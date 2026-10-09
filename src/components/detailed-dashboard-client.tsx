@@ -172,7 +172,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
       }
       const result = await handleSaveAchievementOverrides(selectedShop.id, selectedMonth, activeDraft.reps);
       if (!result.success) throw new Error(result.error);
-      await refreshDataForShop(selectedShop.id);
+      await refreshDataForShop(selectedShop.id, selectedMonth);
       setAchievementDraft(null);
       toast({ title: t("achievementsSaved") });
     } catch (error) {
@@ -188,7 +188,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
     try {
       const result = await handleRevertAchievementOverrides(selectedShop.id, getPerformanceDatasetId(excelReport));
       if (!result.success) throw new Error(result.error);
-      await refreshDataForShop(selectedShop.id);
+      await refreshDataForShop(selectedShop.id, selectedMonth);
       toast({ title: t("achievementsReverted"), description: t("achievementsRevertedDescription") });
     } catch (error) {
       toast({
@@ -260,7 +260,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
 
           <div className="grid gap-2 sm:gap-3 xl:grid-cols-2">
           <Card className="w-full max-w-xl overflow-hidden">
-            <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5 sm:px-4 sm:py-3"><div><CardTitle className="text-sm sm:text-base">{t("totalPerformance")}</CardTitle><CardDescription className="hidden sm:block">{t("overallAchievement")}</CardDescription>{revenue !== undefined && <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:mt-1 sm:gap-1.5 sm:text-xs"><Banknote className="h-3.5 w-3.5" />{t("revenueValue")}: {new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(revenue)}</p>}</div><div className="flex items-center gap-1.5 sm:gap-2"><Trophy className="h-5 w-5 text-primary sm:h-6 sm:w-6" /><div className="text-right"><p className="text-xl font-bold tracking-tight sm:text-2xl">{monthlyAchievement.toFixed(1)}%</p></div></div></CardHeader>
+            <CardHeader className="flex-row items-center justify-between space-y-0 px-3 py-2.5 sm:px-4 sm:py-3"><div><CardTitle className="text-sm sm:text-base">{t("totalPerformance")}</CardTitle><CardDescription className="hidden sm:block">{t("overallAchievement")}</CardDescription>{revenue !== undefined && <p className="mt-0.5 flex items-center gap-1 text-[11px] font-medium text-muted-foreground sm:mt-1 sm:gap-1.5 sm:text-xs"><Banknote className="h-3.5 w-3.5" />{t("revenueValue")}: {new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 }).format(revenue)}</p>}</div><div className="flex items-center gap-1.5 sm:gap-2"><Trophy className="h-5 w-5 text-primary sm:h-6 sm:w-6" /><div className="text-right"><p className="text-xl font-bold tracking-tight sm:text-2xl">{monthlyAchievement.toFixed(1)}%</p></div></div></CardHeader>
             <div className="mx-3 mb-2 flex items-center justify-between rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-sm sm:mx-4 sm:mb-3">
               <span className="flex items-center gap-2 font-medium text-muted-foreground"><TrendingUp className="h-4 w-4 text-primary" />{t("eomForecast")}</span>
               <span className="font-semibold tabular-nums">{isFinal ? "Final" : totalPerformanceForecast === null ? t("notAvailable") : `${totalPerformanceForecast.toFixed(1)}%`}</span>

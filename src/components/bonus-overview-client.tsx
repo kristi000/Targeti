@@ -10,6 +10,7 @@ import { buildBonusOverviewBatch } from "@/app/actions/bonus-overview";
 import type { BonusOverviewRow } from "@/lib/bonus-overview-index";
 import type { AllTimeBonusRow, BonusOverviewMonth } from "@/lib/server/bonus-overview-data";
 import { Button } from "@/components/ui/button";
+import { AppSelect } from "@/components/ui/app-select";
 import { RestrictedAccessPage } from "@/components/restricted-access";
 import { useRestrictedAccess } from "@/hooks/use-restricted-access";
 import { useShop } from "@/components/shop-provider";
@@ -98,7 +99,7 @@ export function BonusOverviewClient({ month, months, onMonthChange }: { month: s
     else { setAllTime(false); onMonthChange(value); }
   };
 
-  const currency = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 }), [locale]);
+  const currency = useMemo(() => new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 }), [locale]);
   const rows = useMemo<DisplayRow[]>(() => allTime
     ? lifetime.data?.rows ?? []
     : monthly.data?.rows.map(row => ({ ...row, monthsCount: 1 })) ?? [],
@@ -126,8 +127,8 @@ export function BonusOverviewClient({ month, months, onMonthChange }: { month: s
   return <section className="h-full min-h-0 overflow-y-auto overscroll-contain p-3 md:p-4">
     <div className="mx-auto max-w-6xl space-y-4 pb-6">
       <div className="flex flex-wrap items-end justify-end gap-3">
-        <div className="flex flex-wrap gap-2"><label className="grid gap-1 text-xs font-medium text-muted-foreground">{t("period")}<select aria-label={t("period")} className="h-9 min-w-40 rounded-md border bg-background px-2 text-sm text-foreground" value={allTime ? "all" : month} onChange={event => changePeriod(event.target.value)}><option value="all">{t("allTime")}</option>{months.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <label className="grid gap-1 text-xs font-medium text-muted-foreground">{t("valueType")}<select aria-label={t("valueType")} className="h-9 min-w-40 rounded-md border bg-background px-2 text-sm text-foreground" value={allTime ? "current" : bonusMode} disabled={allTime} onChange={event => { table.setPageIndex(0); setBonusMode(event.target.value as "current" | "forecast"); }}><option value="current">{t("currentBonus")}</option><option value="forecast">{t("eomForecast")}</option></select></label></div>
+        <div className="flex flex-wrap gap-2"><label className="grid gap-1 text-xs font-medium text-muted-foreground">{t("period")}<AppSelect aria-label={t("period")} className="w-48" value={allTime ? "all" : month} onValueChange={changePeriod} options={[{ value: "all", label: t("allTime") }, ...months.map(item => ({ value: item.id, label: item.name }))]} /></label>
+          <label className="grid gap-1 text-xs font-medium text-muted-foreground">{t("valueType")}<AppSelect aria-label={t("valueType")} className="w-48" value={allTime ? "current" : bonusMode} disabled={allTime} onValueChange={value => { table.setPageIndex(0); setBonusMode(value as "current" | "forecast"); }} options={[{ value: "current", label: t("currentBonus") }, { value: "forecast", label: t("eomForecast") }]} /></label></div>
       </div>
       {missingCount > 0 && <div role="status" className="flex items-center justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm"><span className="flex items-center gap-2">{building && <Loader2 className="h-4 w-4 animate-spin" />}{buildError ? t("prepareError") : building ? t("preparing", { completed, total: missingCount }) : t("missing", { count: missingCount })}</span><Button size="sm" variant="outline" disabled={building} onClick={() => void prepareMissing()}>{buildError ? t("retry") : t("prepare")}</Button></div>}
       <div className="overflow-hidden rounded-md border border-slate-300 bg-card shadow-sm dark:border-slate-600">

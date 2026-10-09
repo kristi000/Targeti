@@ -28,9 +28,17 @@ export const procedureFieldsSchema = z.object({
 }).strict();
 export const procedureFilterSchema = z.object({
   product: procedureFieldsSchema.shape.product.optional(), status: procedureFieldsSchema.shape.status.optional(),
+  user: procedureFieldsSchema.shape.user.optional(),
 }).strict();
+export const procedureSortSchema = z.enum(["source", "userAsc", "userDesc"]);
+export const procedureUserOrderKeySchema = z.string().min(1).max(1499)
+  .refine(value => new TextEncoder().encode(value).length <= 1499, "Procedure sort key is too long");
 export const procedureRecordSchema = procedureFieldsSchema.extend({
   productStatus: z.enum(["MixMax:pending", "MixMax:completed", "MixMax:negative", "TRY&BUY:pending", "TRY&BUY:completed", "TRY&BUY:negative"]).optional(),
+  userOrder: procedureUserOrderKeySchema.optional(), productUserOrder: procedureUserOrderKeySchema.optional(),
+  statusUserOrder: procedureUserOrderKeySchema.optional(), productStatusUserOrder: procedureUserOrderKeySchema.optional(),
+  userFilterOrder: procedureUserOrderKeySchema.optional(), productUserFilterOrder: procedureUserOrderKeySchema.optional(),
+  statusUserFilterOrder: procedureUserOrderKeySchema.optional(), productStatusUserFilterOrder: procedureUserOrderKeySchema.optional(),
   id: documentIdSchema, month: attendanceMonthSchema, revision: z.number().int().positive(),
   createdAt: z.string().datetime(), updatedAt: z.string().datetime(), updatedBy: documentIdSchema,
   source: z.object({ fileHash: z.string().regex(/^[a-f0-9]{64}$/), row: z.number().int().min(2), originalDateTime: procedureDateTimeSchema }).strict().optional(),
@@ -40,13 +48,19 @@ export const deletedProcedureSchema = procedureRecordSchema.extend({
 }).strict();
 export const procedureSummarySchema = z.object({
   filterIndexVersion: z.literal(1).optional(),
+  userSortIndexVersion: z.literal(1).optional(),
+  userFilterIndexVersion: z.literal(1).optional(),
+  userNameIndexRosterHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   revision: z.number().int().nonnegative(), total: z.number().int().nonnegative(),
   completed: z.number().int().nonnegative(), pending: z.number().int().nonnegative(), negative: z.number().int().nonnegative(),
   completedMixMax: z.number().int().nonnegative(),
   totalMixMax: z.number().int().nonnegative().optional(), pendingMixMax: z.number().int().nonnegative().optional(),
   totalTryBuy: z.number().int().nonnegative().optional(), pendingTryBuy: z.number().int().nonnegative().optional(),
+  userTotals: z.array(z.object({ user: procedureFieldsSchema.shape.user, total: z.number().int().positive() }).strict()).optional(),
 }).strict().refine(value => {
   if (value.total !== value.completed + value.pending + value.negative || value.completedMixMax > value.completed) return false;
+  if (value.userTotals && (new Set(value.userTotals.map(entry => entry.user)).size !== value.userTotals.length
+    || value.userTotals.reduce((total, entry) => total + entry.total, 0) !== value.total)) return false;
   const products = [value.totalMixMax, value.pendingMixMax, value.totalTryBuy, value.pendingTryBuy];
   if (products.every(count => count === undefined)) return true; // Older summaries are rebuilt on first access.
   return value.totalMixMax !== undefined && value.pendingMixMax !== undefined && value.totalTryBuy !== undefined && value.pendingTryBuy !== undefined

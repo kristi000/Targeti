@@ -5,6 +5,7 @@ import { monthSchema } from "@/lib/persistence-schemas";
 import { hasRestrictedAccess } from "@/lib/restricted-access";
 import { loadAccessibleShops } from "@/lib/shop-directory";
 import { readBonusOverviewAllTime, readBonusOverviewMonth } from "@/lib/server/bonus-overview-data";
+import { measureServerOperation } from "@/lib/server/performance";
 
 const querySchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("month"), month: monthSchema }).strict(),
@@ -23,9 +24,10 @@ export async function GET(request: Request) {
       : { scope, month: parameters.get("month") });
     if (!input.success) return NextResponse.json({ error: "INVALID_QUERY" }, { status: 400, headers: privateHeaders });
     const shopIds = (await loadAccessibleShops(actor)).map(shop => shop.id);
-    const data = input.data.scope === "all"
-      ? await readBonusOverviewAllTime([...new Set(input.data.months)].sort().reverse(), shopIds)
-      : await readBonusOverviewMonth(input.data.month, shopIds);
+    const value = input.data;
+    const data = value.scope === "all"
+      ? await measureServerOperation("bonus.all-time", () => readBonusOverviewAllTime([...new Set(value.months)].sort().reverse(), shopIds))
+      : await measureServerOperation("bonus.month", () => readBonusOverviewMonth(value.month, shopIds));
     return NextResponse.json(data, { headers: privateHeaders });
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHENTICATED") {

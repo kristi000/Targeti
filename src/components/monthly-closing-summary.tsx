@@ -27,7 +27,7 @@ export function MonthlyClosingSummary({ shopId, month, periodSelector }: { shopI
     queryFn: () => fetchMonthlyClosingSummary(shopId, month),
     staleTime: 0,
   });
-  const formatter = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatter = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
   const handleExport = async (exportFormat: ReportExportFormat) => {
     if (!summary.data) return;
     setExporting(exportFormat);
@@ -36,7 +36,7 @@ export function MonthlyClosingSummary({ shopId, month, periodSelector }: { shopI
         rows: summary.data.rows,
         columns: [
           { header: t("date"), value: row => row.date, width: 13 },
-          ...amounts.map(key => ({ header: t(key), value: (row: typeof summary.data.rows[number]) => row[key], width: 18 })),
+          ...amounts.map(key => ({ header: t(key), value: (row: typeof summary.data.rows[number]) => row[key], width: 18, numberFormat: "0" })),
         ],
         fileName: `monthly-summary-${month}`,
         sheetName: t("title"),

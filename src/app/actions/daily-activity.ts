@@ -1,15 +1,16 @@
 "use server";
 
 import { z } from "zod";
+import { measureServerOperation } from "@/lib/server/performance";
 import type { DailyActivityMonth, DailyActivitySettings, SaveDailyActivitySettingsInput } from "@/lib/daily-activity";
 import { loadDailyActivityMonth, loadDailyActivitySettings, persistDailyActivitySettings } from "@/lib/server/daily-activity";
 
 export async function fetchDailyActivityMonth(shopId: string, month: string): Promise<DailyActivityMonth> {
-  return loadDailyActivityMonth(shopId, month);
+  return measureServerOperation("daily-activity.month", () => loadDailyActivityMonth(shopId, month));
 }
 
 export async function fetchDailyActivitySettings(shopId: string, month: string): Promise<DailyActivitySettings | null> {
-  return loadDailyActivitySettings(shopId, month);
+  return measureServerOperation("daily-activity.settings", () => loadDailyActivitySettings(shopId, month));
 }
 
 export async function saveDailyActivitySettings(input: SaveDailyActivitySettingsInput) {

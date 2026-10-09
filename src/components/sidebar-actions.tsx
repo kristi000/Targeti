@@ -249,7 +249,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
         const metricOrder = [...editingMetricOrder, ...preservedDisabledOrder.filter(metric => !editingMetricOrder.includes(metric))];
         const existingMonth = selectedShop.monthlyData?.[activeMonth];
         await updateShop({ ...selectedShop, monthlyData: { ...selectedShop.monthlyData, [activeMonth]: { ...existingMonth, collection: existingMonth?.collection ?? selectedShop.revenue ?? 0, targets: editingTargets, representatives: monthlyRepresentatives, representativeTargets: roundedRepresentativeTargets, metricSettings, metricOrder } } });
-        await refreshDataForShop(selectedShop.id);
+        await refreshDataForShop(selectedShop.id, activeMonth);
         setIsSaving(false);
         setIsTargetDialogOpen(false);
     };

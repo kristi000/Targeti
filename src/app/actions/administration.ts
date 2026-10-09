@@ -38,7 +38,7 @@ export async function handleClearAllData() {
       references.slice(start, start + 450).forEach(reference => batch.delete(reference));
       await batch.commit();
     }
-    if (!shops.empty) await refreshDashboardSummaries({ shopIds: shops.docs.map(document => document.id), performanceChanged: true, periodsChanged: true });
+    if (!shops.empty) await refreshDashboardSummaries({ shopIds: shops.docs.map(document => document.id), performanceChanged: true, periodsChanged: true, importsChanged: true });
     await recordActivity({ action: "all_data_deleted", summary: `Deleted all application data (${shops.size} shops).`, shopIds: shops.docs.map(item => item.id), shopNames: shops.docs.map(item => String(item.data().name ?? item.id)), metadata: { shopCount: shops.size } });
     return { success: true as const };
   } catch (error) {

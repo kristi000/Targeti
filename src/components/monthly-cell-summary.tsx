@@ -33,7 +33,7 @@ export function MonthlyCellSummary({ shopId, shopName, month, onOpenReport, peri
     queryFn: () => fetchMonthlyCellSummary(shopId, month),
     staleTime: 0,
   });
-  const formatter = new Intl.NumberFormat(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const formatter = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
   const handleExport = async (exportFormat: ReportExportFormat) => {
     if (!summary.data) return;
     setExporting(exportFormat);
@@ -43,7 +43,7 @@ export function MonthlyCellSummary({ shopId, shopName, month, onOpenReport, peri
         columns: [
           { header: t("date"), value: row => row.date, width: 13 },
           { header: t("shop"), value: () => shopName, width: 24 },
-          { header: t("amount"), value: row => row.amount, width: 18 },
+          { header: t("amount"), value: row => row.amount, width: 18, numberFormat: "0" },
           { header: t("note"), value: row => row.note, width: 36 },
         ],
         fileName: `cell-summary-${month}`,

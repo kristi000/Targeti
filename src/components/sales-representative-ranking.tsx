@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DashboardRepresentativeRow } from "@/lib/dashboard-types";
@@ -19,14 +20,15 @@ export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRep
   const shops = useMemo(() => Array.from(
     new Map(rows.map(row => [row.shopId, { id: row.shopId, name: row.shopName }])).values(),
   ).sort((left, right) => left.name.localeCompare(right.name, locale)), [rows, locale]);
+  const effectiveShopId = shops.some(shop => shop.id === shopId) ? shopId : "all";
 
   const filteredRepresentatives = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase(locale);
     return rows.filter(rep =>
-      (shopId === "all" || rep.shopId === shopId)
+      (effectiveShopId === "all" || rep.shopId === effectiveShopId)
       && (!normalizedQuery || `${rep.name} ${rep.shopName}`.toLocaleLowerCase(locale).includes(normalizedQuery))
     );
-  }, [rows, query, shopId, locale]);
+  }, [rows, query, effectiveShopId, locale]);
   const visibleRepresentatives = expanded ? filteredRepresentatives : filteredRepresentatives.slice(0, 5);
 
   return (
@@ -35,10 +37,7 @@ export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRep
         <div><h2 className="font-semibold text-foreground">{t("topSalesReps")}</h2><p className="text-xs text-muted-foreground">Network leaderboard by shop</p></div>
         <div className="flex gap-2">
           <div className="relative min-w-0 flex-1"><Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search representatives…" aria-label="Search representatives" className="h-9 bg-background pl-9" /></div>
-          <select value={shopId} onChange={event => { setShopId(event.target.value); setExpanded(false); }} aria-label="Filter representatives by shop" className="h-9 min-w-0 max-w-32 rounded-md border bg-background px-2 text-sm">
-            <option value="all">All shops</option>
-            {shops.map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
-          </select>
+          <AppSelect value={effectiveShopId} onValueChange={value => { setShopId(value); setExpanded(false); }} aria-label="Filter representatives by shop" className="w-32 shrink-0" options={[{ value: "all", label: "All shops" }, ...shops.map(shop => ({ value: shop.id, label: shop.name }))]} />
         </div>
       </div>
 

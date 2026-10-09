@@ -1,9 +1,9 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   type ColumnDef,
   type SortingState,
@@ -24,6 +24,7 @@ import {
 import { useShop } from "@/components/shop-provider";
 import { SalesRepresentativeRanking } from "./sales-representative-ranking";
 import { Button } from "@/components/ui/button";
+import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -49,12 +50,19 @@ export function DashboardClient() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string | null>(searchParams.get("supervisor"));
+  const search = shopSearch.trim();
+  const [debouncedSearch, setDebouncedSearch] = useState(search);
+  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string | null>(searchParams.get("supervisor")?.trim() || null);
   const requestedSort = searchParams.get("sort");
   const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
   const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
   const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: hasRequestedSort ? searchParams.get("dir") === "desc" : true }]);
-  const deferredSearch = useDeferredValue(shopSearch.trim());
+
+  useEffect(() => {
+    if (search === debouncedSearch) return;
+    const timeout = window.setTimeout(() => setDebouncedSearch(search), 300);
+    return () => window.clearTimeout(timeout);
+  }, [search, debouncedSearch]);
 
   const periodsQuery = useQuery({ queryKey: dashboardPeriodsQueryKey, queryFn: fetchDashboardPeriods, staleTime: 60_000 });
   const datasets = useMemo(() => (periodsQuery.data ?? []).map(period => ({
@@ -67,13 +75,14 @@ export function DashboardClient() {
   const pageQuery = useQuery({
     queryKey: dashboardPageQueryKey({
       month: activeDatasetId,
-      search: deferredSearch,
+      search: debouncedSearch,
       supervisorId: selectedSupervisorId,
       sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey,
       sortDescending: Boolean(sorting[0]?.desc),
     }),
-    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: deferredSearch, supervisorId: selectedSupervisorId, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
-    placeholderData: keepPreviousData,
+    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: debouncedSearch, supervisorId: selectedSupervisorId, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+    placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === activeDatasetId
+      && previousQuery.queryKey[3] === selectedSupervisorId ? previousData : undefined,
   });
 
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
@@ -95,12 +104,13 @@ export function DashboardClient() {
 
   const updateSearch = (value: string) => {
     setShopSearch(value);
+    if (!value.trim()) setDebouncedSearch("");
   };
 
   const selectSupervisor = (supervisorId: string) => {
     const isSelected = selectedSupervisorId === supervisorId;
     setSelectedSupervisorId(isSelected ? null : supervisorId);
-    if (!isSelected) setShopSearch("");
+    if (!isSelected) updateSearch("");
   };
 
   useEffect(() => {
@@ -122,7 +132,7 @@ export function DashboardClient() {
     return <div className="relative flex h-full flex-col items-center justify-center gap-3"><SidebarTrigger className="absolute left-3 top-3 h-9 w-9" /><p className="text-muted-foreground">Add a shop to start tracking performance.</p></div>;
   }
 
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
   const visibleRows = table.getRowModel().rows;
   const resultCount = pageQuery.data?.total ?? 0;
   const selectedSupervisor = supervisors.find(supervisor => supervisor.id === selectedSupervisorId);
@@ -134,7 +144,7 @@ export function DashboardClient() {
           <SidebarTrigger className="h-9 w-9 shrink-0" />
 
           <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0">
+          <section aria-busy={search !== debouncedSearch || pageQuery.isFetching} className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0">
             <div className="flex flex-col gap-3 border-b border-border bg-muted/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <span className="rounded bg-emerald-700 p-1.5 text-white"><Store className="h-4 w-4" /></span>
@@ -146,17 +156,18 @@ export function DashboardClient() {
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input value={shopSearch} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-background pl-9" />
                 </div>
-                <select
+                <AppSelect
                   aria-label="Sort shops by"
-                  className="h-9 rounded-md border bg-background px-2 text-sm text-foreground md:hidden"
+                  className="w-32 shrink-0 md:hidden"
                   value={sorting[0]?.id ?? "shop"}
-                  onChange={event => table.setSorting([{ id: event.target.value, desc: sorting[0]?.desc ?? false }])}
-                >
-                  <option value="shop">Shop</option>
-                  <option value="achievement">Performance</option>
-                  <option value="forecast">Forecast</option>
-                  <option value="revenue">Revenue</option>
-                </select>
+                  onValueChange={value => table.setSorting([{ id: value, desc: sorting[0]?.desc ?? false }])}
+                  options={[
+                    { value: "shop", label: "Shop" },
+                    { value: "achievement", label: "Performance" },
+                    { value: "forecast", label: "Forecast" },
+                    { value: "revenue", label: "Revenue" },
+                  ]}
+                />
                 <Button
                   type="button"
                   variant="outline"

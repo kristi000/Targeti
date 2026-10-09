@@ -5,11 +5,11 @@ import React, { createContext, useContext, useState, useMemo, useCallback } from
 import { useQueryClient } from '@tanstack/react-query';
 import { type Shop, type Supervisor, type Target, type MetricWeightProfile, type ShopData } from '@/lib/types';
 import { handleAddShop, handleDeleteShop, handleUpdateShop } from "@/app/actions/shops";
-import { fetchShopData } from "@/app/actions/shop-data";
+import { fetchShop, fetchShopData } from "@/app/actions/shop-data";
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 import type { AppActor } from '@/lib/auth-types';
-import { shopPerformanceQueryKey } from '@/lib/query-keys';
+import { dashboardInsightsQueryKey, dashboardPeriodsQueryKey, performanceMonthQueryKey, shopPerformanceIndexQueryKey, shopPerformanceMonthQueryKey, shopPerformanceQueryKey } from '@/lib/query-keys';
 
 type ShopContextType = {
   actor: AppActor;
@@ -24,7 +24,7 @@ type ShopContextType = {
   deleteShop: (shopId: string) => Promise<void>;
   allMonthlyTargets: Record<string, Target>;
   loading: boolean;
-  refreshDataForShop: (shopId: string) => Promise<void>;
+  refreshDataForShop: (shopId: string, month?: string) => Promise<void>;
   refreshShopDirectory: () => Promise<void>;
   reloadData: () => Promise<void>;
   selectedDatasetId: string;
@@ -57,19 +57,41 @@ export function ShopProvider({ children, initialData, actor }: { children: React
   const { toast } = useToast();
   const t = useTranslations("Toasts");
 
-  const refreshDataForShop = useCallback(async (shopId: string) => {
+  const refreshDataForShop = useCallback(async (shopId: string, month?: string) => {
     try {
+      if (month) {
+        const shop = await fetchShop(shopId);
+        setShops(current => current.map(item => item.id === shopId ? shop : item));
+        setAllMonthlyTargets(current => {
+          const next = { ...current };
+          if (shop.monthlyTargets) next[shopId] = shop.monthlyTargets;
+          else delete next[shopId];
+          return next;
+        });
+        setSelectedShop(current => current?.id === shopId ? shop : current);
+      } else {
+        // Bulk settings callers can affect multiple shops, so retain the full reload.
         const data = await fetchShopData();
-        const shop = data.shops.find(item => item.id === shopId);
         setShops(data.shops);
         setSupervisors(data.supervisors);
         setWeightProfiles(data.weightProfiles);
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: shopPerformanceQueryKey(shopId) }),
-          queryClient.invalidateQueries({ queryKey: ["performance", "month"] }),
-        ]);
         setAllMonthlyTargets(data.monthlyTargets);
-        if (shop) setSelectedShop(shop);
+        setSelectedShop(current => current ? data.shops.find(shop => shop.id === current.id) ?? null : null);
+      }
+      const performanceKeys = month
+        ? [shopPerformanceMonthQueryKey(shopId, month), shopPerformanceIndexQueryKey(shopId), performanceMonthQueryKey(month)]
+        : [["performance"] as const];
+      await Promise.all([
+        ...performanceKeys.map(queryKey => queryClient.invalidateQueries({ queryKey })),
+        queryClient.invalidateQueries({ queryKey: dashboardPeriodsQueryKey }),
+        queryClient.invalidateQueries({ queryKey: month ? ["firestore-shop-performance-page", month] : ["firestore-shop-performance-page"] }),
+        queryClient.invalidateQueries({ queryKey: month ? dashboardInsightsQueryKey(month) : ["dashboard-insights"] }),
+        queryClient.invalidateQueries({ queryKey: month ? ["bonus-overview", actor.id, month] : ["bonus-overview"] }),
+        queryClient.invalidateQueries({
+          queryKey: ["bonus-overview-all-time"],
+          predicate: query => !month || (Array.isArray(query.queryKey[2]) && query.queryKey[2].includes(month)),
+        }),
+      ]);
     } catch (error) {
         console.error(`Failed to refresh data for shop ${shopId}:`, error);
         toast({
@@ -78,7 +100,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
             description: `Failed to refresh data for the shop.`
         });
     }
-  }, [queryClient, toast, t]);
+  }, [actor.id, queryClient, toast, t]);
 
   const loadInitialData = useCallback(async () => {
     setLoading(true);

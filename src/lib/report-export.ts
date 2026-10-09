@@ -3,6 +3,7 @@ export type ReportExportColumn<Row> = {
   header: string;
   value: (row: Row) => string | number;
   width?: number;
+  numberFormat?: string;
 };
 
 function csvCell(value: string | number) {
@@ -31,7 +32,7 @@ export async function exportReport<Row>({
       ...rows.map(row => columns.map(column => {
         const value = column.value(row);
         return typeof value === "number"
-          ? { value, type: Number, format: "#,##0.00" }
+          ? { value, type: Number, format: column.numberFormat ?? "#,##0.00" }
           : { value };
       })),
     ], {
