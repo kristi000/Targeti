@@ -197,6 +197,9 @@ export type MetricSettings = Partial<Record<PerformanceMetric, MetricSetting>>;
 export type MetricWeightProfile = {
   id: string;
   name: string;
+  year?: number | null;
+  quarter?: 1 | 2 | 3 | 4 | null;
+  group?: string;
   metricSettings: MetricSettings;
   metricOrder: PerformanceMetric[];
   createdAt?: string;

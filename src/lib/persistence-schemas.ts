@@ -156,6 +156,9 @@ const metricOrderSchema = z.array(metricKeySchema).max(100);
 const metricWeightProfileObjectSchema = z.object({
   id: weightProfileIdSchema,
   name: z.string().trim().min(1).max(80),
+  year: z.number().int().min(2000).max(9999).nullable().optional(),
+  quarter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]).nullable().optional(),
+  group: z.string().trim().min(1).max(80).optional(),
   metricSettings: metricSettingsSchema,
   metricOrder: metricOrderSchema.min(1),
   createdAt: z.string().datetime({ offset: true }).optional(),
@@ -163,6 +166,13 @@ const metricWeightProfileObjectSchema = z.object({
 }).strict();
 
 const validateMetricWeightProfile = (value: z.infer<typeof metricWeightProfileObjectSchema>, context: z.RefinementCtx) => {
+  if ((value.year === undefined) !== (value.quarter === undefined)
+    || (value.year === null) !== (value.quarter === null)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Profile quarter and year must be provided together, or both set to all periods." });
+  }
+  if (value.group !== undefined && value.year === undefined) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "A profile group requires an explicit reporting period or all periods." });
+  }
   if (new Set(value.metricOrder).size !== value.metricOrder.length) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Profile metrics must be unique." });
   }

@@ -3,6 +3,24 @@
     "title": "D-one",
     "description": "Menaxhoni performancën e dyqaneve, bonuset, mbylljen ditore dhe turnet e stafit."
   },
+  "WeightProfiles": {
+    "importSummary": "Profilet zgjidhen automatikisht për {period}, duke përdorur profilin përkatës të dyqanit kur është i disponueshëm.",
+    "profileRequired": "Kërkohet profil",
+    "missingImportProfile": "{shop}: nuk ka profil peshash për {period}. Krijoni ose caktoni profilin përkatës para importimit.",
+    "managerDescription": "Vendosni tremujorin dhe vitin e çdo profili. Importet zgjedhin automatikisht periudhën e raportimit. Emrat e profileve shërbejnë për shfaqje dhe ndryshimet ndikojnë vetëm në importet e ardhshme.",
+    "assignmentsDescription": "Caktoni një profil për të identifikuar grupin e profileve të çdo dyqani. Importuesi zgjedh automatikisht tremujorin dhe vitin përkatës, pastaj profilin tremujor të përbashkët kur nuk ka profil përkatës të grupit.",
+    "quarter": "Tremujori",
+    "year": "Viti",
+    "quarterOption": "Q{quarter}",
+    "allPeriods": "Të gjitha periudhat",
+    "group": "Grupi i profilit",
+    "groupPlaceholder": "Profil i përbashkët",
+    "periodHelp": "Muaji i raportimit zgjedh këtë tremujor dhe vit. Të gjitha periudhat ofron një profil rezervë kur nuk ka profil tremujor përkatës.",
+    "groupHelp": "Lëreni grupin bosh për një profil të përbashkët. Përdorni të njëjtin grup, si Paskuqan, për të gjithë tremujorët e një konfigurimi të veçantë të dyqanit.",
+    "invalidPeriod": "Zgjidhni një tremujor dhe një vit të plotë nga 2000 deri në 9999, ose zgjidhni Të gjitha periudhat.",
+    "periodExists": "Ekziston një profil për këtë tremujor, vit dhe grup. Ndryshoni periudhën ose grupin para se të ruani kopjen.",
+    "copySuffix": "kopje"
+  },
   "Sidebar": {
     "shopActions": "Veprimet e dyqanit",
     "settings": "Cilësimet",

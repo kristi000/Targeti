@@ -3,6 +3,24 @@
     "title": "D-one",
     "description": "Manage shop performance, bonuses, daily closing, and staff shifts."
   },
+  "WeightProfiles": {
+    "importSummary": "Profiles are selected automatically for {period}, using a matching shop-specific profile when available.",
+    "profileRequired": "Profile required",
+    "missingImportProfile": "{shop}: no matching weight profile is available for {period}. Create or assign the matching profile before importing.",
+    "managerDescription": "Set each profile's quarter and year. Imports choose the reporting period automatically. Profile names are for display, and profile edits affect future imports only.",
+    "assignmentsDescription": "Assign a profile to identify each shop's profile group. The importer chooses its matching quarter and year automatically, then the shared quarterly profile when no group match exists.",
+    "quarter": "Quarter",
+    "year": "Year",
+    "quarterOption": "Q{quarter}",
+    "allPeriods": "All periods",
+    "group": "Profile group",
+    "groupPlaceholder": "Shared profile",
+    "periodHelp": "The reporting month selects this quarter and year. All periods provides a fallback when no matching quarterly profile is available.",
+    "groupHelp": "Leave the group blank for a shared profile. Use the same group, such as Paskuqan, across all quarters of a shop-specific configuration.",
+    "invalidPeriod": "Choose a quarter and a whole year from 2000 to 9999, or choose All periods.",
+    "periodExists": "A profile already exists for this quarter, year and group. Change the period or group before saving a duplicate.",
+    "copySuffix": "copy"
+  },
   "Sidebar": {
     "shopActions": "Shop actions",
     "settings": "Settings",

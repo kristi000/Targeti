@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslations } from "next-intl";
 import { handleAllocateShopId } from "@/app/actions/shops";
 import { handlePrepareRepresentativeImport } from "@/app/actions/representatives";
 import { handleRegisterImport, handleUndoLatestImport } from "@/app/actions/imports";
@@ -21,7 +22,6 @@ import {
   getMonthlyRepresentatives,
   getOverviewPerformanceData,
   type MetricSettings,
-  type MetricWeightProfile,
   type PerformanceData,
   type PerformanceMetric,
   type Shop,
@@ -29,13 +29,14 @@ import {
 } from "@/lib/types";
 import { useShop } from "./shop-provider";
 import { performanceMonthQueryOptions } from "@/lib/performance-queries";
+import { getImportWeightProfile } from "@/lib/import-weight-profiles";
+import { attendanceMonthSchema } from "@/lib/persistence-schemas";
 
 type ReviewState = {
   workbook: ImportedWorkbookData;
   reportType: "midMonth" | "completedMonth";
   reportMonth: string;
   asOfDate: string;
-  profileSelections: Record<number, string>;
   targetedRepresentatives: Record<string, boolean>;
 };
 
@@ -99,6 +100,7 @@ export function ExcelImportDialog({
   showTrigger = true,
 }: ExcelImportDialogProps) {
   const { selectedShop, shops, weightProfiles, reloadData } = useShop();
+  const profileTranslations = useTranslations("WeightProfiles");
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -112,6 +114,15 @@ export function ExcelImportDialog({
     enabled: Boolean(review?.reportMonth),
   });
   const performanceByShop = performanceQuery.data;
+  const selectedProfiles = useMemo(() => review?.workbook.shops.map(imported => {
+    const existingShop = restrictToSelectedShop && selectedShop
+      ? selectedShop
+      : shops.find(shop => normalizeName(shop.name) === normalizeName(imported.shopName));
+    return getImportWeightProfile(weightProfiles, existingShop, review.reportMonth);
+  }) ?? [], [review, restrictToSelectedShop, selectedShop, shops, weightProfiles]);
+  const profilePeriod = review && attendanceMonthSchema.safeParse(review.reportMonth).success
+    ? getQuarterKey(review.reportMonth).split("-").reverse().join(" ")
+    : "";
 
   const reset = () => {
     setReview(null);
@@ -162,20 +173,11 @@ export function ExcelImportDialog({
       await queryClient.fetchQuery(performanceMonthQueryOptions(reportMonth));
       const parsedDate = parseISO(today);
       const reportType = parsedDate.getDate() >= getDaysInMonth(parsedDate) ? "completedMonth" : "midMonth";
-      const profileSelections = Object.fromEntries(workbook.shops.map((imported, shopIndex) => {
-        const existingShop = restrictToSelectedShop && selectedShop
-          ? selectedShop
-          : shops.find(shop => normalizeName(shop.name) === normalizeName(imported.shopName));
-        const profileId = weightProfiles.some(profile => profile.id === existingShop?.weightProfileId)
-          ? existingShop!.weightProfileId!
-          : "";
-        return [shopIndex, profileId];
-      }));
       const targetedRepresentatives = Object.fromEntries(workbook.shops.flatMap((shop, shopIndex) =>
         shop.representatives.map(representative => [representativeKey(shopIndex, representative.id), true]),
       ));
 
-      setReview({ workbook, reportType, reportMonth, asOfDate: today, profileSelections, targetedRepresentatives });
+      setReview({ workbook, reportType, reportMonth, asOfDate: today, targetedRepresentatives });
       setFileName(file.name);
     } catch (error) {
       toast({ variant: "destructive", title: "Import failed", description: error instanceof Error ? error.message : "The workbook could not be read." });
@@ -189,15 +191,15 @@ export function ExcelImportDialog({
     const errors: string[] = [];
     const warnings: string[] = [];
     warnings.push(...review.workbook.warnings);
-    if (!/^\d{4}-\d{2}$/.test(review.reportMonth)) errors.push("Choose a valid reporting month.");
+    if (!attendanceMonthSchema.safeParse(review.reportMonth).success) errors.push("Choose a valid reporting month.");
     if (review.reportType === "midMonth" && !review.asOfDate.startsWith(`${review.reportMonth}-`)) errors.push("The cutoff date must be inside the reporting month.");
 
     const shopNames = review.workbook.shops.map(shop => normalizeName(shop.shopName));
     if (new Set(shopNames).size !== shopNames.length) errors.push("The workbook contains duplicate shop names.");
     review.workbook.shops.forEach((shop, shopIndex) => {
-      const profile = weightProfiles.find(item => item.id === review.profileSelections[shopIndex]);
+      const profile = selectedProfiles[shopIndex];
       if (!profile) {
-        errors.push(`${shop.shopName}: select a weight profile.`);
+        if (profilePeriod) errors.push(profileTranslations("missingImportProfile", { shop: shop.shopName, period: profilePeriod }));
         return;
       }
       const metrics = profile.metricOrder;
@@ -228,7 +230,7 @@ export function ExcelImportDialog({
       });
     });
     return { errors: Array.from(new Set(errors)), warnings: Array.from(new Set(warnings)) };
-  }, [review, restrictToSelectedShop, selectedShop, shops, weightProfiles, performanceByShop]);
+  }, [review, restrictToSelectedShop, selectedShop, shops, selectedProfiles, profilePeriod, profileTranslations, performanceByShop]);
 
   const applyImport = async () => {
     if (!review || !performanceByShop || performanceQuery.isFetching || performanceQuery.isError || validation.errors.length) return;
@@ -243,8 +245,8 @@ export function ExcelImportDialog({
       const importChanges: Array<{ shopId: string; shopName: string; performanceId: string; previousShop: Shop | null; importedShop: Shop; performance: PerformanceData }> = [];
 
       for (const [shopIndex, imported] of review.workbook.shops.entries()) {
-        const profile = weightProfiles.find(item => item.id === review.profileSelections[shopIndex]);
-        if (!profile) throw new Error(`${imported.shopName}: select a weight profile before importing.`);
+        const profile = selectedProfiles[shopIndex];
+        if (!profile) throw new Error(profileTranslations("missingImportProfile", { shop: imported.shopName, period: profilePeriod }));
         const keptMetrics = profile.metricOrder;
         const metricSettings = structuredClone(profile.metricSettings);
         const existingShop = restrictToSelectedShop && selectedShop
@@ -298,7 +300,9 @@ export function ExcelImportDialog({
         const collection = Number(imported.revenue);
         const updatedShop = {
           ...shop,
-          weightProfileId: profile.id,
+          weightProfileId: weightProfiles.some(item => item.id === existingShop?.weightProfileId)
+            ? existingShop!.weightProfileId
+            : profile.id,
           revenue: collection,
           monthlyTargets: targets,
           salesRepresentatives: reps,
@@ -369,16 +373,15 @@ export function ExcelImportDialog({
     setDragging(false);
     void readFile(event.dataTransfer.files[0]);
   };
-  const selectedProfileFor = useCallback((shopIndex: number): MetricWeightProfile | undefined => weightProfiles.find(profile => profile.id === review?.profileSelections[shopIndex]), [review?.profileSelections, weightProfiles]);
   const profileSummary = useMemo(() => {
     if (!review) return [];
     const counts = new Map<string, number>();
     review.workbook.shops.forEach((_, index) => {
-      const name = selectedProfileFor(index)?.name ?? "Profile required";
+      const name = selectedProfiles[index]?.name ?? profileTranslations("profileRequired");
       counts.set(name, (counts.get(name) ?? 0) + 1);
     });
     return Array.from(counts.entries());
-  }, [review, selectedProfileFor]);
+  }, [review, selectedProfiles, profileTranslations]);
   const undoLatestImport = async () => {
     setLoading(true);
     try {
@@ -418,8 +421,8 @@ export function ExcelImportDialog({
         </div>
 
         <section className="space-y-2 rounded-lg border bg-muted/20 p-4">
-          <div><h3 className="font-semibold">Weight profiles</h3><p className="text-xs text-muted-foreground">Defaults were selected automatically by shop for {getQuarterKey(`${review.reportMonth}-01`)}.</p></div>
-          <div className="flex flex-wrap gap-2">{profileSummary.map(([name, count]) => <span key={name} className={`rounded-full border bg-background px-3 py-1 text-sm ${name === "Profile required" ? "border-destructive text-destructive" : ""}`}>{name}: {count} {count === 1 ? "shop" : "shops"}</span>)}</div>
+          <div><h3 className="font-semibold">Weight profiles</h3><p className="text-xs text-muted-foreground">{profilePeriod && profileTranslations("importSummary", { period: profilePeriod })}</p></div>
+          <div className="flex flex-wrap gap-2">{profileSummary.map(([name, count]) => <span key={name} className={`rounded-full border bg-background px-3 py-1 text-sm ${name === profileTranslations("profileRequired") ? "border-destructive text-destructive" : ""}`}>{name}: {count} {count === 1 ? "shop" : "shops"}</span>)}</div>
         </section>
 
         {validation.errors.length > 0 && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Fix before importing</p><ul className="list-disc space-y-1 pl-5">{validation.errors.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
