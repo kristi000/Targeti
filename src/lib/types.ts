@@ -293,6 +293,7 @@ export type ActivityAction =
   | "excel_imported"
   | "excel_import_undone"
   | "excel_import_removed"
+  | "excel_import_superseded"
   | "achievements_changed"
   | "achievements_reverted"
   | "targets_changed"

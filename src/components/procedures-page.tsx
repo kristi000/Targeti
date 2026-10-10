@@ -25,6 +25,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 const fieldsOf = (record: ProcedureRecord): ProcedureFields => ({ orderNumber: record.orderNumber, name: record.name, customerId: record.customerId, product: record.product, dateTime: record.dateTime, user: record.user, status: record.status });
 type ProcedureDraft = { fields: ProcedureFields; originalFields: ProcedureFields; expectedRevision: number };
 const COLUMNS: Array<{ key: keyof ProcedureFields; width: number }> = [{ key: "orderNumber", width: 185 }, { key: "name", width: 140 }, { key: "customerId", width: 95 }, { key: "product", width: 70 }, { key: "dateTime", width: 104 }, { key: "user", width: 140 }, { key: "status", width: 52 }];
+const emptyProcedureRows: ProcedureRecord[] = [];
 
 function ProcedureCell({ field, record, fields, rowNumber, representatives, canEdit, disabled, onChange }: {
   field: keyof ProcedureFields; record: ProcedureRecord; fields: ProcedureFields; rowNumber: number;
@@ -104,7 +105,13 @@ export function ProceduresPage({ shopId, initialMonth, initialDate }: { shopId: 
     else next[record.id] = { ...draft, fields: updated };
     return next;
   });
-  const table = useReactTable({ data: query.data?.items ?? [], columns, getCoreRowModel: getCoreRowModel(), getRowId: record => record.id });
+  const table = useReactTable({
+    data: query.data?.items ?? emptyProcedureRows,
+    columns,
+    getCoreRowModel: getCoreRowModel(),
+    getRowId: record => record.id,
+    manualPagination: true,
+  });
   const selectionCount = Object.keys(selection).length;
   const deleteDisabled = viewDisabled;
   const allVisibleSelected = Boolean(query.data?.items.length) && query.data!.items.every(record => selection[record.id] !== undefined);

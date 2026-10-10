@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, FileSpreadsheet, Loader2, Trash2 } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, Loader2, Trash2, X } from "lucide-react";
+import { useLocale, useTranslations } from "next-intl";
 
-import { fetchImportHistoryPage, handleRemoveImport } from "@/app/actions/imports";
+import { fetchImportHistoryPage, handleRemoveImport, handleSupersedeImport } from "@/app/actions/imports";
 import type { ImportHistoryItem } from "@/lib/import-history";
+import { dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import { useShop } from "@/components/shop-provider";
 import {
   AlertDialog,
@@ -23,23 +25,39 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 type ImportCursor = { createdAt: string; id: string };
+type ImportAction = { kind: "remove" | "supersede"; item: ImportHistoryItem };
 
-const statusPresentation: Record<ImportHistoryItem["status"], { label: string; className: string }> = {
-  active: { label: "Active", className: "bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200" },
-  superseded: { label: "Superseded", className: "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200" },
-  undone: { label: "Undone", className: "bg-muted text-muted-foreground" },
-  removed: { label: "Removed", className: "bg-muted text-muted-foreground" },
+const statusPresentation: Record<ImportHistoryItem["status"], string> = {
+  active: "bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200",
+  superseded: "bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-200",
+  undone: "bg-muted text-muted-foreground",
+  removed: "bg-muted text-muted-foreground",
+};
+
+const legacyRemovalErrors: Record<string, string> = {
+  "This import has already been removed or no longer exists.": "NOT_ACTIVE",
+  "This file is current for only some affected shops. Remove newer overlapping imports first.": "partiallyCurrent",
+  "This import cannot be removed because one or more affected shops were edited afterward.": "changedAfterImport",
+  "Your session has expired. Please sign in again.": "UNAUTHENTICATED",
+  "Administrator permission is required for this action.": "ADMIN_REQUIRED",
+  "Editor permission is required for this action.": "EDITOR_REQUIRED",
+  "You do not have access to this shop.": "SHOP_ACCESS_REQUIRED",
 };
 
 export function ManageImportsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const t = useTranslations("ImportHistory");
+  const locale = useLocale();
   const { reloadData } = useShop();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [pageIndex, setPageIndex] = useState(0);
   const [cursor, setCursor] = useState<ImportCursor | undefined>();
   const [cursorHistory, setCursorHistory] = useState<Array<ImportCursor | undefined>>([undefined]);
-  const [selectedImport, setSelectedImport] = useState<ImportHistoryItem | null>(null);
-  const [removing, setRemoving] = useState(false);
+  const [selectedAction, setSelectedAction] = useState<ImportAction | null>(null);
+  const [pending, setPending] = useState(false);
+  const mutationPending = useRef(false);
+  const confirmationTrigger = useRef<HTMLButtonElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement | null>(null);
 
   const historyQuery = useQuery({
     queryKey: ["import-history", cursor],
@@ -48,16 +66,18 @@ export function ManageImportsDialog({ open, onOpenChange }: { open: boolean; onO
   });
 
   const handleDialogChange = (nextOpen: boolean) => {
-    if (!nextOpen && !removing) {
+    if (mutationPending.current) return;
+    if (!nextOpen) {
       setPageIndex(0);
       setCursor(undefined);
       setCursorHistory([undefined]);
-      setSelectedImport(null);
+      setSelectedAction(null);
     }
     onOpenChange(nextOpen);
   };
 
   const goToNextPage = () => {
+    if (mutationPending.current) return;
     const nextCursor = historyQuery.data?.nextCursor ?? undefined;
     if (!nextCursor) return;
     const nextPage = pageIndex + 1;
@@ -71,31 +91,56 @@ export function ManageImportsDialog({ open, onOpenChange }: { open: boolean; onO
   };
 
   const goToPreviousPage = () => {
+    if (mutationPending.current) return;
     if (!pageIndex) return;
     const previousPage = pageIndex - 1;
     setCursor(cursorHistory[previousPage]);
     setPageIndex(previousPage);
   };
 
-  const removeSelectedImport = async () => {
-    if (!selectedImport) return;
-    setRemoving(true);
+  const selectImportAction = (action: ImportAction, trigger: HTMLButtonElement) => {
+    if (mutationPending.current) return;
+    confirmationTrigger.current = trigger;
+    setSelectedAction(action);
+  };
+
+  const confirmSelectedAction = async () => {
+    if (!selectedAction || mutationPending.current) return;
+    const { kind, item } = selectedAction;
+    mutationPending.current = true;
+    setPending(true);
     try {
-      const result = await handleRemoveImport(selectedImport.id);
-      if (!result.success) throw new Error(result.error);
+      const result = kind === "supersede"
+        ? await handleSupersedeImport(item.id)
+        : await handleRemoveImport(item.id);
+      if (!result.success) {
+        const code = kind === "remove" ? legacyRemovalErrors[result.error] ?? result.error : result.error;
+        const errorKey = `errors.${code}`;
+        toast({
+          variant: "destructive",
+          title: t(kind === "supersede" ? "supersedeFailedTitle" : "removeFailedTitle"),
+          description: t(t.has(errorKey) ? errorKey : `errors.${kind}Failed`),
+        });
+        return;
+      }
       await Promise.all([
-        reloadData(),
+        ...(kind === "remove" ? [reloadData()] : []),
         queryClient.invalidateQueries({ queryKey: ["import-history"] }),
+        queryClient.invalidateQueries({ queryKey: ["activity-history"] }),
+        queryClient.invalidateQueries({ queryKey: dashboardPeriodsQueryKey }),
       ]);
-      toast({ title: "Excel import removed", description: `${result.fileName} was removed safely.` });
-      setSelectedImport(null);
-      setPageIndex(0);
-      setCursor(undefined);
-      setCursorHistory([undefined]);
-    } catch (error) {
-      toast({ variant: "destructive", title: "Could not remove import", description: error instanceof Error ? error.message : "Please try again." });
+      toast({ title: t(`${kind}SuccessTitle`), description: t(`${kind}SuccessDescription`, { fileName: result.fileName }) });
+      setSelectedAction(null);
+      if (kind === "remove") {
+        setPageIndex(0);
+        setCursor(undefined);
+        setCursorHistory([undefined]);
+      }
+    } catch {
+      toast({ variant: "destructive", title: t(`${kind}FailedTitle`), description: t(`errors.${kind}Failed`) });
     } finally {
-      setRemoving(false);
+      mutationPending.current = false;
+      setPending(false);
     }
   };
 
@@ -103,57 +148,80 @@ export function ManageImportsDialog({ open, onOpenChange }: { open: boolean; onO
 
   return <>
     <Dialog open={open} onOpenChange={handleDialogChange}>
-      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl [&>button]:hidden">
+        <div className="absolute right-3 top-3">
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7" disabled={pending} onClick={() => handleDialogChange(false)} aria-label={t("close")} title={t("close")}><X className="h-4 w-4" /></Button>
+        </div>
         <DialogHeader className="shrink-0 border-b bg-muted/40 px-5 py-4 pr-12 text-left sm:px-6">
           <div className="flex items-center gap-3">
             <span className="rounded-md bg-emerald-700 p-2 text-white"><FileSpreadsheet className="h-5 w-5" /></span>
-            <div><DialogTitle>Manage imported Excel files</DialogTitle><DialogDescription>Only the latest Excel file for each month is active. Earlier versions remain stored as superseded history.</DialogDescription></div>
+            <div><DialogTitle>{t("title")}</DialogTitle><DialogDescription>{t("description")}</DialogDescription></div>
           </div>
         </DialogHeader>
 
         <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
-          {historyQuery.isLoading ? <div className="flex h-80 items-center justify-center gap-2 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Loading imports…</div>
-            : historyQuery.isError ? <div className="flex h-80 items-center justify-center text-sm text-destructive">Import history could not be loaded.</div>
+          {historyQuery.isLoading ? <div className="flex h-80 items-center justify-center gap-2 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />{t("loading")}</div>
+            : historyQuery.isError ? <div className="flex h-80 items-center justify-center text-sm text-destructive">{t("loadFailed")}</div>
             : imports.length ? <table className="w-full min-w-[760px] border-collapse text-sm">
               <thead className="sticky top-0 z-10 bg-muted text-xs font-semibold uppercase tracking-wide text-foreground"><tr>
-                <th className="border-b border-r border-border px-3 py-2 text-left">File</th>
-                <th className="w-28 border-b border-r border-border px-3 py-2 text-left">Month</th>
-                <th className="w-44 border-b border-r border-border px-3 py-2 text-left">Imported</th>
-                <th className="w-40 border-b border-r border-border px-3 py-2 text-left">Imported by</th>
-                <th className="w-24 border-b border-r border-border px-3 py-2 text-right">Shops</th>
-                <th className="w-28 border-b border-r border-border px-3 py-2 text-center">Status</th>
-                <th className="w-28 border-b border-border px-3 py-2 text-right">Actions</th>
+                <th className="border-b border-r border-border px-3 py-2 text-left">{t("columns.file")}</th>
+                <th className="w-28 border-b border-r border-border px-3 py-2 text-left">{t("columns.month")}</th>
+                <th className="w-44 border-b border-r border-border px-3 py-2 text-left">{t("columns.imported")}</th>
+                <th className="w-40 border-b border-r border-border px-3 py-2 text-left">{t("columns.importedBy")}</th>
+                <th className="w-24 border-b border-r border-border px-3 py-2 text-right">{t("columns.shops")}</th>
+                <th className="w-36 border-b border-r border-border px-3 py-2 text-center">{t("columns.status")}</th>
+                <th className="w-28 border-b border-border px-3 py-2 text-right">{t("columns.actions")}</th>
               </tr></thead>
               <tbody>{imports.map(item => <tr key={item.id} className="bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
                 <th scope="row" className="max-w-xs truncate border-b border-r border-border px-3 py-3 text-left font-medium" title={item.fileName}>{item.fileName}</th>
                 <td className="border-b border-r border-border px-3 py-3 tabular-nums">{item.month}</td>
-                <td className="border-b border-r border-border px-3 py-3 text-muted-foreground">{formatDate(item.createdAt)}</td>
+                <td className="border-b border-r border-border px-3 py-3 text-muted-foreground">{formatDate(item.createdAt, locale)}</td>
                 <td className="border-b border-r border-border px-3 py-3 text-muted-foreground">{item.actorName}</td>
                 <td className="border-b border-r border-border px-3 py-3 text-right tabular-nums">{item.recordCount}</td>
-                <td className="border-b border-r border-border px-3 py-3 text-center"><span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", statusPresentation[item.status].className)}>{statusPresentation[item.status].label}</span></td>
-                <td className="border-b border-border px-3 py-2 text-right"><Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={item.status !== "active" || removing} onClick={() => setSelectedImport(item)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />Remove</Button></td>
+                <td className="border-b border-r border-border px-3 py-3 text-center">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span className={cn("inline-flex rounded-full px-2 py-0.5 text-xs font-medium", statusPresentation[item.status])}>{t(`statuses.${item.status}`)}</span>
+                    {item.status === "active" && <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0 text-muted-foreground hover:text-amber-700 dark:hover:text-amber-300" disabled={pending} onClick={event => selectImportAction({ kind: "supersede", item }, event.currentTarget)} aria-label={t("supersedeFile", { fileName: item.fileName })} title={t("supersedeFile", { fileName: item.fileName })}><Archive className="h-3.5 w-3.5" /></Button>}
+                  </div>
+                </td>
+                <td className="border-b border-border px-3 py-2 text-right"><Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={item.status !== "active" || pending} onClick={event => selectImportAction({ kind: "remove", item }, event.currentTarget)}><Trash2 className="mr-1.5 h-3.5 w-3.5" />{t("remove")}</Button></td>
               </tr>)}</tbody>
             </table>
-              : <div className="flex h-80 flex-col items-center justify-center gap-2 text-center text-muted-foreground"><FileSpreadsheet className="h-9 w-9 text-muted-foreground" /><p className="font-medium">No imported Excel files</p><p className="text-sm">Completed imports will appear here.</p></div>}
+              : <div className="flex h-80 flex-col items-center justify-center gap-2 text-center text-muted-foreground"><FileSpreadsheet className="h-9 w-9 text-muted-foreground" /><p className="font-medium">{t("empty")}</p><p className="text-sm">{t("emptyDescription")}</p></div>}
         </div>
 
         <DialogFooter className="shrink-0 flex-row items-center justify-between border-t bg-muted/40 px-5 py-4 sm:justify-between sm:px-6">
-          <div className="flex items-center gap-2"><Button type="button" variant="outline" size="icon" disabled={!pageIndex || historyQuery.isFetching} onClick={goToPreviousPage} aria-label="Previous imports page"><ChevronLeft className="h-4 w-4" /></Button><span className="text-sm text-muted-foreground">Page {pageIndex + 1}</span><Button type="button" variant="outline" size="icon" disabled={!historyQuery.data?.nextCursor || historyQuery.isFetching} onClick={goToNextPage} aria-label="Next imports page"><ChevronRight className="h-4 w-4" /></Button></div>
-          <Button type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={removing}>Close</Button>
+          <div className="flex items-center gap-2"><Button type="button" variant="outline" size="icon" disabled={!pageIndex || historyQuery.isFetching || pending} onClick={goToPreviousPage} aria-label={t("previousPage")}><ChevronLeft className="h-4 w-4" /></Button><span className="text-sm text-muted-foreground">{t("page", { number: pageIndex + 1 })}</span><Button type="button" variant="outline" size="icon" disabled={!historyQuery.data?.nextCursor || historyQuery.isFetching || pending} onClick={goToNextPage} aria-label={t("nextPage")}><ChevronRight className="h-4 w-4" /></Button></div>
+          <Button ref={closeButton} type="button" variant="outline" onClick={() => handleDialogChange(false)} disabled={pending}>{t("close")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
 
-    <AlertDialog open={Boolean(selectedImport)} onOpenChange={nextOpen => { if (!nextOpen && !removing) setSelectedImport(null); }}>
-      <AlertDialogContent>
-        <AlertDialogHeader><AlertDialogTitle>Remove this Excel import?</AlertDialogTitle><AlertDialogDescription>{selectedImport?.fileName} and its imported performance records will be removed. If it is the current version for the affected shops, their previous shop data will be restored. If it is an older version, current dashboard data will not change. Removal is blocked when it could overwrite later shop edits.</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel disabled={removing}>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={removing} onClick={event => { event.preventDefault(); void removeSelectedImport(); }}>{removing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}Remove import</AlertDialogAction></AlertDialogFooter>
+    <AlertDialog open={Boolean(selectedAction)} onOpenChange={nextOpen => { if (!nextOpen && !mutationPending.current) setSelectedAction(null); }}>
+      <AlertDialogContent onCloseAutoFocus={event => {
+        event.preventDefault();
+        if (!open) return;
+        const trigger = confirmationTrigger.current;
+        if (trigger?.isConnected && !trigger.disabled) trigger.focus();
+        else closeButton.current?.focus();
+      }}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t(selectedAction?.kind === "supersede" ? "supersedeTitle" : "removeTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>{t(selectedAction?.kind === "supersede" ? "supersedeDescription" : "removeDescription", { fileName: selectedAction?.item.fileName ?? "" })}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={pending}>{t("cancel")}</AlertDialogCancel>
+          <AlertDialogAction className={selectedAction?.kind === "remove" ? "bg-destructive text-destructive-foreground hover:bg-destructive/90" : undefined} disabled={pending} onClick={event => { event.preventDefault(); void confirmSelectedAction(); }}>
+            {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : selectedAction?.kind === "supersede" ? <Archive className="mr-2 h-4 w-4" /> : <Trash2 className="mr-2 h-4 w-4" />}
+            {t(selectedAction?.kind === "supersede" ? "supersede" : "removeImport")}
+          </AlertDialogAction>
+        </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </>;
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, locale: string) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+  return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }

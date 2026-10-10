@@ -24,6 +24,22 @@ const importChangeSchema = z.object({
 
 const importStatusSchema = z.enum(["active", "superseded", "undone", "removed"]);
 
+const importHistoryDocumentSchema = z.object({
+  fileName: z.string().trim().min(1).max(255),
+  month: monthSchema,
+  createdAt: z.string().datetime({ offset: true }),
+  actor: z.object({ name: z.string().trim().min(1).max(120) }).passthrough(),
+  status: importStatusSchema,
+  recordCount: z.number().int().nonnegative(),
+  undoneAt: z.string().datetime({ offset: true }).optional(),
+  supersededManually: z.boolean().optional(),
+});
+
+function isImportConflict(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error
+    && [9, 10, "failed-precondition", "aborted"].includes(error.code as string | number);
+}
+
 const importCommitChangeSchema = importChangeSchema.extend({
   performance: performanceDataSchema,
 }).superRefine((change, context) => {
@@ -112,7 +128,7 @@ export async function handleRegisterImport(importId: string, fileName: string, m
       status: "superseded",
       supersededAt: value.createdAt,
       supersededBy: validImportId,
-    }));
+    }, { lastUpdateTime: document.updateTime }));
     prepared.forEach(({ change, previousBonusSnapshot, previousQuarterlyBonusSnapshot, bonus, quarterly, bonusRef, quarterRef }) => {
       const shopData = Object.fromEntries(Object.entries(change.importedShop).filter(([key]) => key !== "id"));
       const performanceData = Object.fromEntries(Object.entries(change.performance).filter(([key]) => key !== "id"));
@@ -143,15 +159,7 @@ export async function fetchImportHistoryPage(cursor?: { createdAt: string; id: s
   const documents = snapshot.docs.slice(0, 20);
   const imports = documents.flatMap(document => {
     const data = document.data();
-    const parsed = z.object({
-      fileName: z.string().trim().min(1).max(255),
-      month: monthSchema,
-      createdAt: z.string().datetime({ offset: true }),
-      actor: z.object({ name: z.string().trim().min(1).max(120) }).passthrough(),
-      status: importStatusSchema,
-      recordCount: z.number().int().nonnegative(),
-      undoneAt: z.string().datetime({ offset: true }).optional(),
-    }).safeParse(data);
+    const parsed = importHistoryDocumentSchema.safeParse(data);
     if (!parsed.success) return [];
     return [{
       id: document.id,
@@ -171,6 +179,59 @@ export async function fetchImportHistoryPage(cursor?: { createdAt: string; id: s
   };
 }
 
+export async function handleSupersedeImport(importId: string) {
+  try {
+    const actor = await requireAdmin();
+    const validImportId = shopIdSchema.parse(importId);
+    const reference = doc(db, "imports", validImportId);
+    const result = await db.runTransaction(async transaction => {
+      const importDocument = await transaction.get(reference);
+      if (!importDocument.exists) throw new Error("NOT_ACTIVE");
+      const data = importHistoryDocumentSchema.parse(importDocument.data());
+      if (data.status !== "active") throw new Error("NOT_ACTIVE");
+      const changeSnapshot = await transaction.get(reference.collection("changes")
+        .select("shopId", "shopName").limit(151));
+      const changes = z.array(importChangeSchema.pick({ shopId: true, shopName: true }))
+        .min(1).max(150).parse(changeSnapshot.docs.map(document => document.data()));
+      const shopIds = [...new Set(changes.map(change => change.shopId))];
+      await requireEditorForShops(shopIds);
+      const activity = await createActivity({
+        action: "excel_import_superseded",
+        summary: `Marked import ${data.fileName} as superseded.`,
+        shopIds,
+        shopNames: changes.map(change => change.shopName),
+        metadata: { importId: validImportId, month: data.month, recordCount: changes.length },
+      }, actor);
+      transaction.update(reference, {
+        status: "superseded",
+        supersededAt: new Date().toISOString(),
+        supersededBy: deleteField(),
+        supersededManually: true,
+        supersededByActor: actor,
+      });
+      transaction.set(activity.reference, activity.data);
+      return { fileName: data.fileName, month: data.month, shopIds };
+    });
+    await refreshDashboardSummaries({
+      shopIds: result.shopIds,
+      months: [result.month],
+      periodsChanged: true,
+      importsChanged: true,
+    });
+    return { success: true as const, fileName: result.fileName };
+  } catch (error) {
+    if (error instanceof z.ZodError) return { success: false as const, error: "INVALID_IMPORT" };
+    if (error instanceof Error && ["NOT_ACTIVE", "UNAUTHENTICATED", "ADMIN_REQUIRED", "EDITOR_REQUIRED", "SHOP_ACCESS_REQUIRED"].includes(error.message)) {
+      return { success: false as const, error: error.message };
+    }
+    if (isImportConflict(error)) {
+      return { success: false as const, error: "CONFLICT" };
+    }
+    console.error("Firestore supersede the Excel import failed:", error);
+    return { success: false as const, error: "supersedeFailed" };
+  }
+}
+
 async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)["docs"][number]) {
     const data = importDocument.data() as Record<string, unknown>;
     const changeSnapshot = await getDocs(collection(db, "imports", importDocument.id, "changes"));
@@ -188,11 +249,14 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
     const month = monthSchema.parse(data.month);
     const importedAt = String(data.createdAt ?? "");
     const monthImports = await getDocs(query(collection(db, "imports"), where("month", "==", month)));
-    const previousImport = monthImports.docs
+    const previousVersion = monthImports.docs
       .filter(document => document.id !== importDocument.id
         && document.data().status === "superseded"
         && String(document.data().createdAt ?? "") < importedAt)
       .sort((left, right) => String(right.data().createdAt ?? "").localeCompare(String(left.data().createdAt ?? "")))[0];
+    // A manual supersession keeps the imported data but retires its active
+    // status. Do not reactivate it or select an older, mismatched version.
+    const previousImport = previousVersion?.data().supersededManually === true ? undefined : previousVersion;
     const legacySnapshots = await Promise.all(changes.map(async change => {
       if (change.previousBonusSnapshot !== undefined) return null;
       const bonus = await getDoc(doc(db, "shops", change.shopId, "bonusSnapshots", month));
@@ -232,13 +296,13 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
         batch.delete(shopRef);
       }
     });
-    batch.update(importDocument.ref, { status: "undone", undoneAt: new Date().toISOString(), undoneBy: actor });
+    batch.update(importDocument.ref, { status: "undone", undoneAt: new Date().toISOString(), undoneBy: actor }, { lastUpdateTime: importDocument.updateTime });
     if (previousImport) {
       batch.update(previousImport.ref, {
         status: "active",
         supersededAt: deleteField(),
         supersededBy: deleteField(),
-      });
+      }, { lastUpdateTime: previousImport.updateTime });
     }
     batch.set(activity.reference, activity.data);
     await batch.commit();
@@ -256,6 +320,7 @@ export async function handleUndoImport(importId: string) {
     if (importDocument.id !== validImportId) throw new Error("NEWER_IMPORT_EXISTS");
     return await undoImport(importDocument);
   } catch (error) {
+    if (isImportConflict(error)) return { success: false as const, error: "CONFLICT" };
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "There is no active import to undo." };
     if (error instanceof Error && error.message === "NEWER_IMPORT_EXISTS") return { success: false as const, error: "Undo newer active imports first to preserve import order." };
     if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "The latest import cannot be undone because one or more affected shops changed afterward." };
@@ -304,12 +369,13 @@ export async function handleRemoveImport(importId: string) {
     }, actor);
     const batch = writeBatch(db);
     changes.forEach(change => batch.delete(doc(db, "shops", change.shopId, "performance", change.performanceId)));
-    batch.update(importDocument.ref, { status: "removed", removedAt: new Date().toISOString(), removedBy: actor });
+    batch.update(importDocument.ref, { status: "removed", removedAt: new Date().toISOString(), removedBy: actor }, { lastUpdateTime: importDocument.updateTime });
     batch.set(activity.reference, activity.data);
     await batch.commit();
     await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month], performanceChanged: true, periodsChanged: true, importsChanged: true });
     return { success: true as const, fileName: String(data.fileName ?? "Excel import"), restoredShopData: false };
   } catch (error) {
+    if (isImportConflict(error)) return { success: false as const, error: "CONFLICT" };
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "This import has already been removed or no longer exists." };
     if (error instanceof Error && error.message === "PARTIALLY_CURRENT") return { success: false as const, error: "This file is current for only some affected shops. Remove newer overlapping imports first." };
     if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "This import cannot be removed because one or more affected shops were edited afterward." };
@@ -325,6 +391,7 @@ export async function handleUndoLatestImport() {
     if (!importDocument) throw new Error("NO_IMPORT");
     return await undoImport(importDocument);
   } catch (error) {
+    if (isImportConflict(error)) return { success: false as const, error: "CONFLICT" };
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "There is no active import to undo." };
     if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "The latest import cannot be undone because one or more affected shops changed afterward." };
     return { success: false as const, error: mutationError("undo the latest Excel import", error) };

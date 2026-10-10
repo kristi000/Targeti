@@ -101,6 +101,7 @@ export function ExcelImportDialog({
 }: ExcelImportDialogProps) {
   const { selectedShop, shops, weightProfiles, reloadData } = useShop();
   const profileTranslations = useTranslations("WeightProfiles");
+  const importHistoryTranslations = useTranslations("ImportHistory");
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -386,7 +387,7 @@ export function ExcelImportDialog({
     setLoading(true);
     try {
       const result = await handleUndoLatestImport();
-      if (!result.success) throw new Error(result.error);
+      if (!result.success) throw new Error(result.error === "CONFLICT" ? importHistoryTranslations("errors.CONFLICT") : result.error);
       await reloadData();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["dashboard-periods"] }),
