@@ -45,7 +45,11 @@
     "averagePerformance": "Performanca mesatare në të gjitha dyqanet",
     "shopPerformanceRankings": "Renditja e Performancës së Dyqaneve",
     "topSalesReps": "Përfaqësuesit e Shitjeve",
-    "repRankingsDescription": "Renditjet bazuar në një pjesë të barabartë të objektivave të dyqanit."
+    "repRankingsDescription": "Renditjet bazuar në një pjesë të barabartë të objektivave të dyqanit.",
+    "loading": "Duke ngarkuar panelin…",
+    "refreshing": "Duke rifreskuar panelin…",
+    "loadFailed": "Paneli nuk mund të ngarkohej.",
+    "retry": "Provo përsëri"
   },
   "BonusOverview": {
     "title": "Bonuset",

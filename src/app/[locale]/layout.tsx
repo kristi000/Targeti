@@ -5,6 +5,7 @@ import { NextIntlClientProvider } from "next-intl";
 import { AppLayout, AppShellFallback } from "@/components/app-layout";
 import { QueryProvider } from "@/components/query-provider";
 import { ShopProvider } from "@/components/shop-provider";
+import { DashboardNavigationProvider } from "@/components/dashboard-navigation-provider";
 import { getCurrentActor } from "@/lib/access";
 import { getShopDirectory } from "@/lib/server/dashboard-loaders";
 import { PerformanceVitals } from "@/components/performance-vitals";
@@ -35,12 +36,15 @@ async function AuthenticatedApplication({
   }
 
   const initialData = await getShopDirectory();
+  const clientScope = JSON.stringify([actor.id, actor.role, [...actor.shopIds].sort(), locale]);
 
   return (
-    <QueryProvider>
+    <QueryProvider key={clientScope}>
       {performanceMetricsEnabled() && <PerformanceVitals />}
       <ShopProvider initialData={initialData} actor={actor}>
-        <AppLayout>{children}</AppLayout>
+        <DashboardNavigationProvider locale={locale}>
+          <AppLayout>{children}</AppLayout>
+        </DashboardNavigationProvider>
       </ShopProvider>
     </QueryProvider>
   );

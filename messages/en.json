@@ -45,7 +45,11 @@
     "averagePerformance": "Average performance across all shops",
     "shopPerformanceRankings": "Shop Performance Rankings",
     "topSalesReps": "Sales Representatives",
-    "repRankingsDescription": "Rankings based on an equal share of shop targets."
+    "repRankingsDescription": "Rankings based on an equal share of shop targets.",
+    "loading": "Loading dashboard…",
+    "refreshing": "Refreshing dashboard…",
+    "loadFailed": "Could not load the dashboard.",
+    "retry": "Retry"
   },
   "BonusOverview": {
     "title": "Bonuses",

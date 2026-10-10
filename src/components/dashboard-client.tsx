@@ -10,7 +10,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useLocale } from "next-intl";
+import { useLocale, useTranslations } from "next-intl";
 import {
   ArrowDown,
   ArrowUp,
@@ -19,6 +19,7 @@ import {
   Store,
   UserRoundCog,
   X,
+  Loader2,
 } from "lucide-react";
 
 import { useShop } from "@/components/shop-provider";
@@ -30,11 +31,14 @@ import { Progress } from "@/components/ui/progress";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
-import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
-import { fetchDashboardPeriods } from "@/app/dashboard-actions";
-import { fetchDashboardPage, type DashboardRow, type DashboardSortKey, type DashboardSupervisorRow } from "@/app/dashboard-actions";
+import type { DashboardRow, DashboardSupervisorRow } from "@/lib/dashboard-types";
+import { dashboardPageQueryOptions, dashboardPeriodsQueryOptions } from "@/lib/dashboard-queries";
+import { dashboardViewQuery, readDashboardView, type DashboardView } from "@/lib/dashboard-navigation";
+import { useDashboardNavigation } from "@/components/dashboard-navigation-provider";
 
 type ShopPerformanceRow = DashboardRow;
+
+const emptyShopRows: ShopPerformanceRow[] = [];
 
 const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
   { id: "shop", accessorFn: row => row.shop.name },
@@ -43,44 +47,52 @@ const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
   { id: "revenue", accessorKey: "revenue" },
 ];
 
-export function DashboardClient() {
+export function DashboardClient({ bootstrapPending = false }: { bootstrapPending?: boolean }) {
   const { shops, supervisors, loading, setSelectedDatasetId } = useShop();
+  const { rememberDashboardQuery } = useDashboardNavigation();
+  const t = useTranslations("Dashboard");
   const locale = useLocale();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [shopSearch, setShopSearch] = useState(searchParams.get("q") ?? "");
+  const view = readDashboardView(searchParams);
+  const [shopSearch, setShopSearch] = useState(view.search);
   const search = shopSearch.trim();
   const [debouncedSearch, setDebouncedSearch] = useState(search);
-  const [selectedSupervisorId, setSelectedSupervisorId] = useState<string | null>(searchParams.get("supervisor")?.trim() || null);
-  const requestedSort = searchParams.get("sort");
-  const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
-  const initialSort: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
-  const [sorting, setSorting] = useState<SortingState>([{ id: initialSort, desc: hasRequestedSort ? searchParams.get("dir") === "desc" : true }]);
+  const selectedSupervisorId = view.supervisorId;
+  const sorting = useMemo<SortingState>(() => [{ id: view.sortBy, desc: view.sortDescending }], [view.sortBy, view.sortDescending]);
+  const [canFetch, setCanFetch] = useState(false);
+
+  // Existing query entries hydrate after commit. Let that finish before a
+  // remount can start a redundant fetch of the stale client cache.
+  useEffect(() => { if (!bootstrapPending) setCanFetch(true); }, [bootstrapPending]);
+
+  useEffect(() => {
+    // Native history updates are transitions. Ignore an intermediate URL while
+    // a newer keystroke already changed it, but restore drafts on history moves.
+    const currentSearch = readDashboardView(new URLSearchParams(window.location.search)).search;
+    if (view.search === currentSearch) setShopSearch(view.search);
+  }, [view.search]);
 
   useEffect(() => {
     if (search === debouncedSearch) return;
+    if (!search) { setDebouncedSearch(""); return; }
     const timeout = window.setTimeout(() => setDebouncedSearch(search), 300);
     return () => window.clearTimeout(timeout);
   }, [search, debouncedSearch]);
 
-  const periodsQuery = useQuery({ queryKey: dashboardPeriodsQueryKey, queryFn: fetchDashboardPeriods, staleTime: 60_000 });
+  const queriesEnabled = canFetch && !bootstrapPending;
+  const periodsQuery = useQuery({ ...dashboardPeriodsQueryOptions(), enabled: queriesEnabled });
   const datasets = useMemo(() => (periodsQuery.data ?? []).map(period => ({
     id: period.month,
     name: period.reportDate ? formatReportingDate(period.reportDate, locale) : formatReportingMonth(period.month, locale),
   })), [periodsQuery.data, locale]);
-  const requestedMonth = searchParams.get("month");
+  const requestedMonth = view.month;
   const activeDatasetId = datasets.some(dataset => dataset.id === requestedMonth) ? requestedMonth! : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
 
   const pageQuery = useQuery({
-    queryKey: dashboardPageQueryKey({
-      month: activeDatasetId,
-      search: debouncedSearch,
-      supervisorId: selectedSupervisorId,
-      sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey,
-      sortDescending: Boolean(sorting[0]?.desc),
-    }),
-    queryFn: () => fetchDashboardPage({ month: activeDatasetId, search: debouncedSearch, supervisorId: selectedSupervisorId, sortBy: (sorting[0]?.id ?? "shop") as DashboardSortKey, sortDirection: sorting[0]?.desc ? "desc" : "asc" }),
+    ...dashboardPageQueryOptions({ ...view, month: activeDatasetId, search: debouncedSearch }),
+    enabled: queriesEnabled && periodsQuery.data !== undefined,
     placeholderData: (previousData, previousQuery) => previousQuery?.queryKey[1] === activeDatasetId
       && previousQuery.queryKey[3] === selectedSupervisorId ? previousData : undefined,
   });
@@ -88,48 +100,55 @@ export function DashboardClient() {
   const supervisorsById = useMemo(() => new Map(supervisors.map(supervisor => [supervisor.id, supervisor.name])), [supervisors]);
   const supervisorIdsByShop = useMemo(() => new Map(shops.map(shop => [shop.id, shop.supervisorId])), [shops]);
 
+  const changeView = (updates: Partial<DashboardView>) => {
+    const query = dashboardViewQuery({ ...view, month: activeDatasetId, ...updates });
+    const href = `${pathname}?${query}`;
+    if (`${window.location.pathname}${window.location.search}` !== href) window.history.replaceState(null, "", href);
+    rememberDashboardQuery(query);
+  };
+
   const table = useReactTable({
-    data: pageQuery.data?.rows ?? [],
+    data: pageQuery.data?.rows ?? emptyShopRows,
     columns: shopColumns,
     getCoreRowModel: getCoreRowModel(),
     manualSorting: true,
+    autoResetPageIndex: false,
     state: { sorting },
     onSortingChange: updater => {
-      setSorting(current => {
-        const next = typeof updater === "function" ? updater(current) : updater;
-      return next.length ? [next[0]] : [{ id: "achievement", desc: true }];
-      });
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const sort = next[0] ?? { id: "achievement", desc: true };
+      changeView({ sortBy: sort.id as DashboardView["sortBy"], sortDescending: sort.desc });
     },
   });
 
   const updateSearch = (value: string) => {
     setShopSearch(value);
+    changeView({ search: value });
     if (!value.trim()) setDebouncedSearch("");
   };
 
   const selectSupervisor = (supervisorId: string) => {
     const isSelected = selectedSupervisorId === supervisorId;
-    setSelectedSupervisorId(isSelected ? null : supervisorId);
-    if (!isSelected) updateSearch("");
+    changeView({ supervisorId: isSelected ? null : supervisorId, ...(!isSelected ? { search: "" } : {}) });
+    if (!isSelected) { setShopSearch(""); setDebouncedSearch(""); }
   };
 
   useEffect(() => {
-    const parameters = new URLSearchParams();
-    if (activeDatasetId) parameters.set("month", activeDatasetId);
-    if (shopSearch.trim()) parameters.set("q", shopSearch.trim());
-    if (selectedSupervisorId) parameters.set("supervisor", selectedSupervisorId);
-    if (sorting[0]?.id && sorting[0].id !== "shop") parameters.set("sort", sorting[0].id);
-    if (sorting[0]?.desc) parameters.set("dir", "desc");
-    window.history.replaceState(null, "", `${pathname}?${parameters.toString()}`);
+    if (!periodsQuery.data) return;
+    rememberDashboardQuery(dashboardViewQuery({ month: activeDatasetId, search: shopSearch, supervisorId: selectedSupervisorId, sortBy: sorting[0].id as DashboardView["sortBy"], sortDescending: sorting[0].desc }));
     setSelectedDatasetId(activeDatasetId);
-  }, [activeDatasetId, shopSearch, selectedSupervisorId, sorting, pathname, setSelectedDatasetId]);
-
-  if (loading) {
-    return <div className="flex h-full items-center justify-center text-muted-foreground">Loading dashboard…</div>;
-  }
+  }, [activeDatasetId, shopSearch, selectedSupervisorId, sorting, periodsQuery.data, rememberDashboardQuery, setSelectedDatasetId]);
 
   if (shops.length === 0) {
     return <div className="relative flex h-full flex-col items-center justify-center gap-3"><SidebarTrigger className="absolute left-3 top-3 h-9 w-9" /><p className="text-muted-foreground">Add a shop to start tracking performance.</p></div>;
+  }
+
+  const missingData = !periodsQuery.data || !pageQuery.data;
+  if (missingData && (periodsQuery.isError || pageQuery.isError) && !bootstrapPending) {
+    return <div className="flex h-full flex-col items-center justify-center gap-3"><p role="alert" className="text-muted-foreground">{t("loadFailed")}</p><Button onClick={() => { void periodsQuery.refetch(); void pageQuery.refetch(); }}>{t("retry")}</Button></div>;
+  }
+  if (loading || missingData) {
+    return <div role="status" className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</div>;
   }
 
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
@@ -139,7 +158,8 @@ export function DashboardClient() {
 
   return (
     <div className="flex h-svh flex-col bg-muted/20">
-      <main className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4 xl:overflow-hidden">
+      {bootstrapPending && <p role="status" className="flex items-center gap-2 px-4 pt-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />{t("refreshing")}</p>}
+      <main ref={element => { if (element) element.inert = bootstrapPending; }} aria-busy={bootstrapPending || pageQuery.isFetching} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4 xl:overflow-hidden">
         <div className="mx-auto flex min-h-full max-w-[1920px] flex-col gap-4 xl:h-full">
           <SidebarTrigger className="h-9 w-9 shrink-0" />
 
@@ -154,7 +174,7 @@ export function DashboardClient() {
               <div className="flex w-full gap-2 sm:max-w-md">
                 <div className="relative min-w-0 flex-1">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={shopSearch} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-background pl-9" />
+                  <Input value={shopSearch} maxLength={120} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-background pl-9" />
                 </div>
                 <AppSelect
                   aria-label="Sort shops by"

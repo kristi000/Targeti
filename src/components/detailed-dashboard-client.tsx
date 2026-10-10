@@ -11,6 +11,7 @@ import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { PerformanceTable } from "@/components/performance-table";
 import { WorkerPerformanceList } from "@/components/worker-performance-list";
 import { useShop } from "@/components/shop-provider";
+import { useDashboardNavigation } from "@/components/dashboard-navigation-provider";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,6 +29,7 @@ const EMPTY_PERFORMANCE: PerformanceData[] = [];
 
 export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: string }) {
   const { selectedShop, allMonthlyTargets, refreshDataForShop, updateShop, actor, selectedDatasetId, setSelectedDatasetId, setSelectedPerformanceId, achievementEditRequest, clearAchievementEditRequest } = useShop();
+  const { dashboardHref } = useDashboardNavigation();
   const t = useTranslations("DetailedDashboard");
   const locale = useLocale();
   const [monthSelection, setMonthSelection] = useState({ shopId: "", month: "" });
@@ -208,7 +210,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
     return <div className="shop-page-content text-destructive" role="alert">{t("tryAgain")}</div>;
   }
   if (!selectedShop || !monthlyTargets) {
-    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="shop-page-content flex-1"><Link href={`/${locale}/`} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
+    return <div className="flex h-full flex-col"><Header title={t("title")} /><div className="shop-page-content flex-1"><Link href={dashboardHref} className={cn(buttonVariants({ variant: "outline" }), "mb-4")}><ArrowLeft className="mr-2" />{t("backToOverview")}</Link><p>{t("shopNotFound")}</p></div></div>;
   }
 
   return (

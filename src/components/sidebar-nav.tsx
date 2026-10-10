@@ -33,6 +33,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ReportingDateSelector } from "@/components/reporting-date-selector";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";
+import { useDashboardNavigation } from "@/components/dashboard-navigation-provider";
 import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -47,6 +48,7 @@ export function SidebarNav() {
   const locale = useLocale();
   const router = useRouter();
   const { selectedShop } = useShop();
+  const { dashboardHref } = useDashboardNavigation();
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
   useEffect(() => {
@@ -76,7 +78,7 @@ export function SidebarNav() {
 
   const menuItems = [
     {
-      href: `/${locale}/`,
+      href: dashboardHref,
       icon: LayoutDashboard,
       label: t('dashboard'),
     },
@@ -94,7 +96,8 @@ export function SidebarNav() {
 
   const handleLocaleChange = (newLocale: string) => {
     const newPathname = pathname.replace(`/${locale}`, `/${newLocale}`);
-    router.push(newPathname);
+    const query = searchParams.toString();
+    router.push(`${newPathname}${query ? `?${query}` : ""}`);
     router.refresh();
   };
 
@@ -107,7 +110,7 @@ export function SidebarNav() {
   return (
     <>
       <SidebarHeader>
-        <Link href={`/${locale}/`} className="flex items-center gap-2.5">
+        <Link href={dashboardHref} className="flex items-center gap-2.5">
           <BrandLogo />
         </Link>
       </SidebarHeader>
@@ -125,7 +128,7 @@ export function SidebarNav() {
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
                 asChild
-                isActive={pathname === item.href.split("?")[0] || (item.href.endsWith('/') && pathname === `/${locale}`)}
+                isActive={pathname.replace(/\/$/, "") === item.href.split("?")[0].replace(/\/$/, "")}
                 tooltip={item.label}
               >
                 <Link href={item.href}>

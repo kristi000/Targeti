@@ -6,11 +6,10 @@ import { useLocale, useTranslations } from "next-intl";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchDashboardPeriods } from "@/app/dashboard-actions";
 import { useShop } from "@/components/shop-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
-import { dashboardPeriodsQueryKey } from "@/lib/query-keys";
+import { dashboardPeriodsQueryOptions } from "@/lib/dashboard-queries";
 
 export function ReportingDateSelector() {
   const t = useTranslations("Sidebar");
@@ -19,10 +18,11 @@ export function ReportingDateSelector() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { setSelectedDatasetId } = useShop();
+  const isDashboard = pathname === `/${locale}` || pathname === `/${locale}/`;
   const periodsQuery = useQuery({
-    queryKey: dashboardPeriodsQueryKey,
-    queryFn: fetchDashboardPeriods,
-    staleTime: 60_000,
+    ...dashboardPeriodsQueryOptions(),
+    // The dashboard supplies periods through SSR hydration and owns refreshes.
+    enabled: !isDashboard,
   });
   const periods = useMemo(() => (periodsQuery.data ?? []).map(period => ({
     id: period.month,
@@ -46,7 +46,9 @@ export function ReportingDateSelector() {
     parameters.delete("afterValue");
     parameters.delete("afterName");
     parameters.delete("afterId");
-    router.replace(`${pathname}?${parameters.toString()}`, { scroll: false });
+    const href = `${pathname}?${parameters.toString()}`;
+    if (isDashboard) window.history.replaceState(null, "", href);
+    else router.replace(href, { scroll: false });
     setSelectedDatasetId(month);
   };
 

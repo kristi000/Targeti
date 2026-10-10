@@ -1,12 +1,13 @@
 
 import { DashboardClient } from "@/components/dashboard-client";
-import { fetchDashboardPage } from "@/app/dashboard-actions";
+import { Suspense } from "react";
 import { dehydrate, HydrationBoundary, QueryClient } from "@tanstack/react-query";
 import { getTranslations } from "next-intl/server";
 import { redirect } from "next/navigation";
-import type { DashboardSortKey } from "@/lib/dashboard-types";
-import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
+import { dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import { getDashboardPeriods } from "@/lib/server/dashboard-loaders";
+import { readDashboardView } from "@/lib/dashboard-navigation";
+import { dashboardPageQueryOptions } from "@/lib/dashboard-queries";
 
 export async function generateMetadata({params}: {params: Promise<{locale: string}>}) {
   const { locale } = await params;
@@ -32,30 +33,22 @@ export default async function DashboardPage({ params, searchParams }: { params: 
     const query = requestedMonth ? `?month=${encodeURIComponent(requestedMonth)}` : "";
     redirect(`/${locale}/bonuses${query}`);
   }
+  return (
+    <Suspense fallback={<DashboardClient bootstrapPending />}>
+      <HydratedDashboard parameters={parameters} />
+    </Suspense>
+  );
+}
+
+async function HydratedDashboard({ parameters }: { parameters: Awaited<DashboardSearchParams> }) {
   const periods = await getDashboardPeriods();
-  const requestedMonth = first(parameters.month);
-  const month = periods.some(period => period.month === requestedMonth)
-    ? requestedMonth!
+  const view = readDashboardView({ get: name => first(parameters[name]) ?? null });
+  const month = periods.some(period => period.month === view.month)
+    ? view.month!
     : periods[0]?.month ?? new Date().toISOString().slice(0, 7);
-  const search = first(parameters.q)?.trim() ?? "";
-  const supervisorId = first(parameters.supervisor)?.trim() || null;
-  const requestedSort = first(parameters.sort);
-  const hasRequestedSort = requestedSort === "shop" || requestedSort === "achievement" || requestedSort === "forecast" || requestedSort === "revenue";
-  const sortBy: DashboardSortKey = hasRequestedSort ? requestedSort : "achievement";
-  const sortDescending = hasRequestedSort ? first(parameters.dir) === "desc" : true;
   const queryClient = new QueryClient();
   queryClient.setQueryData(dashboardPeriodsQueryKey, periods);
-  const queryKey = dashboardPageQueryKey({ month, search, supervisorId, sortBy, sortDescending });
-  await queryClient.prefetchQuery({
-    queryKey,
-    queryFn: () => fetchDashboardPage({
-      month,
-      search,
-      supervisorId,
-      sortBy,
-      sortDirection: sortDescending ? "desc" : "asc",
-    }),
-  });
+  await queryClient.prefetchQuery(dashboardPageQueryOptions({ ...view, month }));
 
   return (
     <HydrationBoundary state={dehydrate(queryClient)}>

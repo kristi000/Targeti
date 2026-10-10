@@ -9,6 +9,7 @@ import { closingViewHref, getClosingView, type ClosingView } from "@/lib/closing
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { useRestrictedAccess } from "@/hooks/use-restricted-access";
 import { useShop } from "@/components/shop-provider";
+import { useDashboardNavigation } from "@/components/dashboard-navigation-provider";
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -36,6 +37,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { selectedDatasetId } = useShop();
+  const { dashboardHref } = useDashboardNavigation();
   const basePath = `/${locale}/shop/${shopId}`;
   const monthQuery = /^\d{4}-\d{2}$/.test(selectedDatasetId) ? `?month=${selectedDatasetId}` : "";
   const requestedMonth = searchParams.get("month");
@@ -69,7 +71,7 @@ export function ShopPageNav({ shopId, shopName }: Props) {
         <SidebarMenu aria-label={t("shopPageNavigation")}>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip={t("backToOverview")}>
-              <Link href={`/${locale}/`}>
+              <Link href={dashboardHref}>
                 <ArrowLeft />
                 <span>{t("backToOverview")}</span>
               </Link>
