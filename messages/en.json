@@ -586,7 +586,7 @@
     "actual": "Actual",
     "achievement": "Achievement",
     "contribution": "Contribution",
-    "formulaHint": "Achievement = actual ÷ target × 100. Contribution = achievement × weight.",
+    "formulaHint": "Achievement = actual ÷ target × 100, capped at 120%. Contribution = capped achievement × weight.",
     "editingPreview": "Preview with unsaved targets and weights",
     "total": "Total",
     "edit": "Edit targets and weights",

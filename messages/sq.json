@@ -586,7 +586,7 @@
     "actual": "Realizimi",
     "achievement": "Arritja",
     "contribution": "Kontributi",
-    "formulaHint": "Arritja = realizimi ÷ objektivi × 100. Kontributi = arritja × pesha.",
+    "formulaHint": "Arritja = realizimi ÷ objektivi × 100, deri në 120%. Kontributi = arritja e kufizuar × pesha.",
     "editingPreview": "Parapamje me objektiva dhe pesha të paruajtura",
     "total": "Totali",
     "edit": "Ndrysho objektivat dhe peshat",

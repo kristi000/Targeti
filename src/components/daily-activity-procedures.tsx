@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocale, useTranslations } from "next-intl";
-import type { DailyActivityProcedureMetric } from "@/lib/daily-activity";
+import { calculateDailyActivityImpact, type DailyActivityProcedureMetric } from "@/lib/daily-activity";
 import type { ProcedureSummary } from "@/lib/procedures";
 import type { MetricSettings, Target } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -26,12 +26,12 @@ export function DailyActivityProcedures({ procedures, metrics, targets, metricSe
   const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 2 });
   const count = (value: number | undefined) => value !== undefined && Number.isFinite(value) && value >= 0
     ? number.format(value) : "—";
-  const impact = (metric: DailyActivityProcedureMetric["metric"], quantity: number, weighted: boolean) => {
+  const impact = (metric: DailyActivityProcedureMetric["metric"], quantity: number, baseline: number, weighted: boolean) => {
     const target = targets[metric];
     const weight = metricSettings[metric]?.weight;
     if (!canCalculate || !Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(target) || !(target > 0)) return "—";
     if (weighted && (weight === undefined || !Number.isFinite(weight) || weight < 0)) return "—";
-    const value = quantity / target * 100 * (weighted ? weight ?? 0 : 1);
+    const value = (calculateDailyActivityImpact(baseline, quantity, target) ?? 0) * (weighted ? weight ?? 0 : 1);
     return Number.isFinite(value) ? t("pp", { value: number.format(value) }) : "—";
   };
   const label = (metric: DailyActivityProcedureMetric["metric"]) => metric === "newLine"
@@ -97,11 +97,11 @@ export function DailyActivityProcedures({ procedures, metrics, targets, metricSe
           <tbody>{metrics.map(metric => <tr key={metric.metric} className="border-t">
             <th scope="row" className="border-r px-3 py-2 text-left font-medium">{label(metric.metric)}</th>
             <td className="border-r px-3 py-2 text-right">{statusCount(metric.pending, "pending")}</td>
-            <td className="border-r px-3 py-2 text-right tabular-nums">{impact(metric.metric, metric.pending, false)}</td>
-            <td className="border-r px-3 py-2 text-right font-medium tabular-nums">{impact(metric.metric, metric.pending, true)}</td>
+            <td className="border-r px-3 py-2 text-right tabular-nums">{impact(metric.metric, metric.pending, metric.completed, false)}</td>
+            <td className="border-r px-3 py-2 text-right font-medium tabular-nums">{impact(metric.metric, metric.pending, metric.completed, true)}</td>
             <td className="border-r px-3 py-2 text-right">{statusCount(metric.negative, "negative")}</td>
-            <td className="border-r px-3 py-2 text-right tabular-nums">{impact(metric.metric, metric.negative, false)}</td>
-            <td className="px-3 py-2 text-right font-medium tabular-nums">{impact(metric.metric, metric.negative, true)}</td>
+            <td className="border-r px-3 py-2 text-right tabular-nums">{impact(metric.metric, metric.negative, metric.completed + metric.pending, false)}</td>
+            <td className="px-3 py-2 text-right font-medium tabular-nums">{impact(metric.metric, metric.negative, metric.completed + metric.pending, true)}</td>
           </tr>)}</tbody>
         </table>
       </div>}

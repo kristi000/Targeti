@@ -92,7 +92,6 @@ export type DailyActivityProcedureMetric = {
 };
 export type DailyActivityProcedureImpact = {
   actuals: DailyActivityMonth["actuals"];
-  pendingActuals: DailyActivityMonth["actuals"];
   metrics: DailyActivityProcedureMetric[];
   includingPendingActuals: DailyActivityMonth["actuals"];
 };
@@ -122,12 +121,11 @@ export function getDailyActivityProcedureImpact(
   procedures: ProcedureSummary | null,
 ): DailyActivityProcedureImpact {
   const actuals = dailyActivityActualsSchema.parse(rawActuals);
-  if (procedures === null) return { actuals, pendingActuals: {}, metrics: [], includingPendingActuals: { ...actuals } };
+  if (procedures === null) return { actuals, metrics: [], includingPendingActuals: { ...actuals } };
   const summary = dailyActivityProcedureSummarySchema.parse(procedures);
   // Procedures and Daily Closing describe the same sales; confirmed counts replace the two linked activity totals.
   actuals.newLine = summary.completed;
   actuals.custom_mixmax = summary.completedMixMax;
-  const pendingActuals = { newLine: summary.pending, custom_mixmax: summary.pendingMixMax };
   const metrics: DailyActivityProcedureMetric[] = [
     { metric: "newLine", total: summary.total, completed: summary.completed, pending: summary.pending, negative: summary.negative },
     { metric: "custom_mixmax", total: summary.totalMixMax, completed: summary.completedMixMax,
@@ -135,12 +133,21 @@ export function getDailyActivityProcedureImpact(
   ];
   return {
     actuals,
-    pendingActuals,
     metrics,
     includingPendingActuals: dailyActivityActualsSchema.parse({
       ...actuals, newLine: summary.completed + summary.pending, custom_mixmax: summary.completedMixMax + summary.pendingMixMax,
     }),
   };
+}
+
+export function calculateDailyActivityAchievement(actual: number, target: number): number | null {
+  return target > 0 ? Math.min(actual / target * 100, 120) : null;
+}
+
+export function calculateDailyActivityImpact(actual: number, additionalActual: number, target: number): number | null {
+  const before = calculateDailyActivityAchievement(actual, target);
+  const after = calculateDailyActivityAchievement(actual + additionalActual, target);
+  return before === null || after === null ? null : after - before;
 }
 
 export function calculateDailyActivity(
@@ -158,7 +165,7 @@ export function calculateDailyActivity(
     const actual = validActuals[metric] ?? 0;
     const target = validSettings.targets[metric];
     const weight = validSettings.metricSettings[metric].weight;
-    const achievement = target > 0 ? actual / target * 100 : null;
+    const achievement = calculateDailyActivityAchievement(actual, target);
     const contribution = achievement === null ? 0 : achievement * weight;
     if ((achievement !== null && !Number.isFinite(achievement)) || !Number.isFinite(contribution)) {
       throw new Error("INVALID_DAILY_ACTIVITY_CALCULATION");

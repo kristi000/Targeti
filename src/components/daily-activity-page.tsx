@@ -16,7 +16,7 @@ import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { monthDates } from "@/lib/attendance";
-import { calculateDailyActivity, dailyActivityMonthQueryKey, dailyActivitySettingsFieldsSchema, dailyActivitySettingsQueryKey, getDailyActivityProcedureImpact, saveDailyActivitySettingsSchema, type DailyActivityMonth } from "@/lib/daily-activity";
+import { calculateDailyActivity, calculateDailyActivityAchievement, calculateDailyActivityImpact, dailyActivityMonthQueryKey, dailyActivitySettingsFieldsSchema, dailyActivitySettingsQueryKey, getDailyActivityProcedureImpact, saveDailyActivitySettingsSchema, type DailyActivityMonth } from "@/lib/daily-activity";
 import { getDailyClosingMetricConfig } from "@/lib/daily-closing";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
@@ -92,22 +92,20 @@ export function DailyActivityPage({ shopId, initialMonth }: { shopId: string; in
     const actual = procedureImpact.actuals[metric] ?? 0;
     const target = targets[metric] ?? 0;
     const weight = metricSettings[metric]?.weight ?? 0;
-    const achievement = target > 0 ? actual / target * 100 : null;
+    const achievement = calculateDailyActivityAchievement(actual, target);
     return { metric, actual, target, weight, achievement, contribution: achievement === null ? 0 : achievement * weight };
   });
   const previewTotal = previewRows.reduce((sum, row) => sum + row.contribution, 0);
   const includingPendingRows = previewRows.map(row => {
     const actual = procedureImpact.includingPendingActuals[row.metric] ?? 0;
-    const achievement = row.target > 0 ? actual / row.target * 100 : null;
+    const achievement = calculateDailyActivityAchievement(actual, row.target);
     return { achievement, contribution: achievement === null ? 0 : achievement * row.weight };
   });
   const includingPendingTotal = includingPendingRows.reduce((sum, row) => sum + row.contribution, 0);
-  const previewPendingTotal = metricOrder.reduce((sum, metric) => sum + (targets[metric] > 0
-    ? (procedureImpact.pendingActuals[metric] ?? 0) / targets[metric] * 100 * (metricSettings[metric]?.weight ?? 0)
-    : 0), 0);
-  const negativeImpact = procedureImpact.metrics.reduce((sum, metric) => sum + (targets[metric.metric] > 0
-    ? metric.negative / targets[metric.metric] * 100 * (metricSettings[metric.metric]?.weight ?? 0)
-    : 0), 0);
+  const previewPendingTotal = includingPendingTotal - previewTotal;
+  const negativeImpact = procedureImpact.metrics.reduce((sum, metric) => sum + (
+    calculateDailyActivityImpact(metric.completed + metric.pending, metric.negative, targets[metric.metric]) ?? 0
+  ) * (metricSettings[metric.metric]?.weight ?? 0), 0);
   const canCalculate = Boolean(settings || draft) && numbersValid && Number.isFinite(previewTotal)
     && Number.isFinite(previewPendingTotal) && Number.isFinite(negativeImpact) && Number.isFinite(includingPendingTotal)
     && previewRows.every(row => row.achievement === null || Number.isFinite(row.achievement))
