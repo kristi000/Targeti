@@ -13,5 +13,5 @@ export default async function ShopProceduresPage({ params, searchParams }: { par
   const month = parsed.success ? parsed.data : current;
   const client = new QueryClient();
   await client.fetchQuery({ queryKey: procedurePageQueryKey(shopId, month), queryFn: () => fetchProcedures(shopId, month) });
-  return <HydrationBoundary state={dehydrate(client)}><ProceduresPage shopId={shopId} initialMonth={month} initialDate={month === current ? today : `${month}-01`} /></HydrationBoundary>;
+  return <HydrationBoundary state={dehydrate(client)}><ProceduresPage key={`${shopId}:${month}`} shopId={shopId} initialMonth={month} initialDate={month === current ? today : `${month}-01`} /></HydrationBoundary>;
 }

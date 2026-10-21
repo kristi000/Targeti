@@ -12,5 +12,5 @@ export default async function ShopAttendancePage({ params, searchParams }: { par
   const month = parsed.success ? parsed.data : current;
   const client = new QueryClient();
   await client.fetchQuery({ queryKey: attendanceQueryKey(shopId, month), queryFn: () => fetchAttendanceMonth(shopId, month) });
-  return <HydrationBoundary state={dehydrate(client)}><AttendancePage shopId={shopId} initialMonth={month} /></HydrationBoundary>;
+  return <HydrationBoundary state={dehydrate(client)}><AttendancePage key={`${shopId}:${month}`} shopId={shopId} initialMonth={month} /></HydrationBoundary>;
 }

@@ -1,33 +1,66 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useState, type ReactNode } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
-import { RefreshCw } from "lucide-react";
+import { Download, LoaderCircle, RefreshCw } from "lucide-react";
 
 import { fetchMonthlyClosingSummary } from "@/app/actions/daily-closing";
 import { Button } from "@/components/ui/button";
+import { MonthlyBankReconciliation } from "@/components/monthly-bank-reconciliation";
 import { ReportExportButtons } from "@/components/report-export-buttons";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";
 import { useToast } from "@/hooks/use-toast";
+import { closingWorkbookDownloadName, closingWorkbookFileName } from "@/lib/annual-closing";
 import { monthlyClosingQueryKey } from "@/lib/monthly-closing";
+import { monthlyBankQueryKey } from "@/lib/monthly-bank";
 import { exportReport, type ReportExportFormat } from "@/lib/report-export";
 
 const amounts = ["boss", "invoice", "unsubscribe", "net"] as const;
 
-export function MonthlyClosingSummary({ shopId, month, periodSelector }: { shopId: string; month: string; periodSelector?: ReactNode }) {
+export function MonthlyClosingSummary({ shopId, shopName, month, periodSelector, onDirtyChange }: { shopId: string; shopName: string; month: string; periodSelector?: ReactNode; onDirtyChange?: (dirty: boolean) => void }) {
   const t = useTranslations("MonthlyClosing");
   const exportTranslations = useTranslations("ReportExport");
   const locale = useLocale();
+  const client = useQueryClient();
   const { toast } = useToast();
   const [exporting, setExporting] = useState<ReportExportFormat | null>(null);
+  const [workbookExporting, setWorkbookExporting] = useState<"rak" | "inforsd" | null>(null);
+  const [bankDirty, setBankDirty] = useState(false);
+  const year = Number(month.slice(0, 4));
+  const handleDirtyChange = useCallback((dirty: boolean) => {
+    setBankDirty(dirty);
+    onDirtyChange?.(dirty);
+  }, [onDirtyChange]);
   const summary = useQuery({
     queryKey: monthlyClosingQueryKey(shopId, month),
     queryFn: () => fetchMonthlyClosingSummary(shopId, month),
     staleTime: 0,
   });
   const formatter = new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 0 });
+  const handleWorkbookExport = async (workbookFormat: "rak" | "inforsd") => {
+    if (bankDirty || workbookExporting) return;
+    setWorkbookExporting(workbookFormat);
+    try {
+      const response = await fetch(`/api/shops/${encodeURIComponent(shopId)}/closing-workbook?year=${year}&format=${workbookFormat}`, { cache: "no-store" });
+      if (!response.ok) throw new Error("Workbook export failed");
+      const fileName = closingWorkbookDownloadName(response.headers.get("Content-Disposition"), closingWorkbookFileName(workbookFormat, shopName));
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      toast({ title: t("annualExported", { format: workbookFormat.toUpperCase(), year }) });
+    } catch {
+      toast({ variant: "destructive", title: exportTranslations("exportFailed") });
+    } finally {
+      setWorkbookExporting(null);
+    }
+  };
   const handleExport = async (exportFormat: ReportExportFormat) => {
     if (!summary.data) return;
     setExporting(exportFormat);
@@ -50,10 +83,11 @@ export function MonthlyClosingSummary({ shopId, month, periodSelector }: { shopI
     }
   };
 
-  return <section className="w-fit max-w-[min(100%,800px)] space-y-2" aria-label={t("title")}>
+  return <section className="w-fit max-w-[min(100%,1000px)] space-y-2" aria-label={t("title")}>
     <ShopPageToolbar periodSelector={periodSelector}>
-      <Button variant="outline" size="sm" className="h-8" disabled={summary.isFetching} onClick={() => void summary.refetch()}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("refresh")}</Button>
+      <Button variant="outline" size="sm" className="h-8" disabled={summary.isFetching || bankDirty} onClick={() => { void summary.refetch(); void client.invalidateQueries({ queryKey: monthlyBankQueryKey(shopId, month) }); }}><RefreshCw className="mr-1.5 h-3.5 w-3.5" />{t("refresh")}</Button>
       <ReportExportButtons disabled={!summary.data?.rows.length} exporting={exporting} onExport={format => void handleExport(format)} />
+      {(["rak", "inforsd"] as const).map(workbookFormat => <Button key={workbookFormat} type="button" variant="outline" size="sm" disabled={bankDirty || workbookExporting !== null} onClick={() => void handleWorkbookExport(workbookFormat)}>{workbookExporting === workbookFormat ? <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}{t(workbookFormat === "rak" ? "rakExport" : "inforsdExport", { shopName })}</Button>)}
     </ShopPageToolbar>
     {summary.isPending ? <p role="status" className="rounded-lg border p-8 text-center">{t("loading")}</p>
       : summary.isError ? <p role="alert" className="rounded-lg border border-destructive p-6 text-destructive">{t("loadFailed")}</p>
@@ -72,5 +106,6 @@ export function MonthlyClosingSummary({ shopId, month, periodSelector }: { shopI
         </SpreadsheetTable>
         <p className="text-xs text-muted-foreground">{t("reports", { count: summary.data.rows.length })}</p>
       </>}
+    <MonthlyBankReconciliation shopId={shopId} month={month} totals={summary.data?.totals} onDirtyChange={handleDirtyChange} />
   </section>;
 }

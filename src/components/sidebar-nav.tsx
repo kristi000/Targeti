@@ -37,6 +37,7 @@ import { useDashboardNavigation } from "@/components/dashboard-navigation-provid
 import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { canNavigate } from "@/lib/navigation-guard";
 
 const sidebarSectionsKey = "d-one-sidebar-sections";
 const sidebarSectionsSchema = z.array(z.enum(["actions", "settings"])).max(2);
@@ -95,6 +96,7 @@ export function SidebarNav() {
   ];
 
   const handleLocaleChange = (newLocale: string) => {
+    if (newLocale === locale || !canNavigate()) return;
     const newPathname = pathname.replace(`/${locale}`, `/${newLocale}`);
     const query = searchParams.toString();
     router.push(`${newPathname}${query ? `?${query}` : ""}`);

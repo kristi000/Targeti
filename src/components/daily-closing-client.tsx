@@ -91,6 +91,7 @@ export function DailyClosingClient() {
   const attendanceTranslations = useTranslations("Attendance");
   const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [procedureDirty, setProcedureDirty] = useState(false);
+  const [monthlyBankDirty, setMonthlyBankDirty] = useState(false);
   const [attendanceMinimized, setAttendanceMinimized] = useState(true);
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
@@ -398,13 +399,13 @@ export function DailyClosingClient() {
 
   const dailyActivityCard = <Card><CardHeader className="p-2.5 pb-1.5"><div className="flex flex-wrap items-center justify-end gap-2"><div className="text-right"><p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("dailyIncrease")}</p><p className="text-xs font-semibold">{percentFormatter.format(calculation.totals.performanceScore)}</p></div></div></CardHeader><CardContent className="p-2.5 pt-0"><div className="grid gap-1">{metrics.map(metric => <div key={metric} className="grid grid-cols-[minmax(0,1fr)_4rem_3.5rem] items-center gap-1 rounded border px-2 py-0.5"><div className="min-w-0"><p className="truncate text-xs font-medium leading-tight" title={metricLabel(metric)}>{metricLabel(metric)}</p><p className="truncate text-[10px] leading-tight text-muted-foreground">{t("targetAndWeight", { target: formatter.format(targets?.[metric] ?? 0), weight: percentFormatter.format(calculation.metricWeights[metric] ?? 0) })}</p></div><Input aria-label={`${metricLabel(metric)} ${t("quantity")}`} type="number" min={0} step="any" disabled={isReadOnly} className="h-7 px-1.5 text-right text-sm tabular-nums" value={activities[metric] ?? 0} onChange={event => setActivities(current => ({ ...current, [metric]: numericValue(event.target.value) }))} /><span className="text-right text-xs font-medium tabular-nums">{percentFormatter.format(calculation.totals.activityContributions[metric] ?? 0)}</span></div>)}</div></CardContent></Card>;
 
-  const monthSelector = <Input aria-label={monthlyTranslations("month")} type="month" className="h-9 w-full" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />;
+  const monthSelector = <Input aria-label={monthlyTranslations("month")} type="month" disabled={monthlyBankDirty} className="h-9 w-full" value={month} onChange={event => { if (closingMonthSchema.safeParse(event.target.value).success) setMonth(event.target.value); }} />;
 
   return <div className="flex h-full flex-col">
     <Header title={view === "daily" ? selectedShop.name : `${view === "debts" ? debtTranslations("title") : view === "unsubscribes" ? unsubscribeTranslations("title") : view === "cell" ? cellTranslations("title") : monthlyTranslations("title")}: ${selectedShop.name}`} />
     <main className="shop-page-content flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1500px] space-y-2.5">
-        {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} month={month} periodSelector={monthSelector} />}
+        {view === "monthly" && <MonthlyClosingSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} periodSelector={monthSelector} onDirtyChange={setMonthlyBankDirty} />}
         {view === "debts" && <MonthlyDebts canEdit={actor.role !== "viewer"} onUpdated={() => setDebtRevision(current => current + 1)} key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
         {view === "unsubscribes" && <MonthlyUnsubscribes key={`${selectedShop.id}:${month}`} shopId={selectedShop.id} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}
         {view === "cell" && <MonthlyCellSummary shopId={selectedShop.id} shopName={selectedShop.name} month={month} periodSelector={monthSelector} onOpenReport={reportDate => { setDate(reportDate); router.push(closingPath); }} />}

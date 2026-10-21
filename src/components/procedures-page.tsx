@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 import { useLocale, useTranslations } from "next-intl";
@@ -46,6 +46,7 @@ export function ProceduresPage({ shopId, initialMonth, initialDate }: { shopId: 
   const t = useTranslations("Procedures");
   const locale = useLocale();
   const router = useRouter();
+  const [navigating, startNavigation] = useTransition();
   const { shops, actor, setSelectedShop, setSelectedDatasetId } = useShop();
   const shop = shops.find(item => item.id === shopId);
   const [month, setMonth] = useState(initialMonth);
@@ -79,8 +80,8 @@ export function ProceduresPage({ shopId, initialMonth, initialDate }: { shopId: 
   const selectedUser = filter.user ? resolveProcedureUserName(filter.user, representatives) : undefined;
   const dirty = Object.keys(drafts).length > 0;
   const canEdit = actor.role !== "viewer";
-  const viewDisabled = dirty || entryDirty || busy || importOpen || deletedOpen || query.isFetching || query.isPlaceholderData;
-  const cellsDisabled = busy || entryDirty || query.isPlaceholderData;
+  const viewDisabled = navigating || dirty || entryDirty || busy || importOpen || deletedOpen || query.isFetching || query.isPlaceholderData;
+  const cellsDisabled = navigating || busy || entryDirty || query.isPlaceholderData;
   const changeFilter = (next: ProcedureFilter) => {
     if (viewDisabled) return;
     setFilter(next); setCursor(undefined); setPreviousCursors([]); setSelection({}); setError(null);
@@ -150,7 +151,7 @@ export function ProceduresPage({ shopId, initialMonth, initialDate }: { shopId: 
         .filter(user => user !== selectedUser));
       if (correctedUsers.size) setFilter(previous => ({ ...previous, user: correctedUsers.size === 1 ? [...correctedUsers][0] : undefined }));
       setDrafts({}); setSelection({});
-      if (sort !== "source" || filter.user) { setCursor(undefined); setPreviousCursors([]); }
+      if (sort !== "source" || filter.user || filter.product || filter.status) { setCursor(undefined); setPreviousCursors([]); }
       await refreshMonth();
     } catch { setError("saveFailed"); } finally { setBusy(false); }
   };
@@ -160,7 +161,8 @@ export function ProceduresPage({ shopId, initialMonth, initialDate }: { shopId: 
         if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) return;
         const today = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Tirane", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
         setMonth(event.target.value); setEntryDate(today.startsWith(event.target.value) ? today : `${event.target.value}-01`); setSort("source"); setFilter({}); setCursor(undefined); setPreviousCursors([]); setSelection({}); setError(null);
-        router.replace(`/${locale}/shop/${shopId}/procedures?month=${event.target.value}`, { scroll: false });
+        const nextMonth = event.target.value;
+        startNavigation(() => router.replace(`/${locale}/shop/${shopId}/procedures?month=${nextMonth}`, { scroll: false }));
       }} />
     }>
         <AppSelect aria-label={t("filterUser")} value={selectedUser ?? ""} disabled={viewDisabled || !summary} className="w-44" onValueChange={value => changeFilter({ ...filter, user: value || undefined })} options={[
@@ -193,7 +195,7 @@ export function ProceduresPage({ shopId, initialMonth, initialDate }: { shopId: 
       </>}
       <div className="w-full max-w-md shrink-0 space-y-5">
         {summary && <ProcedureSummaryTable summary={summary} filter={{ ...filter, user: selectedUser }} onFilter={changeFilter} filtersDisabled={viewDisabled} />}
-        {canEdit && <ProcedureEntry key={`${shopId}:${month}`} shopId={shopId} date={entryDate} representatives={representatives} initiallyExpanded showTableLink={false} disabled={dirty || busy || importOpen || deletedOpen || deleteTargets.length > 0} onDirtyChange={setEntryDirty} onDateChange={setEntryDate} onSaved={() => { setSelection({}); setCursor(undefined); setPreviousCursors([]); setError(null); }} />}
+        {canEdit && <ProcedureEntry key={`${shopId}:${month}`} shopId={shopId} date={entryDate} representatives={representatives} initiallyExpanded showTableLink={false} disabled={navigating || dirty || busy || importOpen || deletedOpen || deleteTargets.length > 0} onDirtyChange={setEntryDirty} onDateChange={setEntryDate} onSaved={() => { setSelection({}); setCursor(undefined); setPreviousCursors([]); setError(null); }} />}
       </div>
     </div>
     {query.data && <div className="flex items-center gap-3"><Button size="sm" variant="outline" disabled={!previousCursors.length || viewDisabled} onClick={() => { setSelection({}); setCursor(previousCursors.at(-1)); setPreviousCursors(previous => previous.slice(0, -1)); }}>{t("previous")}</Button><span className="text-xs">{t("page", { number: previousCursors.length + 1 })}</span><Button size="sm" variant="outline" disabled={!query.data.nextCursor || viewDisabled} onClick={() => { setSelection({}); setPreviousCursors(previous => [...previous, cursor]); setCursor(query.data!.nextCursor!); }}>{t("next")}</Button></div>}

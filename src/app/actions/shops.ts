@@ -70,12 +70,13 @@ export async function handleDeleteShop(shopId: string) {
     const shopRef = doc(db, "shops", validShopId);
     const shopSnapshot = await getDocs(query(collection(db, "shops"), where(documentId(), "==", validShopId), limit(1)));
     const shopName = shopSnapshot.docs[0]?.data().name ?? validShopId;
-    const [performance, bonusSnapshots, quarterlyBonusSnapshots, dailyClosings, dailyActivityMonths] = await Promise.all([
+    const [performance, bonusSnapshots, quarterlyBonusSnapshots, dailyClosings, dailyActivityMonths, bankReconciliations] = await Promise.all([
       getDocs(collection(db, "shops", validShopId, "performance")),
       getDocs(collection(db, "shops", validShopId, "bonusSnapshots")),
       getDocs(collection(db, "shops", validShopId, "quarterlyBonusSnapshots")),
       getDocs(collection(db, "shops", validShopId, "dailyClosings")),
       getDocs(collection(db, "shops", validShopId, "dailyActivityMonths")),
+      getDocs(collection(db, "shops", validShopId, "bankReconciliations")),
     ]);
     const childReferences = [
       ...performance.docs.map(item => item.ref),
@@ -83,6 +84,7 @@ export async function handleDeleteShop(shopId: string) {
       ...quarterlyBonusSnapshots.docs.map(item => item.ref),
       ...dailyClosings.docs.map(item => item.ref),
       ...dailyActivityMonths.docs.map(item => item.ref),
+      ...bankReconciliations.docs.map(item => item.ref),
     ];
     for (let start = 0; start < childReferences.length; start += 450) {
       const batch = writeBatch(db);

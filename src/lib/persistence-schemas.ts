@@ -308,6 +308,28 @@ export const dailyClosingSchema = dailyClosingInputSchema.omit({ shopId: true })
   finalizedBy: z.string().trim().min(1).max(255).optional(),
 }).strict();
 
+export const bankDepositSchema = z.object({
+  id: z.string().uuid(),
+  date: attendanceDateSchema.refine(value => value >= "2000-01-01", "Deposit dates must be on or after 2000-01-01"),
+  amount: finiteMoney.positive(),
+}).strict();
+export const monthlyBankValuesSchema = z.object({
+  deposits: z.array(bankDepositSchema).max(366).refine(
+    entries => new Set(entries.map(entry => entry.id)).size === entries.length,
+    "Duplicate deposit ID",
+  ),
+  carryover: z.number().finite().min(-1_000_000_000).max(1_000_000_000),
+  carryoverNote: attendanceTextSchema.pipe(z.string().trim().max(500)),
+}).strict();
+export const monthlyBankReconciliationSchema = monthlyBankValuesSchema.extend({
+  revision: z.number().int().nonnegative(),
+}).strict();
+export const monthlyBankDocumentSchema = monthlyBankReconciliationSchema.extend({
+  month: attendanceMonthSchema,
+  updatedAt: z.string().datetime(),
+  updatedBy: documentIdSchema,
+}).strict();
+
 const monthlyShopDataSchema = z.object({
   collection: finiteNonNegativeNumber,
   targets: targetSchema,
@@ -415,7 +437,7 @@ export const quarterlyBonusSnapshotSchema = z.object({
 
 export const activityEventSchema = z.object({
   id: documentIdSchema.optional(),
-  action: z.enum(["procedures_saved", "procedures_imported", "procedures_deleted", "procedures_restored", "attendance_saved", "daily_activity_settings_saved", "excel_imported", "excel_import_undone", "excel_import_removed", "excel_import_superseded", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),
+  action: z.enum(["procedures_saved", "procedures_imported", "procedures_deleted", "procedures_restored", "attendance_saved", "bank_reconciliation_saved", "daily_activity_settings_saved", "excel_imported", "excel_import_undone", "excel_import_removed", "excel_import_superseded", "achievements_changed", "achievements_reverted", "targets_changed", "shop_created", "shop_edited", "shop_deleted", "supervisor_created", "supervisor_edited", "supervisor_deleted", "supervisor_assignments_changed", "representatives_deleted", "representatives_hidden", "representatives_unhidden", "metric_deleted", "weight_profile_created", "weight_profile_edited", "weight_profile_deleted", "weight_profile_assignments_changed", "daily_closing_saved", "daily_closing_finalized", "daily_closing_reopened", "all_data_deleted", "user_created", "user_role_changed", "user_access_changed"]),
   occurredAt: z.string().datetime({ offset: true }),
   actor: z.object({
     id: z.string().trim().min(1).max(255),

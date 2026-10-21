@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocale, useTranslations } from "next-intl";
 import { useRouter } from "next/navigation";
@@ -22,6 +22,7 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
   const t = useTranslations("Attendance");
   const locale = useLocale();
   const router = useRouter();
+  const [navigating, startNavigation] = useTransition();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { shops, actor, setSelectedShop, setSelectedDatasetId } = useShop();
@@ -63,18 +64,20 @@ export function AttendancePage({ shopId, initialMonth }: { shopId: string; initi
     <Header title={`${shop?.name ?? ""} · ${t("title")}`} />
     <main className="shop-page-content space-y-4">
       <ShopPageToolbar periodSelector={
-        <Input aria-label={t("month")} type="month" value={month} min="2000-01" max="2099-12" disabled={dirty || exporting || reusing || dialog !== null} className="h-9 w-full" onChange={event => {
+        <Input aria-label={t("month")} type="month" value={month} min="2000-01" max="2099-12" disabled={navigating || dirty || exporting || reusing || dialog !== null} className="h-9 w-full" onChange={event => {
           if (!/^20\d{2}-(0[1-9]|1[0-2])$/.test(event.target.value)) return;
-          setMonth(event.target.value); setError(null); router.replace(`/${locale}/shop/${shopId}/attendance?month=${event.target.value}`, { scroll: false });
+          const nextMonth = event.target.value;
+          setMonth(nextMonth); setError(null);
+          startNavigation(() => router.replace(`/${locale}/shop/${shopId}/attendance?month=${nextMonth}`, { scroll: false }));
         }} />
       }>
           <AttendanceHistoryButton key={`${shopId}:${month}`} shopId={shopId} month={month} />
-          {actor.role !== "viewer" && <><Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => setDialog("staff")}><Users className="mr-1.5 h-4 w-4" />{t("manageStaff")}</Button><Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => setDialog("template")}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("importTemplate")}</Button>{!query.data?.config.template && <Button variant="outline" size="sm" disabled={dirty || reusing || !query.data} onClick={() => void reuseTemplate()}>{reusing ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-4 w-4" />}{t("usePreviousTemplate", { month: previousMonthLabel })}</Button>}</>}
-          <Button size="sm" disabled={dirty || exporting || reusing || !query.data?.config.template} onClick={() => void download()}>{exporting ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}{t("exportOriginal")}</Button>
+          {actor.role !== "viewer" && <><Button variant="outline" size="sm" disabled={navigating || dirty || reusing || !query.data} onClick={() => setDialog("staff")}><Users className="mr-1.5 h-4 w-4" />{t("manageStaff")}</Button><Button variant="outline" size="sm" disabled={navigating || dirty || reusing || !query.data} onClick={() => setDialog("template")}><FileSpreadsheet className="mr-1.5 h-4 w-4" />{t("importTemplate")}</Button>{!query.data?.config.template && <Button variant="outline" size="sm" disabled={navigating || dirty || reusing || !query.data} onClick={() => void reuseTemplate()}>{reusing ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <FileSpreadsheet className="mr-1.5 h-4 w-4" />}{t("usePreviousTemplate", { month: previousMonthLabel })}</Button>}</>}
+          <Button size="sm" disabled={navigating || dirty || exporting || reusing || !query.data?.config.template} onClick={() => void download()}>{exporting ? <LoaderCircle className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}{t("exportOriginal")}</Button>
       </ShopPageToolbar>
       <p className="text-xs text-muted-foreground">{query.data?.config.template ? t("templateAttached", { name: query.data.config.template.fileName }) : t("templateHint")}</p>
       {error && <p role="alert" className="text-sm text-destructive">{t(`errors.${error}`)}</p>}
-      <AttendanceEditor key={`${shopId}:${month}`} shopId={shopId} month={month} canEdit={actor.role !== "viewer" && !reusing} onDirtyChange={setDirty} />
+      <AttendanceEditor key={`${shopId}:${month}`} shopId={shopId} month={month} canEdit={actor.role !== "viewer" && !reusing && !navigating} onDirtyChange={setDirty} />
       {dialog === "staff" && query.data && <StaffDialog shopId={shopId} month={month} config={query.data.config} onClose={() => setDialog(null)} />}
       {dialog === "template" && query.data && <TemplateDialog shopId={shopId} month={month} onClose={() => setDialog(null)} />}
     </main>

@@ -110,8 +110,9 @@ export function AttendanceEditor(props: Props) {
   const t = useTranslations("Attendance");
   const query = useQuery({ queryKey: attendanceQueryKey(props.shopId, props.month), queryFn: () => fetchAttendanceMonth(props.shopId, props.month) });
   if (query.isPending) return <p role="status" className="p-4 text-sm text-muted-foreground">{t("loading")}</p>;
-  if (query.isError) return <div role="alert" className="p-4"><p>{t("loadFailed")}</p><Button variant="outline" onClick={() => void query.refetch()}>{t("reload")}</Button></div>;
-  return <AttendanceGrid {...props} data={query.data} />;
+  const errorAlert = <div role="alert" className="p-4"><p>{t("loadFailed")}</p><Button variant="outline" onClick={() => void query.refetch()}>{t("reload")}</Button></div>;
+  if (!query.data) return errorAlert;
+  return <>{query.isError && errorAlert}<AttendanceGrid {...props} data={query.data} /></>;
 }
 function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: Props & { data: AttendanceMonth }) {
   const t = useTranslations("Attendance");
@@ -125,7 +126,10 @@ function AttendanceGrid({ shopId, month, canEdit, date, onDirtyChange, data }: P
   const [bulkNote, setBulkNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  useEffect(() => { onDirtyChange?.(Boolean(draft) || busy); }, [draft, busy, onDirtyChange]);
+  useEffect(() => {
+    onDirtyChange?.(Boolean(draft) || busy);
+    return () => onDirtyChange?.(false);
+  }, [draft, busy, onDirtyChange]);
   useEffect(() => {
     if (!draft) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };

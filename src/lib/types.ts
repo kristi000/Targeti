@@ -289,6 +289,7 @@ export type ActivityAction =
   | "procedures_deleted"
   | "procedures_restored"
   | "attendance_saved"
+  | "bank_reconciliation_saved"
   | "daily_activity_settings_saved"
   | "excel_imported"
   | "excel_import_undone"
