@@ -179,6 +179,36 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "changes",
+      "fieldPath": "previousShop",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "changes",
+      "fieldPath": "importedShop",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "changes",
+      "fieldPath": "previousBonusSnapshot",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "changes",
+      "fieldPath": "previousQuarterlyBonusSnapshot",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "shops",
+      "fieldPath": "monthlyData",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "shops",
+      "fieldPath": "quarterSettings",
+      "indexes": []
+    },
+    {
       "collectionGroup": "metadata",
       "fieldPath": "entries",
       "indexes": []

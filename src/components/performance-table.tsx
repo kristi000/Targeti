@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Gauge, Minus, Plus, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { METRIC_CONFIG } from "@/lib/data";
 import {
@@ -55,8 +56,50 @@ type PerformanceTableProps = {
   caption: string;
   compact?: boolean;
   originalActuals?: Partial<Record<PerformanceMetric, number>>;
-  onAdjustActual?: (metric: PerformanceMetric, delta: -1 | 1) => void;
+  onChangeActual?: (metric: PerformanceMetric, value: number) => void;
 };
+
+function ActualValueEditor({ actual, metricLabel, onChange }: {
+  actual: number;
+  metricLabel: string;
+  onChange: (value: number) => void;
+}) {
+  const t = useTranslations("DetailedDashboard");
+  const [inputValue, setInputValue] = useState(String(actual));
+
+  const adjust = (delta: -1 | 1) => {
+    const value = Math.max(0, actual + delta);
+    setInputValue(String(value));
+    onChange(value);
+  };
+
+  return <div className="flex items-center gap-2">
+    <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" aria-label={t("decreaseActual", { metric: metricLabel })} disabled={actual <= 0} onClick={() => adjust(-1)}><Minus className="h-4 w-4" /></Button>
+    <Input
+      type="number"
+      min={0}
+      step="any"
+      inputMode="decimal"
+      aria-label={t("adjustActual", { metric: metricLabel, value: actual })}
+      className="h-8 w-28 px-2 text-center font-semibold tabular-nums"
+      value={inputValue}
+      onFocus={event => event.currentTarget.select()}
+      onChange={event => {
+        setInputValue(event.target.value);
+        const value = event.target.valueAsNumber;
+        if (Number.isFinite(value) && value >= 0) onChange(value);
+      }}
+      onBlur={() => setInputValue(String(actual))}
+      onKeyDown={event => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+    <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0" aria-label={t("increaseActual", { metric: metricLabel })} onClick={() => adjust(1)}><Plus className="h-4 w-4" /></Button>
+  </div>;
+}
 
 export function PerformanceTable({
   actuals,
@@ -70,7 +113,7 @@ export function PerformanceTable({
   caption,
   compact = false,
   originalActuals,
-  onAdjustActual,
+  onChangeActual,
 }: PerformanceTableProps) {
   const t = useTranslations("DetailedDashboard");
   const tMetric = useTranslations("Metrics");
@@ -213,7 +256,7 @@ export function PerformanceTable({
         <th scope="row" title={compact ? undefined : metricLabel(metric)} className={cn("text-left font-medium", compact ? "px-0.5 py-0 sm:px-1" : "px-2 py-0")}><span className="flex min-w-0 items-center gap-0.5 sm:gap-1.5"><Icon className="h-3 w-3 shrink-0 text-muted-foreground sm:h-3.5 sm:w-3.5" />{compact ? metricName(metric) : <span className="truncate">{metricLabel(metric)}</span>}</span></th>
         <td title={compact ? undefined : String(Math.round(target))} className={cn("text-right tabular-nums text-muted-foreground", compact ? "truncate px-0.5 py-0 sm:px-1" : "px-3 py-0")}>{numericValue(String(Math.round(target)))}</td>
         <td className={cn("text-right tabular-nums", compact ? "px-0.5 py-0 sm:px-1" : "px-2 py-0")}>
-          {onAdjustActual ? <Popover><PopoverTrigger asChild><button type="button" className="block w-full text-right font-medium text-primary underline decoration-dotted underline-offset-2" aria-label={t("adjustActual", { metric: metricLabel(metric), value: actual })}>{actual}</button></PopoverTrigger><PopoverContent align="end" className="w-auto p-2"><div className="flex items-center gap-2"><Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label={t("decreaseActual", { metric: metricLabel(metric) })} disabled={actual <= 0} onClick={() => onAdjustActual(metric, -1)}><Minus className="h-4 w-4" /></Button><span className="min-w-10 text-center font-semibold tabular-nums">{actual}</span><Button type="button" variant="outline" size="icon" className="h-8 w-8" aria-label={t("increaseActual", { metric: metricLabel(metric) })} onClick={() => onAdjustActual(metric, 1)}><Plus className="h-4 w-4" /></Button></div>{original !== undefined && <p className="mt-2 text-xs text-muted-foreground">{t("excelOriginal", { value: original })}</p>}</PopoverContent></Popover> : numericValue(String(actual))}
+          {onChangeActual ? <Popover><PopoverTrigger asChild><button type="button" className="block w-full text-right font-medium text-primary underline decoration-dotted underline-offset-2" aria-label={t("adjustActual", { metric: metricLabel(metric), value: actual })}>{actual}</button></PopoverTrigger><PopoverContent align="end" className="w-auto p-2"><ActualValueEditor actual={actual} metricLabel={metricLabel(metric)} onChange={value => onChangeActual(metric, value)} />{original !== undefined && <p className="mt-2 text-xs text-muted-foreground">{t("excelOriginal", { value: original })}</p>}</PopoverContent></Popover> : numericValue(String(actual))}
           {original !== undefined && difference !== 0 && <Popover><PopoverTrigger asChild><button type="button" className="block w-full text-right text-[9px] font-semibold text-amber-700 dark:text-amber-300 sm:text-[10px]" aria-label={t("excelDifferenceDetails", { original, difference: difference > 0 ? `+${difference}` : String(difference) })}>{difference > 0 ? `+${difference}` : difference}</button></PopoverTrigger><PopoverContent align="end" className="w-auto p-2 text-xs"><p>{t("excelOriginal", { value: original })}</p><p>{t("excelDifference", { value: difference > 0 ? `+${difference}` : String(difference) })}</p></PopoverContent></Popover>}
         </td>
         <td className={cn("text-right font-semibold tabular-nums", compact ? "truncate px-0.5 py-0 sm:px-1" : "px-2 py-0", statusStyles(achievement))}>

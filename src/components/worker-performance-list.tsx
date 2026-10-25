@@ -23,12 +23,12 @@ type Props = {
   isFinal: boolean;
   editedActuals?: Record<string, Record<PerformanceMetric, number>>;
   originalActuals?: Record<string, Partial<Record<PerformanceMetric, number>>>;
-  onAdjustActual?: (repId: string, metric: PerformanceMetric, delta: -1 | 1) => void;
+  onChangeActual?: (repId: string, metric: PerformanceMetric, value: number) => void;
 };
 
 const statusClass = (value: number) => value >= 100 ? "text-emerald-700 dark:text-emerald-400" : value >= 70 ? "text-amber-700 dark:text-amber-400" : "text-red-700 dark:text-red-400";
 
-export function WorkerPerformanceList({ salesRepresentatives, performanceData, monthlyTargets, representativeTargets, metricSettings, metricOrder, shopId, forecastDate, forecastAsOf, isFinal, editedActuals, originalActuals, onAdjustActual }: Props) {
+export function WorkerPerformanceList({ salesRepresentatives, performanceData, monthlyTargets, representativeTargets, metricSettings, metricOrder, shopId, forecastDate, forecastAsOf, isFinal, editedActuals, originalActuals, onChangeActual }: Props) {
   const t = useTranslations("DetailedDashboard");
   const metrics = useMemo(() => getMetricOrder(metricOrder, Object.keys(monthlyTargets) as PerformanceMetric[]), [metricOrder, monthlyTargets]);
   const representativeData = useMemo(() => {
@@ -68,7 +68,7 @@ export function WorkerPerformanceList({ salesRepresentatives, performanceData, m
             <div className="shrink-0 text-right"><span className={cn("inline-block rounded-md bg-muted px-1.5 py-0.5 text-xs font-semibold sm:px-2 sm:py-1", statusClass(representative.achievement))}>{representative.achievement.toFixed(1)}%</span><p className="text-[11px] text-muted-foreground sm:text-xs">EOM: {eomLabel(representative.forecastAchievement)}</p></div>
           </CardHeader>
           <CardContent className="px-1 pb-2 sm:px-3 sm:pb-3">
-            <PerformanceTable actuals={representative.totals} targets={representative.targets} forecasts={representative.forecasts} forecastAsOf={forecastAsOf} isFinal={isFinal} metricSettings={metricSettings} metricOrder={metricOrder} storageKey={`rep-${shopId}-${representative.id}`} caption={t("representativePerformanceTable", { name: representative.name })} originalActuals={originalActuals?.[representative.id]} onAdjustActual={onAdjustActual ? (metric, delta) => onAdjustActual(representative.id, metric, delta) : undefined} compact />
+            <PerformanceTable actuals={representative.totals} targets={representative.targets} forecasts={representative.forecasts} forecastAsOf={forecastAsOf} isFinal={isFinal} metricSettings={metricSettings} metricOrder={metricOrder} storageKey={`rep-${shopId}-${representative.id}`} caption={t("representativePerformanceTable", { name: representative.name })} originalActuals={originalActuals?.[representative.id]} onChangeActual={onChangeActual ? (metric, value) => onChangeActual(representative.id, metric, value) : undefined} compact />
           </CardContent>
         </Card>
       ))}

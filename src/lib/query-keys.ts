@@ -1,4 +1,5 @@
 import type { DashboardSortKey } from "@/lib/dashboard-types";
+import { getInsightsPeriod, type InsightsView } from "@/lib/insights";
 
 export const dashboardPeriodsQueryKey = ["dashboard-periods"] as const;
 
@@ -20,6 +21,7 @@ export function dashboardPageQueryKey(input: {
 }
 
 export const dashboardInsightsQueryKey = (month: string) => ["dashboard-insights", month] as const;
+export const insightsPerformanceQueryKey = (month: string, view: InsightsView) => ["insights-performance", view, getInsightsPeriod(month, view).key] as const;
 
 export const shopPerformanceQueryKey = (shopId: string) => ["performance", "shop", shopId] as const;
 export const shopPerformanceIndexQueryKey = (shopId: string) => [...shopPerformanceQueryKey(shopId), "index"] as const;

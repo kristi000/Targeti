@@ -144,10 +144,11 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
     ? calculateTotalAchievement(forecastData, monthlyTargets, metricSettings)
     : null;
 
-  const adjustAchievement = (repId: string, metric: PerformanceMetric, delta: -1 | 1) => {
+  const changeAchievement = (repId: string, metric: PerformanceMetric, value: number) => {
+    if (!Number.isFinite(value) || value < 0) return;
     setAchievementDraft(current => current?.key === draftKey ? {
       ...current,
-      reps: current.reps.map(rep => rep.repId === repId ? { ...rep, [metric]: Math.max(0, (rep[metric] ?? 0) + delta) } : rep),
+      reps: current.reps.map(rep => rep.repId === repId ? { ...rep, [metric]: value } : rep),
     } : current);
   };
 
@@ -286,7 +287,7 @@ export function DetailedDashboardClient({ requestedMonth }: { requestedMonth?: s
 
           {qualityMetrics && <Card className="overflow-hidden"><CardHeader className="px-3 py-2.5 sm:px-4 sm:py-3"><CardTitle className="text-sm sm:text-base">Quality indicators</CardTitle><CardDescription className="hidden sm:block">Reported separately from weighted target metrics</CardDescription></CardHeader><CardContent className="grid grid-cols-3 gap-2 px-3 pb-3 sm:gap-3 sm:px-4 sm:pb-4 xl:grid-cols-1 2xl:grid-cols-3">{qualityMetrics.checklistScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><ClipboardCheck className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Checklist</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.checklistScore.toFixed(1)}</p></div>}{qualityMetrics.npsScore !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><MessageSquareText className="h-3.5 w-3.5 shrink-0" />NPS</p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsScore.toFixed(1)}</p></div>}{qualityMetrics.npsResponses !== undefined && <div className="min-w-0 rounded-md border bg-muted/20 p-2 sm:p-3"><p className="flex items-center gap-1 text-[11px] text-muted-foreground sm:gap-1.5 sm:text-xs"><Users className="h-3.5 w-3.5 shrink-0" /><span className="truncate">Responses</span></p><p className="mt-0.5 text-lg font-semibold tabular-nums sm:mt-1 sm:text-xl">{qualityMetrics.npsResponses}</p></div>}</CardContent></Card>}
 
-          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} representativeTargets={representativeTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} forecastDate={hasForecast ? forecastDate : undefined} forecastAsOf={hasForecast ? format(forecastDate, "PP") : undefined} isFinal={isFinal} editedActuals={editedRepActuals} originalActuals={excelReport ? originalRepActuals : undefined} onAdjustActual={activeDraft ? adjustAchievement : undefined} /> : null}
+          {monthlyRepresentatives.length ? <WorkerPerformanceList salesRepresentatives={monthlyRepresentatives} performanceData={performanceData} monthlyTargets={monthlyTargets} representativeTargets={representativeTargets} metricSettings={metricSettings} metricOrder={metrics} shopId={selectedShop.id} forecastDate={hasForecast ? forecastDate : undefined} forecastAsOf={hasForecast ? format(forecastDate, "PP") : undefined} isFinal={isFinal} editedActuals={editedRepActuals} originalActuals={excelReport ? originalRepActuals : undefined} onChangeActual={activeDraft ? changeAchievement : undefined} /> : null}
           </div>
         </div>
       </div>

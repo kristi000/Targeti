@@ -9,7 +9,7 @@ import { fetchShop, fetchShopData } from "@/app/actions/shop-data";
 import { useToast } from '@/hooks/use-toast';
 import { useTranslations } from 'next-intl';
 import type { AppActor } from '@/lib/auth-types';
-import { dashboardInsightsQueryKey, dashboardPeriodsQueryKey, performanceMonthQueryKey, shopPerformanceIndexQueryKey, shopPerformanceMonthQueryKey, shopPerformanceQueryKey } from '@/lib/query-keys';
+import { dashboardInsightsQueryKey, dashboardPeriodsQueryKey, insightsPerformanceQueryKey, performanceMonthQueryKey, shopPerformanceIndexQueryKey, shopPerformanceMonthQueryKey, shopPerformanceQueryKey } from '@/lib/query-keys';
 
 type ShopContextType = {
   actor: AppActor;
@@ -81,11 +81,15 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       const performanceKeys = month
         ? [shopPerformanceMonthQueryKey(shopId, month), shopPerformanceIndexQueryKey(shopId), performanceMonthQueryKey(month)]
         : [["performance"] as const];
+      const insightPeriods = month
+        ? new Set((["month", "quarter", "year"] as const).map(view => insightsPerformanceQueryKey(month, view)[2]))
+        : null;
       await Promise.all([
         ...performanceKeys.map(queryKey => queryClient.invalidateQueries({ queryKey })),
         queryClient.invalidateQueries({ queryKey: dashboardPeriodsQueryKey }),
         queryClient.invalidateQueries({ queryKey: month ? ["firestore-shop-performance-page", month] : ["firestore-shop-performance-page"] }),
         queryClient.invalidateQueries({ queryKey: month ? dashboardInsightsQueryKey(month) : ["dashboard-insights"] }),
+        queryClient.invalidateQueries({ queryKey: ["insights-performance"], predicate: query => !insightPeriods || insightPeriods.has(String(query.queryKey[2])) }),
         queryClient.invalidateQueries({ queryKey: month ? ["bonus-overview", actor.id, month] : ["bonus-overview"] }),
         queryClient.invalidateQueries({
           queryKey: ["bonus-overview-all-time"],
@@ -113,7 +117,10 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       setAllMonthlyTargets(monthlyTargets);
       
       setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
-      await queryClient.invalidateQueries({ queryKey: ["performance"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["performance"] }),
+        queryClient.invalidateQueries({ queryKey: ["insights-performance"] }),
+      ]);
       
     } catch (error) {
       console.error("Failed to load initial data:", error);
@@ -134,7 +141,8 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     setWeightProfiles(weightProfiles);
     setAllMonthlyTargets(monthlyTargets);
     setSelectedShop(current => shops.find(shop => shop.id === current?.id) ?? shops[0] ?? null);
-  }, []);
+    await queryClient.invalidateQueries({ queryKey: ["insights-performance"] });
+  }, [queryClient]);
 
   const addShop = useCallback(async (shopName: string, description?: string) => {
     setLoading(true);
@@ -147,6 +155,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
                 const targets = newShop.monthlyTargets as Target;
                 setAllMonthlyTargets(prev => ({...prev, [newShop.id]: targets}));
             }
+            await queryClient.invalidateQueries({ queryKey: ["insights-performance"] });
             
             toast({ title: t('shopAdded'), description: t('shopAddedSuccess', {shopName}) });
         } else {
@@ -159,7 +168,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
     } finally {
         setLoading(false);
     }
-  }, [toast, t]);
+  }, [queryClient, toast, t]);
 
   const updateShop = useCallback(async (updatedShop: Shop) => {
     const result = await handleUpdateShop(updatedShop);
@@ -168,12 +177,13 @@ export function ShopProvider({ children, initialData, actor }: { children: React
       if (selectedShop?.id === updatedShop.id) {
         setSelectedShop(prev => prev ? {...prev, ...result.data!} : null);
       }
+      await queryClient.invalidateQueries({ queryKey: ["insights-performance"] });
       
       toast({ title: t('shopUpdated'), description: t('shopUpdatedSuccess', {shopName: updatedShop.name}) });
     } else {
       toast({ variant: "destructive", title: t('error'), description: t('updateShopFailed') });
     }
-  }, [selectedShop?.id, toast, t]);
+  }, [queryClient, selectedShop?.id, toast, t]);
 
   const deleteShop = useCallback(async (shopId: string) => {
     const result = await handleDeleteShop(shopId);
@@ -186,6 +196,7 @@ export function ShopProvider({ children, initialData, actor }: { children: React
         return newShops;
       });
       queryClient.removeQueries({ queryKey: shopPerformanceQueryKey(shopId) });
+      await queryClient.invalidateQueries({ queryKey: ["insights-performance"] });
       setAllMonthlyTargets(prev => {
         const newTargets = {...prev};
         delete newTargets[shopId];

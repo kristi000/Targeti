@@ -49,7 +49,11 @@ export async function handlePrepareRepresentativeImport(shopId: string) {
     });
 
     const hiddenSalesRepresentatives = Array.from(hiddenById.values());
-    return { success: true as const, hiddenSalesRepresentatives };
+    const latestReportMonth = performanceData.reduce((latest, entry) => {
+      const month = entry.date.slice(0, 7);
+      return month > latest ? month : latest;
+    }, "") || null;
+    return { success: true as const, shop, latestReportMonth, hiddenSalesRepresentatives };
   } catch (error) {
     if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "The shop no longer exists." };
     return { success: false as const, error: mutationError("prepare hidden representatives for import", error) };

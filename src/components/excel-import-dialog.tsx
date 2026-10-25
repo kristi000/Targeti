@@ -19,8 +19,6 @@ import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import {
   getQuarterKey,
   getInitialTargets,
-  getMonthlyRepresentatives,
-  getOverviewPerformanceData,
   type MetricSettings,
   type PerformanceData,
   type PerformanceMetric,
@@ -31,6 +29,13 @@ import { useShop } from "./shop-provider";
 import { performanceMonthQueryOptions } from "@/lib/performance-queries";
 import { getImportWeightProfile } from "@/lib/import-weight-profiles";
 import { attendanceMonthSchema } from "@/lib/persistence-schemas";
+import {
+  getIncludedImportRepresentatives,
+  hiddenRepresentativesForImport,
+  normalizeRepresentativeName as normalizeName,
+  shouldPreserveImportShopDefaults,
+  type ImportedRepresentativeVisibilityMode,
+} from "@/lib/import-representatives";
 
 type ReviewState = {
   workbook: ImportedWorkbookData;
@@ -38,34 +43,11 @@ type ReviewState = {
   reportMonth: string;
   asOfDate: string;
   targetedRepresentatives: Record<string, boolean>;
+  representativeMode: ImportedRepresentativeVisibilityMode | null;
 };
 
-const normalizeName = (value: string) => value.trim().toLocaleLowerCase();
 const isValidNumber = (value: number) => Number.isFinite(value) && value >= 0;
 const representativeKey = (shopIndex: number, representativeId: string) => `${shopIndex}:${representativeId}`;
-
-function hiddenRepresentativesForImport(shop: Shop, month: string, performanceData: PerformanceData[]) {
-  const visibleRepresentatives = getMonthlyRepresentatives(shop, month);
-  const visibleIds = new Set(visibleRepresentatives.map(representative => representative.id));
-  const visibleNames = new Set(visibleRepresentatives.map(representative => normalizeName(representative.name)));
-  const hiddenById = new Map((shop.hiddenSalesRepresentatives ?? []).map(representative => [representative.id, representative]));
-
-  getOverviewPerformanceData(performanceData)
-    .filter(entry => entry.date.startsWith(month))
-    .flatMap(entry => entry.reps)
-    .forEach(representative => {
-      if (
-        representative.repName
-        && !visibleIds.has(representative.repId)
-        && !visibleNames.has(normalizeName(representative.repName))
-        && !hiddenById.has(representative.repId)
-      ) {
-        hiddenById.set(representative.repId, { id: representative.repId, name: representative.repName });
-      }
-    });
-
-  return Array.from(hiddenById.values());
-}
 
 function metricRecord(record: Partial<Record<PerformanceMetric, number>>, metrics: readonly PerformanceMetric[]) {
   return Object.fromEntries(metrics.map(metric => [metric, Number(record[metric] ?? 0)])) as Target;
@@ -102,6 +84,7 @@ export function ExcelImportDialog({
   const { selectedShop, shops, weightProfiles, reloadData } = useShop();
   const profileTranslations = useTranslations("WeightProfiles");
   const importHistoryTranslations = useTranslations("ImportHistory");
+  const importTranslations = useTranslations("ExcelImport");
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -115,12 +98,43 @@ export function ExcelImportDialog({
     enabled: Boolean(review?.reportMonth),
   });
   const performanceByShop = performanceQuery.data;
+  const existingShops = useMemo(() => review?.workbook.shops.map(imported =>
+    restrictToSelectedShop && selectedShop
+      ? selectedShop
+      : shops.find(shop => normalizeName(shop.name) === normalizeName(imported.shopName)),
+  ) ?? [], [review, restrictToSelectedShop, selectedShop, shops]);
+  const existingShopIds = existingShops.flatMap(shop => shop ? [shop.id] : []);
+  const preparationQuery = useQuery({
+    queryKey: ["performance", "representative-import", existingShopIds],
+    queryFn: async () => Object.fromEntries(await Promise.all(existingShopIds.map(async shopId => {
+      const result = await handlePrepareRepresentativeImport(shopId);
+      if (!result.success) throw new Error(result.error);
+      return [shopId, result] as const;
+    }))),
+    enabled: Boolean(review),
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  const preparations = preparationQuery.data;
+  const calendarMonth = format(new Date(), "yyyy-MM");
+  const historicalImport = Boolean(review && (
+    review.reportMonth < calendarMonth
+    || existingShops.some(shop => shop && (
+      shouldPreserveImportShopDefaults(preparations?.[shop.id]?.shop ?? shop, review.reportMonth, calendarMonth)
+      || (preparations?.[shop.id]?.latestReportMonth ?? "") > review.reportMonth
+    ))
+  ));
+  const representativeMode = review?.representativeMode ?? (historicalImport ? "includeAll" : "respectHidden");
+  const checkingImport = performanceQuery.isFetching || preparationQuery.isFetching;
+  const importQueryError = performanceQuery.isError || preparationQuery.isError;
+  const importDataReady = Boolean(performanceByShop && preparations && !checkingImport && !importQueryError);
   const selectedProfiles = useMemo(() => review?.workbook.shops.map(imported => {
-    const existingShop = restrictToSelectedShop && selectedShop
+    const matchedShop = restrictToSelectedShop && selectedShop
       ? selectedShop
       : shops.find(shop => normalizeName(shop.name) === normalizeName(imported.shopName));
+    const existingShop = matchedShop ? preparations?.[matchedShop.id]?.shop ?? matchedShop : undefined;
     return getImportWeightProfile(weightProfiles, existingShop, review.reportMonth);
-  }) ?? [], [review, restrictToSelectedShop, selectedShop, shops, weightProfiles]);
+  }) ?? [], [review, restrictToSelectedShop, selectedShop, shops, weightProfiles, preparations]);
   const profilePeriod = review && attendanceMonthSchema.safeParse(review.reportMonth).success
     ? getQuarterKey(review.reportMonth).split("-").reverse().join(" ")
     : "";
@@ -178,7 +192,7 @@ export function ExcelImportDialog({
         shop.representatives.map(representative => [representativeKey(shopIndex, representative.id), true]),
       ));
 
-      setReview({ workbook, reportType, reportMonth, asOfDate: today, targetedRepresentatives });
+      setReview({ workbook, reportType, reportMonth, asOfDate: today, targetedRepresentatives, representativeMode: null });
       setFileName(file.name);
     } catch (error) {
       toast({ variant: "destructive", title: "Import failed", description: error instanceof Error ? error.message : "The workbook could not be read." });
@@ -211,15 +225,26 @@ export function ExcelImportDialog({
       if (shop.qualityMetrics?.checklistScore !== undefined && !isValidNumber(shop.qualityMetrics.checklistScore)) errors.push(`${shop.shopName}: checklist score is invalid.`);
       if (shop.qualityMetrics?.npsScore !== undefined && (!Number.isFinite(shop.qualityMetrics.npsScore) || shop.qualityMetrics.npsScore < -100 || shop.qualityMetrics.npsScore > 100)) errors.push(`${shop.shopName}: NPS must be between -100 and 100.`);
       if (shop.qualityMetrics?.npsResponses !== undefined && !isValidNumber(shop.qualityMetrics.npsResponses)) errors.push(`${shop.shopName}: NPS responses must be zero or greater.`);
-      const existingShop = restrictToSelectedShop && selectedShop
-        ? selectedShop
-        : shops.find(item => normalizeName(item.name) === normalizeName(shop.shopName));
+      const matchedShop = existingShops[shopIndex];
+      const preparation = matchedShop ? preparations?.[matchedShop.id] : undefined;
+      const existingShop = preparation?.shop ?? matchedShop;
       if (existingShop && (performanceByShop?.[existingShop.id] ?? []).some(entry => entry.date.startsWith(review.reportMonth))) {
         warnings.push(`${shop.shopName}: this month already has data. This file will be retained as a new version and become the active monthly snapshot.`);
       }
       const representativeNames = shop.representatives.map(rep => normalizeName(rep.name));
       if (new Set(representativeNames).size !== representativeNames.length) errors.push(`${shop.shopName}: representative names must be unique.`);
-      if (!shop.representatives.some(rep => review.targetedRepresentatives[representativeKey(shopIndex, rep.id)])) errors.push(`${shop.shopName}: select at least one representative to receive targets.`);
+      const hiddenRepresentatives = existingShop
+        ? hiddenRepresentativesForImport(
+          { ...existingShop, hiddenSalesRepresentatives: preparation?.hiddenSalesRepresentatives ?? existingShop.hiddenSalesRepresentatives },
+          review.reportMonth,
+          performanceByShop?.[existingShop.id] ?? [],
+        )
+        : [];
+      const includedRepresentatives = getIncludedImportRepresentatives(shop.representatives, hiddenRepresentatives, representativeMode);
+      if (!includedRepresentatives.length) errors.push(importTranslations("noIncludedRepresentatives", { shop: shop.shopName }));
+      else if (!includedRepresentatives.some(rep => review.targetedRepresentatives[representativeKey(shopIndex, rep.id)])) errors.push(`${shop.shopName}: select at least one representative to receive targets.`);
+      const skippedCount = shop.representatives.length - includedRepresentatives.length;
+      if (skippedCount) warnings.push(importTranslations("skippedRepresentatives", { shop: shop.shopName, count: skippedCount }));
       metrics.forEach(metric => {
         const label = profile.metricSettings[metric]?.label ?? metric;
         const target = Number(shop.targets[metric]);
@@ -231,10 +256,10 @@ export function ExcelImportDialog({
       });
     });
     return { errors: Array.from(new Set(errors)), warnings: Array.from(new Set(warnings)) };
-  }, [review, restrictToSelectedShop, selectedShop, shops, selectedProfiles, profilePeriod, profileTranslations, performanceByShop]);
+  }, [review, existingShops, preparations, representativeMode, selectedProfiles, profilePeriod, profileTranslations, importTranslations, performanceByShop]);
 
   const applyImport = async () => {
-    if (!review || !performanceByShop || performanceQuery.isFetching || performanceQuery.isError || validation.errors.length) return;
+    if (!review || !performanceByShop || !preparations || !importDataReady || validation.errors.length) return;
     setLoading(true);
     try {
       let representativeCount = 0;
@@ -250,9 +275,10 @@ export function ExcelImportDialog({
         if (!profile) throw new Error(profileTranslations("missingImportProfile", { shop: imported.shopName, period: profilePeriod }));
         const keptMetrics = profile.metricOrder;
         const metricSettings = structuredClone(profile.metricSettings);
-        const existingShop = restrictToSelectedShop && selectedShop
-          ? selectedShop
-          : shops.find(item => normalizeName(item.name) === normalizeName(imported.shopName));
+        const matchedShop = existingShops[shopIndex];
+        const preparation = matchedShop ? preparations[matchedShop.id] : undefined;
+        if (matchedShop && !preparation) throw new Error(importTranslations("shopChanged"));
+        const existingShop = preparation?.shop;
         const existedBeforeImport = Boolean(existingShop);
         let shop: Shop;
         if (existingShop) {
@@ -268,46 +294,49 @@ export function ExcelImportDialog({
             monthlyTargets: getInitialTargets(),
           };
         }
-        if (existedBeforeImport) {
-          const preparation = await handlePrepareRepresentativeImport(shop.id);
-          if (!preparation.success) throw new Error(preparation.error);
-          shop = { ...shop, hiddenSalesRepresentatives: preparation.hiddenSalesRepresentatives };
-        }
         const previousShop = existedBeforeImport ? structuredClone(shop) : null;
         const targets = metricRecord(imported.targets, keptMetrics);
         const achievements = metricRecord(imported.achievements, keptMetrics);
         const hiddenSalesRepresentatives = hiddenRepresentativesForImport(
-          shop,
+          { ...shop, hiddenSalesRepresentatives: preparation?.hiddenSalesRepresentatives ?? shop.hiddenSalesRepresentatives },
           review.reportMonth,
           performanceByShop[shop.id] ?? [],
         );
-        const hiddenIds = new Set(hiddenSalesRepresentatives.map(representative => representative.id));
-        const hiddenNames = new Set(hiddenSalesRepresentatives.map(representative => normalizeName(representative.name)));
-        const visibleImportedRepresentatives = imported.representatives.filter(representative =>
-          !hiddenIds.has(representative.id) && !hiddenNames.has(normalizeName(representative.name)),
-        );
+        const visibleImportedRepresentatives = getIncludedImportRepresentatives(imported.representatives, hiddenSalesRepresentatives, representativeMode);
         if (!visibleImportedRepresentatives.length) {
-          throw new Error(`${imported.shopName}: no visible representatives remain after applying hidden representative settings.`);
+          throw new Error(importTranslations("noIncludedRepresentatives", { shop: imported.shopName }));
         }
         const reps = visibleImportedRepresentatives.map(({ id, name }) => ({ id, name }));
         representativeCount += reps.length;
         hiddenRepresentativeCount += imported.representatives.length - visibleImportedRepresentatives.length;
         const targetedRepresentatives = visibleImportedRepresentatives.filter(rep => review.targetedRepresentatives[representativeKey(shopIndex, rep.id)]);
+        if (!targetedRepresentatives.length) throw new Error(`${imported.shopName}: select at least one representative to receive targets.`);
         const sharedTargets = getEqualRepresentativeTargets(targets, keptMetrics, targetedRepresentatives.length);
         const representativeTargets = Object.fromEntries(visibleImportedRepresentatives.map(rep => [
           rep.id,
           review.targetedRepresentatives[representativeKey(shopIndex, rep.id)] ? sharedTargets : metricRecord({}, keptMetrics),
         ])) as Record<string, Target>;
         const collection = Number(imported.revenue);
+        const preserveDefaults = existedBeforeImport && (
+          representativeMode === "includeAll"
+          || shouldPreserveImportShopDefaults(shop, review.reportMonth, calendarMonth)
+          || (preparation?.latestReportMonth ?? "") > review.reportMonth
+        );
         const updatedShop = {
           ...shop,
-          weightProfileId: weightProfiles.some(item => item.id === existingShop?.weightProfileId)
-            ? existingShop!.weightProfileId
-            : profile.id,
-          revenue: collection,
-          monthlyTargets: targets,
-          salesRepresentatives: reps,
-          hiddenSalesRepresentatives,
+          ...(!preserveDefaults && {
+            weightProfileId: weightProfiles.some(item => item.id === existingShop?.weightProfileId)
+              ? existingShop!.weightProfileId
+              : profile.id,
+            revenue: collection,
+            monthlyTargets: targets,
+            salesRepresentatives: reps,
+            hiddenSalesRepresentatives,
+            quarterSettings: {
+              ...shop.quarterSettings,
+              [quarterKey]: { metricSettings, metricOrder: keptMetrics },
+            },
+          }),
           monthlyData: {
             ...shop.monthlyData,
             [review.reportMonth]: {
@@ -319,10 +348,6 @@ export function ExcelImportDialog({
               metricOrder: keptMetrics,
               qualityMetrics: imported.qualityMetrics,
             },
-          },
-          quarterSettings: {
-            ...shop.quarterSettings,
-            [quarterKey]: { metricSettings, metricOrder: keptMetrics },
           },
         };
         const performance: PerformanceData = {
@@ -346,7 +371,16 @@ export function ExcelImportDialog({
       }
 
       const registration = await handleRegisterImport(importId, fileName, review.reportMonth, reportDate, importChanges);
-      if (!registration.success) throw new Error(registration.error);
+      if (!registration.success) {
+        if (registration.error === "IMPORT_SHOP_CHANGED") {
+          await Promise.all([preparationQuery.refetch(), performanceQuery.refetch()]);
+          throw new Error(importTranslations("shopChanged"));
+        }
+        if (registration.error === "IMPORT_PERIOD_MISMATCH") {
+          throw new Error(importTranslations("periodMismatch"));
+        }
+        throw new Error(registration.error === "IMPORT_TOO_LARGE" ? importTranslations("tooLarge") : registration.error);
+      }
 
       await reloadData();
       await Promise.all([
@@ -358,7 +392,7 @@ export function ExcelImportDialog({
       ]);
       toast({
         title: "Excel data imported",
-        description: `${review.workbook.shops.length} shops and ${representativeCount} visible representatives were updated.${hiddenRepresentativeCount ? ` ${hiddenRepresentativeCount} hidden representative${hiddenRepresentativeCount === 1 ? " was" : "s were"} skipped.` : ""} ${review.reportType === "completedMonth" ? "Final payroll snapshots were saved automatically." : "The file was retained as an independent version."}`,
+        description: `${importTranslations("successSummary", { shops: review.workbook.shops.length, representatives: representativeCount })}${hiddenRepresentativeCount ? ` ${importTranslations("successSkipped", { count: hiddenRepresentativeCount })}` : ""} ${review.reportType === "completedMonth" ? "Final payroll snapshots were saved automatically." : "The file was retained as an independent version."}`,
       });
       setOpen(false);
       reset();
@@ -387,7 +421,10 @@ export function ExcelImportDialog({
     setLoading(true);
     try {
       const result = await handleUndoLatestImport();
-      if (!result.success) throw new Error(result.error === "CONFLICT" ? importHistoryTranslations("errors.CONFLICT") : result.error);
+      if (!result.success) {
+        const errorKey = `errors.${result.error}`;
+        throw new Error(importHistoryTranslations.has(errorKey) ? importHistoryTranslations(errorKey) : result.error);
+      }
       await reloadData();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["dashboard-periods"] }),
@@ -401,7 +438,7 @@ export function ExcelImportDialog({
     }
   };
 
-  return <Dialog open={open} onOpenChange={setOpen}>
+  return <Dialog open={open} onOpenChange={nextOpen => { if (!loading) setOpen(nextOpen); }}>
     {showTrigger && <DialogTrigger asChild><Button variant="outline" className="w-full justify-start gap-2"><FileSpreadsheet className="h-4 w-4" />Import Excel</Button></DialogTrigger>}
     <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-5xl">
       <DialogHeader>
@@ -416,10 +453,16 @@ export function ExcelImportDialog({
         <p className="mt-1 text-sm text-muted-foreground">.xlsx files up to 10 MB · one reporting month</p>
       </div><div className="flex justify-end"><Button type="button" variant="ghost" disabled={loading} onClick={() => void undoLatestImport()}><RotateCcw className="mr-2 h-4 w-4" />Undo latest import</Button></div></> : <div className="space-y-5">
         <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-3">
-          <Label className="flex items-center gap-2"><Checkbox checked={review.reportType === "completedMonth"} onCheckedChange={checked => setReview(current => current && { ...current, reportType: checked === true ? "completedMonth" : "midMonth" })} /><span>Final month import</span></Label>
-          <Label className="grid gap-1.5">Reporting month<Input type="month" value={review.reportMonth} onChange={event => { const reportMonth = event.target.value; setReview(current => current && { ...current, reportMonth, asOfDate: reportMonth ? moveDateToMonth(current.asOfDate, reportMonth) : current.asOfDate }); }} /></Label>
-          {review.reportType === "midMonth" ? <Label className="grid gap-1.5">Data as of<Input type="date" min={`${review.reportMonth}-01`} max={monthEnd(review.reportMonth)} value={review.asOfDate} onChange={event => { const asOfDate = event.target.value; setReview(current => current && { ...current, asOfDate, ...(asOfDate && { reportMonth: asOfDate.slice(0, 7) }) }); }} /><span className="text-xs font-normal text-muted-foreground">Choose the last day included in this Excel report.</span></Label> : <div className="grid content-center gap-1"><span className="text-sm font-medium">Payroll status</span><span className="text-sm text-muted-foreground">Monthly snapshot saved on import. The quarter is saved when all three months are final.</span></div>}
+          <Label className="flex items-center gap-2"><Checkbox disabled={loading} checked={review.reportType === "completedMonth"} onCheckedChange={checked => setReview(current => current && { ...current, reportType: checked === true ? "completedMonth" : "midMonth" })} /><span>Final month import</span></Label>
+          <Label className="grid gap-1.5">Reporting month<Input type="month" disabled={loading} value={review.reportMonth} onChange={event => { const reportMonth = event.target.value; setReview(current => current && { ...current, reportMonth, representativeMode: null, asOfDate: reportMonth ? moveDateToMonth(current.asOfDate, reportMonth) : current.asOfDate }); }} /></Label>
+          {review.reportType === "midMonth" ? <Label className="grid gap-1.5">Data as of<Input type="date" disabled={loading} min={`${review.reportMonth}-01`} max={monthEnd(review.reportMonth)} value={review.asOfDate} onChange={event => { const asOfDate = event.target.value; setReview(current => current && { ...current, asOfDate, ...(asOfDate && { reportMonth: asOfDate.slice(0, 7), representativeMode: asOfDate.slice(0, 7) === current.reportMonth ? current.representativeMode : null }) }); }} /><span className="text-xs font-normal text-muted-foreground">Choose the last day included in this Excel report.</span></Label> : <div className="grid content-center gap-1"><span className="text-sm font-medium">Payroll status</span><span className="text-sm text-muted-foreground">Monthly snapshot saved on import. The quarter is saved when all three months are final.</span></div>}
         </div>
+
+        <section className="space-y-2 rounded-lg border bg-muted/20 p-4">
+          <Label className="flex items-center gap-2"><Checkbox disabled={loading} checked={representativeMode === "includeAll"} onCheckedChange={checked => setReview(current => current && { ...current, representativeMode: checked === true ? "includeAll" : "respectHidden" })} /><span>{importTranslations("includeAllRepresentatives")}</span></Label>
+          <p className="text-xs text-muted-foreground">{importTranslations(representativeMode === "includeAll" ? "includeAllHelp" : "respectHiddenHelp")}</p>
+          {historicalImport && <p className="text-xs text-muted-foreground">{importTranslations("historicalImportHelp")}</p>}
+        </section>
 
         <section className="space-y-2 rounded-lg border bg-muted/20 p-4">
           <div><h3 className="font-semibold">Weight profiles</h3><p className="text-xs text-muted-foreground">{profilePeriod && profileTranslations("importSummary", { period: profilePeriod })}</p></div>
@@ -427,12 +470,13 @@ export function ExcelImportDialog({
         </section>
 
         {validation.errors.length > 0 && <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive"><p className="mb-1 flex items-center gap-2 font-semibold"><AlertTriangle className="h-4 w-4" />Fix before importing</p><ul className="list-disc space-y-1 pl-5">{validation.errors.map(issue => <li key={issue}>{issue}</li>)}</ul></div>}
-        {performanceQuery.isFetching && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />Checking existing month data…</p>}
-        {performanceQuery.isError && <div role="alert" className="flex items-center gap-2 text-sm text-destructive">Could not load existing month data.<Button type="button" size="sm" variant="outline" onClick={() => void performanceQuery.refetch()}><RotateCcw className="mr-2 h-4 w-4" />Retry</Button></div>}
-        {!validation.errors.length && performanceByShop && !performanceQuery.isFetching && !performanceQuery.isError && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />All import checks passed.</p>}
+        {validation.warnings.length > 0 && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">{importTranslations("reviewWarnings", { count: validation.warnings.length })}</summary><ul className="mt-2 max-h-40 list-disc space-y-1 overflow-y-auto pl-5 text-muted-foreground">{validation.warnings.map(issue => <li key={issue}>{issue}</li>)}</ul></details>}
+        {checkingImport && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{importTranslations("checkingImport")}</p>}
+        {importQueryError && <div role="alert" className="flex items-center gap-2 text-sm text-destructive">{importTranslations("loadFailed")}<Button type="button" size="sm" variant="outline" disabled={loading || checkingImport} onClick={() => void Promise.all([performanceQuery.refetch(), preparationQuery.refetch()])}><RotateCcw className="mr-2 h-4 w-4" />{importTranslations("retry")}</Button></div>}
+        {!validation.errors.length && importDataReady && <p className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"><CheckCircle2 className="h-4 w-4" />All import checks passed.</p>}
       </div>}
 
-      <DialogFooter className="gap-2"><Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>{review && <Button variant="outline" onClick={() => inputRef.current?.click()} disabled={loading}>Choose another file</Button>}<Button onClick={applyImport} disabled={!review || !performanceByShop || performanceQuery.isFetching || performanceQuery.isError || loading || validation.errors.length > 0}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Import reviewed data</Button></DialogFooter>
+      <DialogFooter className="gap-2"><Button variant="outline" disabled={loading} onClick={() => setOpen(false)}>Cancel</Button>{review && <Button variant="outline" onClick={() => inputRef.current?.click()} disabled={loading}>Choose another file</Button>}<Button onClick={applyImport} disabled={!review || !importDataReady || loading || validation.errors.length > 0}>{loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Import reviewed data</Button></DialogFooter>
     </DialogContent>
   </Dialog>;
 }

@@ -15,6 +15,8 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
   Search,
   Store,
   UserRoundCog,
@@ -39,6 +41,7 @@ import { useDashboardNavigation } from "@/components/dashboard-navigation-provid
 type ShopPerformanceRow = DashboardRow;
 
 const emptyShopRows: ShopPerformanceRow[] = [];
+const shopPreviewLimit = 10;
 
 const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
   { id: "shop", accessorFn: row => row.shop.name },
@@ -59,6 +62,7 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
   const [shopSearch, setShopSearch] = useState(view.search);
   const search = shopSearch.trim();
   const [debouncedSearch, setDebouncedSearch] = useState(search);
+  const [expandedShopView, setExpandedShopView] = useState<string | null>(null);
   const selectedSupervisorId = view.supervisorId;
   const sorting = useMemo<SortingState>(() => [{ id: view.sortBy, desc: view.sortDescending }], [view.sortBy, view.sortDescending]);
   const [canFetch, setCanFetch] = useState(false);
@@ -152,7 +156,10 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
   }
 
   const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
-  const visibleRows = table.getRowModel().rows;
+  const shopViewKey = dashboardViewQuery({ ...view, month: activeDatasetId, search });
+  const shopsExpanded = expandedShopView === shopViewKey;
+  const allRows = table.getRowModel().rows;
+  const visibleRows = shopsExpanded ? allRows : allRows.slice(0, shopPreviewLimit);
   const resultCount = pageQuery.data?.total ?? 0;
   const selectedSupervisor = supervisors.find(supervisor => supervisor.id === selectedSupervisorId);
 
@@ -253,6 +260,13 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
             </div>
 
             {visibleRows.length === 0 && <div className="px-4 py-12 text-center text-sm text-muted-foreground">No shops match your search.</div>}
+            {allRows.length > shopPreviewLimit && <div className="flex shrink-0 items-center justify-between gap-3 border-t bg-muted/40 px-4 py-3">
+              <p className="text-sm text-muted-foreground">{t("showingShops", { shown: visibleRows.length, total: allRows.length })}</p>
+              <Button type="button" variant="outline" size="sm" aria-expanded={shopsExpanded} onClick={() => setExpandedShopView(shopsExpanded ? null : shopViewKey)}>
+                {shopsExpanded ? <ChevronUp aria-hidden="true" className="mr-2 h-4 w-4" /> : <ChevronDown aria-hidden="true" className="mr-2 h-4 w-4" />}
+                {shopsExpanded ? t("showTopShops", { count: shopPreviewLimit }) : t("viewAllShops")}
+              </Button>
+            </div>}
           </section>
 
           <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} selectedSupervisorId={selectedSupervisorId} onSelectSupervisor={selectSupervisor} />

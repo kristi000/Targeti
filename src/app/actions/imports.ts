@@ -9,18 +9,18 @@ import { bonusSnapshotSchema, performanceDataSchema, isoDateSchema, monthSchema,
 import { type BonusSnapshot, type PerformanceData, type QuarterlyBonusSnapshot, type Shop, getQuarterKey } from "@/lib/types";
 import { bonusSnapshotFromImport, quarterlySnapshotFromMonths } from "@/lib/bonus-snapshot";
 import { getQuarterMonths } from "@/lib/quarterly-bonus";
-import { createActivity, mutationError, omitId, parseFirestoreDocument, stableValue, toFirestoreData } from "@/app/actions/shared";
+import { createActivity, mutationError, parseFirestoreDocument, stableValue, toFirestoreData } from "@/app/actions/shared";
 import { adminDb as db } from "@/lib/firebase-admin";
-
-const importChangeSchema = z.object({
-  shopId: shopIdSchema,
-  shopName: z.string().trim().min(1).max(120),
-  performanceId: shopIdSchema,
-  previousShop: shopSchema.nullable(),
-  importedShop: shopSchema,
-  previousBonusSnapshot: bonusSnapshotSchema.nullable().optional(),
-  previousQuarterlyBonusSnapshot: quarterlyBonusSnapshotSchema.nullable().optional(),
-}).strict();
+import { getShopImportUpdate } from "@/lib/server/shop-import-update";
+import {
+  createImportChangeSnapshot,
+  importChangeIdentitySchema,
+  importChangesOnlySelectedPeriod,
+  isImportShopUnchanged,
+  legacyImportChangeSchema,
+  restoreImportShop,
+  storedImportChangeSchema,
+} from "@/lib/server/import-history-snapshots";
 
 const importStatusSchema = z.enum(["active", "superseded", "undone", "removed"]);
 
@@ -40,11 +40,27 @@ function isImportConflict(error: unknown) {
     && [9, 10, "failed-precondition", "aborted"].includes(error.code as string | number);
 }
 
-const importCommitChangeSchema = importChangeSchema.extend({
+function isImportTooLarge(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const message = ["message" in error ? error.message : undefined, "details" in error ? error.details : undefined]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+  return /transaction too (?:big|large)|maximum (?:transaction|request) size|request (?:is )?too large|request size (?:exceeds|exceeded)/i.test(message);
+}
+
+function importTooLargeResult(operation: "register" | "undo" | "remove" | "undo-latest") {
+  console.error("Firestore import size limit exceeded.", { operation, reason: "IMPORT_TOO_LARGE" });
+  return { success: false as const, error: "IMPORT_TOO_LARGE" };
+}
+
+const importCommitChangeSchema = legacyImportChangeSchema.extend({
   performance: performanceDataSchema,
 }).superRefine((change, context) => {
   if (change.shopId !== change.importedShop.id) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Imported shop ID does not match the target shop." });
+  }
+  if (change.previousShop && change.shopId !== change.previousShop.id) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Previous shop ID does not match the target shop." });
   }
   if (change.performanceId !== change.performance.importId) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: "Performance import ID does not match the import." });
@@ -61,6 +77,9 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     if (!validReportDate.startsWith(validMonth)) throw new Error("The reporting date must be within the reporting month.");
     const validChanges = z.array(importCommitChangeSchema).min(1).max(150).parse(changes) as unknown as typeof changes;
     await requireEditorForShops(validChanges.map(change => change.shopId));
+    if (validChanges.some(change => !importChangesOnlySelectedPeriod(change.previousShop, change.importedShop, validMonth))) {
+      throw new Error("IMPORT_PERIOD_MISMATCH");
+    }
     if (validChanges.some(change => change.performance.importId !== validImportId || !change.performance.date.startsWith(validMonth))) {
       throw new Error("Every performance record must belong to the selected import and reporting month.");
     }
@@ -78,6 +97,22 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     if (completedMonth && validReportDate !== new Date(Date.UTC(Number(validMonth.slice(0, 4)), Number(validMonth.slice(5, 7)), 0)).toISOString().slice(0, 10)) {
       throw new Error("A final month import must use the last day of its reporting month.");
     }
+    const currentShopDocuments = await Promise.all(validChanges.map(change => getDoc(doc(db, "shops", change.shopId))));
+    validChanges.forEach((change, index) => {
+      const document = currentShopDocuments[index];
+      if (!document.exists) {
+        if (change.previousShop !== null) throw new Error("IMPORT_SHOP_CHANGED");
+        return;
+      }
+      const currentShop = parseFirestoreDocument(shopSchema, document.id, document.data());
+      if (
+        !currentShop
+        || change.previousShop === null
+        || JSON.stringify(stableValue(toFirestoreData(currentShop))) !== JSON.stringify(stableValue(toFirestoreData(change.previousShop)))
+      ) {
+        throw new Error("IMPORT_SHOP_CHANGED");
+      }
+    });
     const quarter = getQuarterKey(validMonth);
     const quarterMonths = getQuarterMonths(quarter);
     const otherMonthKeys = quarterMonths.filter(month => month !== validMonth);
@@ -129,11 +164,19 @@ export async function handleRegisterImport(importId: string, fileName: string, m
       supersededAt: value.createdAt,
       supersededBy: validImportId,
     }, { lastUpdateTime: document.updateTime }));
-    prepared.forEach(({ change, previousBonusSnapshot, previousQuarterlyBonusSnapshot, bonus, quarterly, bonusRef, quarterRef }) => {
+    prepared.forEach(({ change, previousBonusSnapshot, previousQuarterlyBonusSnapshot, bonus, quarterly, bonusRef, quarterRef }, index) => {
       const shopData = Object.fromEntries(Object.entries(change.importedShop).filter(([key]) => key !== "id"));
       const performanceData = Object.fromEntries(Object.entries(change.performance).filter(([key]) => key !== "id"));
-      const historyChange = { ...Object.fromEntries(Object.entries(change).filter(([key]) => key !== "performance")), ...(bonus && { previousBonusSnapshot, previousQuarterlyBonusSnapshot }) };
-      batch.set(doc(db, "shops", change.shopId), toFirestoreData(shopData));
+      const historyChange = storedImportChangeSchema.parse({
+        ...createImportChangeSnapshot(change, validMonth),
+        ...(bonus && { previousBonusSnapshot, previousQuarterlyBonusSnapshot }),
+      });
+      const currentShopDocument = currentShopDocuments[index];
+      if (currentShopDocument.exists) {
+        batch.update(currentShopDocument.ref, getShopImportUpdate(change.previousShop!, change.importedShop), { lastUpdateTime: currentShopDocument.updateTime });
+      } else {
+        batch.create(currentShopDocument.ref, toFirestoreData(shopData));
+      }
       batch.set(doc(db, "shops", change.shopId, "performance", change.performanceId), toFirestoreData(performanceData));
       batch.set(doc(db, "imports", validImportId, "changes", change.shopId), toFirestoreData(historyChange));
       if (bonus) batch.set(bonusRef, toFirestoreData(bonus));
@@ -144,6 +187,15 @@ export async function handleRegisterImport(importId: string, fileName: string, m
     await refreshDashboardSummaries({ shopIds: validChanges.map(change => change.shopId), months: [validMonth], performanceChanged: true, periodsChanged: true, importsChanged: true });
     return { success: true as const };
   } catch (error) {
+    if (error instanceof Error && error.message === "IMPORT_PERIOD_MISMATCH") {
+      return { success: false as const, error: "IMPORT_PERIOD_MISMATCH" };
+    }
+    if (isImportTooLarge(error)) return importTooLargeResult("register");
+    const shopAlreadyExists = typeof error === "object" && error !== null && "code" in error
+      && [6, "already-exists"].includes(error.code as string | number);
+    if (isImportConflict(error) || shopAlreadyExists || (error instanceof Error && error.message === "IMPORT_SHOP_CHANGED")) {
+      return { success: false as const, error: "IMPORT_SHOP_CHANGED" };
+    }
     return { success: false as const, error: mutationError("register the Excel import", error) };
   }
 }
@@ -191,7 +243,7 @@ export async function handleSupersedeImport(importId: string) {
       if (data.status !== "active") throw new Error("NOT_ACTIVE");
       const changeSnapshot = await transaction.get(reference.collection("changes")
         .select("shopId", "shopName").limit(151));
-      const changes = z.array(importChangeSchema.pick({ shopId: true, shopName: true }))
+      const changes = z.array(importChangeIdentitySchema.pick({ shopId: true, shopName: true }))
         .min(1).max(150).parse(changeSnapshot.docs.map(document => document.data()));
       const shopIds = [...new Set(changes.map(change => change.shopId))];
       await requireEditorForShops(shopIds);
@@ -234,19 +286,22 @@ export async function handleSupersedeImport(importId: string) {
 
 async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)["docs"][number]) {
     const data = importDocument.data() as Record<string, unknown>;
-    const changeSnapshot = await getDocs(collection(db, "imports", importDocument.id, "changes"));
-    const changes = z.array(importChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data())) as Array<z.infer<typeof importChangeSchema>>;
+    const month = monthSchema.parse(data.month);
+    const changeSnapshot = await getDocs(query(collection(db, "imports", importDocument.id, "changes"), limit(151)));
+    const changes = z.array(storedImportChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data()));
+    if (changes.some(change => "schemaVersion" in change && change.month !== month)) throw new Error("INVALID_IMPORT");
     await requireEditorForShops(changes.map(change => change.shopId));
-    const currentShops = await Promise.all(changes.map(change => getDocs(query(collection(db, "shops"), where(documentId(), "==", change.shopId), limit(1)))));
+    const currentShops = await Promise.all(changes.map(change => getDoc(doc(db, "shops", change.shopId))));
+    const currentShopData = currentShops.map(document => document.exists
+      ? parseFirestoreDocument(shopSchema, document.id, document.data())
+      : null);
     const changedAfterImport = changes.some((change, index) => {
-      const currentDocument = currentShops[index].docs[0];
-      if (!currentDocument) return true;
-      const current = parseFirestoreDocument(shopSchema, currentDocument.id, currentDocument.data());
-      return JSON.stringify(stableValue(toFirestoreData(current))) !== JSON.stringify(stableValue(toFirestoreData(change.importedShop)));
+      const current = currentShopData[index];
+      if (!current) return true;
+      return !isImportShopUnchanged(change, current as Shop);
     });
     if (changedAfterImport) throw new Error("CHANGED_AFTER_IMPORT");
     const actor = await getCurrentActor();
-    const month = monthSchema.parse(data.month);
     const importedAt = String(data.createdAt ?? "");
     const monthImports = await getDocs(query(collection(db, "imports"), where("month", "==", month)));
     const previousVersion = monthImports.docs
@@ -289,11 +344,11 @@ async function undoImport(importDocument: (Awaited<ReturnType<typeof getDocs>>)[
         if (legacySnapshots[index].bonus) batch.delete(doc(db, "shops", change.shopId, "bonusSnapshots", month));
         if (legacySnapshots[index].quarter) batch.delete(doc(db, "shops", change.shopId, "quarterlyBonusSnapshots", getQuarterKey(month)));
       }
-      if (change.previousShop) {
-        const previousData = omitId(change.previousShop);
-        batch.set(shopRef, toFirestoreData(previousData));
+      const previousShop = restoreImportShop(change, currentShopData[index] as Shop);
+      if (previousShop) {
+        batch.update(shopRef, getShopImportUpdate(currentShopData[index] as Shop, previousShop), { lastUpdateTime: currentShops[index].updateTime });
       } else {
-        batch.delete(shopRef);
+        batch.delete(shopRef, { lastUpdateTime: currentShops[index].updateTime });
       }
     });
     batch.update(importDocument.ref, { status: "undone", undoneAt: new Date().toISOString(), undoneBy: actor }, { lastUpdateTime: importDocument.updateTime });
@@ -320,6 +375,8 @@ export async function handleUndoImport(importId: string) {
     if (importDocument.id !== validImportId) throw new Error("NEWER_IMPORT_EXISTS");
     return await undoImport(importDocument);
   } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_IMPORT") return { success: false as const, error: "INVALID_IMPORT" };
+    if (isImportTooLarge(error)) return importTooLargeResult("undo");
     if (isImportConflict(error)) return { success: false as const, error: "CONFLICT" };
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "There is no active import to undo." };
     if (error instanceof Error && error.message === "NEWER_IMPORT_EXISTS") return { success: false as const, error: "Undo newer active imports first to preserve import order." };
@@ -337,8 +394,9 @@ export async function handleRemoveImport(importId: string) {
     if (!importDocument || importDocument.data().status !== "active") throw new Error("NO_IMPORT");
     const data = importDocument.data();
     const month = monthSchema.parse(data.month);
-    const changeSnapshot = await getDocs(collection(db, "imports", importDocument.id, "changes"));
-    const changes = z.array(importChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data())) as Array<z.infer<typeof importChangeSchema>>;
+    const changeSnapshot = await getDocs(query(collection(db, "imports", importDocument.id, "changes"), limit(151)));
+    const changes = z.array(storedImportChangeSchema).min(1).max(150).parse(changeSnapshot.docs.map(document => document.data()));
+    if (changes.some(change => "schemaVersion" in change && change.month !== month)) throw new Error("INVALID_IMPORT");
     await requireEditorForShops(changes.map(change => change.shopId));
 
     const currentVersionChecks = await Promise.all(changes.map(async change => {
@@ -375,6 +433,8 @@ export async function handleRemoveImport(importId: string) {
     await refreshDashboardSummaries({ shopIds: changes.map(change => change.shopId), months: [month], performanceChanged: true, periodsChanged: true, importsChanged: true });
     return { success: true as const, fileName: String(data.fileName ?? "Excel import"), restoredShopData: false };
   } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_IMPORT") return { success: false as const, error: "INVALID_IMPORT" };
+    if (isImportTooLarge(error)) return importTooLargeResult("remove");
     if (isImportConflict(error)) return { success: false as const, error: "CONFLICT" };
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "This import has already been removed or no longer exists." };
     if (error instanceof Error && error.message === "PARTIALLY_CURRENT") return { success: false as const, error: "This file is current for only some affected shops. Remove newer overlapping imports first." };
@@ -391,6 +451,8 @@ export async function handleUndoLatestImport() {
     if (!importDocument) throw new Error("NO_IMPORT");
     return await undoImport(importDocument);
   } catch (error) {
+    if (error instanceof Error && error.message === "INVALID_IMPORT") return { success: false as const, error: "INVALID_IMPORT" };
+    if (isImportTooLarge(error)) return importTooLargeResult("undo-latest");
     if (isImportConflict(error)) return { success: false as const, error: "CONFLICT" };
     if (error instanceof Error && error.message === "NO_IMPORT") return { success: false as const, error: "There is no active import to undo." };
     if (error instanceof Error && error.message === "CHANGED_AFTER_IMPORT") return { success: false as const, error: "The latest import cannot be undone because one or more affected shops changed afterward." };
