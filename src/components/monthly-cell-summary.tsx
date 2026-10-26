@@ -46,7 +46,7 @@ export function MonthlyCellSummary({ shopId, shopName, month, onOpenReport, peri
           { header: t("amount"), value: row => row.amount, width: 18, numberFormat: "0" },
           { header: t("note"), value: row => row.note, width: 36 },
         ],
-        fileName: `cell-summary-${month}`,
+        fileName: `notes-summary-${month}`,
         sheetName: t("title"),
         format: exportFormat,
       });

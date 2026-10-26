@@ -27,7 +27,8 @@ import { Header } from "@/components/header";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { AttendanceEditor } from "@/components/attendance-editor";
 import { ProcedureEntry } from "@/components/procedure-entry";
-import { attendanceQueryKey } from "@/lib/attendance";
+import { attendanceQueryKey, hasCompleteAttendance } from "@/lib/attendance";
+import { fetchAttendanceMonth } from "@/app/actions/attendance";
 import { dailyActivityMonthQueryKey, dailyActivitySettingsQueryKey } from "@/lib/daily-activity";
 import { fetchDailyActivitySettings } from "@/app/actions/daily-activity";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
@@ -92,7 +93,7 @@ export function DailyClosingClient() {
   const [attendanceDirty, setAttendanceDirty] = useState(false);
   const [procedureDirty, setProcedureDirty] = useState(false);
   const [monthlyBankDirty, setMonthlyBankDirty] = useState(false);
-  const [attendanceMinimized, setAttendanceMinimized] = useState(true);
+  const [attendanceMinimized, setAttendanceMinimized] = useState(false);
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
   const { selectedShop, actor, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
@@ -119,6 +120,13 @@ export function DailyClosingClient() {
   const closingPath = `/${locale}/shop/${shopId}/closing`;
   const activeScope = `${shopId}:${date}`;
   activeScopeRef.current = activeScope;
+  const attendanceQuery = useQuery({
+    queryKey: attendanceQueryKey(shopId, date.slice(0, 7)),
+    queryFn: () => fetchAttendanceMonth(shopId, date.slice(0, 7)),
+    enabled: Boolean(shopId) && view === "daily",
+  });
+  const attendanceComplete = !attendanceQuery.isPending && !attendanceQuery.isError && Boolean(attendanceQuery.data
+    && hasCompleteAttendance(attendanceQuery.data.config.staff, attendanceQuery.data.days.find(day => day.date === date)?.entries ?? []));
   const activitySettingsQuery = useQuery({
     queryKey: dailyActivitySettingsQueryKey(shopId, date.slice(0, 7)),
     queryFn: () => fetchDailyActivitySettings(shopId, date.slice(0, 7)),
@@ -312,7 +320,7 @@ export function DailyClosingClient() {
   };
 
   const finalize = async () => {
-    if (attendanceDirty || procedureDirty || activitySettingsUnavailable) return;
+    if (attendanceDirty || !attendanceComplete || procedureDirty || activitySettingsUnavailable) return;
     if (saveInFlightRef.current) return;
     const requestScope = activeScope;
     saveInFlightRef.current = true;
@@ -321,7 +329,13 @@ export function DailyClosingClient() {
       saveInFlightRef.current = false;
       setSubmitting(null);
     });
-    if (!result.success) return toast({ variant: "destructive", title: t("finalizeFailed"), description: result.error });
+    if (!result.success) {
+      if (result.error === "attendanceRequired") {
+        setAttendanceMinimized(false);
+        void queryClient.invalidateQueries({ queryKey: attendanceQueryKey(saveInput.shopId, saveInput.date.slice(0, 7)) });
+      }
+      return toast({ variant: "destructive", title: t("finalizeFailed"), description: result.error === "attendanceRequired" ? attendanceTranslations("missingReminder") : result.error });
+    }
     applySavedClosing(result.data, saveInput.shopId, "finalize");
     if (activeScopeRef.current === requestScope) toast({ title: t("finalized"), description: t("finalizedDescription") });
   };
@@ -466,6 +480,7 @@ export function DailyClosingClient() {
               <AttendanceEditor key={activeScope} shopId={shopId} month={date.slice(0, 7)} date={date} canEdit={actor.role !== "viewer"} onDirtyChange={setAttendanceDirty} />
             </CardContent>
             {attendanceDirty && <p className="px-3 pb-3 text-xs text-amber-700 dark:text-amber-300">{attendanceTranslations("saveBeforeFinalize")}</p>}
+            {!isFinalized && !attendanceDirty && attendanceQuery.data && !attendanceComplete && <p className="px-3 pb-3 text-xs text-amber-700 dark:text-amber-300">{attendanceTranslations("missingReminder")}</p>}
           </Card>
 
               <ProcedureEntry key={activeScope} shopId={shopId} date={date} disabled={isReadOnly || submitting !== null} onDirtyChange={setProcedureDirty} />
@@ -477,7 +492,7 @@ export function DailyClosingClient() {
 
 
 
-          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null || activitySettingsUnavailable} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || activitySettingsUnavailable || attendanceDirty || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
+          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null || activitySettingsUnavailable} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || activitySettingsUnavailable || attendanceDirty || !attendanceComplete || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
         </>}
         </div>
         <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>

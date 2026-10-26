@@ -518,15 +518,8 @@ async function loadDashboardPeriods(): Promise<DashboardPeriod[]> {
     });
   });
   if (!periods.size) periods.set(new Date().toISOString().slice(0, 7), { reportDate: null, importedAt: null });
-  return [...periods].map(([month, period]) => ({
-    month,
-    ...period,
-  })).sort((left, right) => {
-    if (left.importedAt && right.importedAt) return right.importedAt.localeCompare(left.importedAt) || right.month.localeCompare(left.month);
-    if (left.importedAt) return -1;
-    if (right.importedAt) return 1;
-    return right.month.localeCompare(left.month);
-  }).map(({ month, reportDate }) => ({ month, reportDate }));
+  return [...periods].map(([month, { reportDate }]) => ({ month, reportDate }))
+    .sort((left, right) => right.month.localeCompare(left.month));
 }
 
 async function performDashboardSummaryRefresh(input: z.infer<typeof refreshSchema>) {

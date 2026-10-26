@@ -10,6 +10,10 @@ export type AttendanceHistory = z.infer<typeof attendanceHistorySchema> & { id: 
 export type AttendanceHistoryDetail = z.infer<typeof attendanceHistoryDetailSchema>;
 export const attendanceQueryKey = (shopId: string, month: string) => ["attendance", shopId, month] as const;
 export const ATTENDANCE_CODES = ["1", "2", "1+2", "P", "LV", "R", "OTHER"] as const;
+export function hasCompleteAttendance(staff: readonly AttendanceStaff[], entries: readonly AttendanceEntry[]) {
+  const enteredIds = new Set(entries.filter(entry => entry.code !== "OTHER" || entry.note.trim()).map(entry => entry.staffId));
+  return staff.length > 0 && staff.every(person => enteredIds.has(person.id));
+}
 export function monthDates(month: string) {
   const [year, number] = month.split("-").map(Number);
   return Array.from({ length: new Date(Date.UTC(year, number, 0)).getUTCDate() }, (_, index) => `${month}-${String(index + 1).padStart(2, "0")}`);

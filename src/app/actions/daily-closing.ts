@@ -12,6 +12,7 @@ import { createActivity, mutationError, omitId, recordActivity, toFirestoreData 
 import { adminDb as db } from "@/lib/firebase-admin";
 import { requireRestrictedAccess } from "@/lib/restricted-access";
 import { measureServerOperation } from "@/lib/server/performance";
+import { hasCompleteAttendance } from "@/lib/attendance";
 
 const dailyClosingSaveSchema = dailyClosingInputSchema.extend({ expectedUpdatedAt: z.string().datetime().nullable() });
 type DailyClosingInput = z.infer<typeof dailyClosingSaveSchema>;
@@ -58,6 +59,10 @@ async function saveDailyClosing(input: DailyClosingInput, status: "draft" | "fin
     const existing = existingSnapshot.exists ? parseDailyClosingDocument(existingSnapshot.id, existingSnapshot.data()) : null;
     if (existing?.status === "finalized") throw new Error("CLOSING_FINALIZED");
     if ((existing?.updatedAt ?? null) !== value.expectedUpdatedAt) throw new Error("CLOSING_CONFLICT");
+    if (status === "finalized" && (!attendanceMonth || !attendance || attendance.date !== value.date
+      || !hasCompleteAttendance(attendanceMonth.staff, attendance.entries))) {
+      throw new Error("ATTENDANCE_REQUIRED");
+    }
     const existingCell = existing?.cell ?? { amount: 0, note: "" };
     if (actor.role !== "admin" && value.cell.note !== existingCell.note) {
       throw new Error("ADMIN_REQUIRED");
@@ -322,6 +327,9 @@ export async function handleFinalizeDailyClosing(input: DailyClosingInput) {
   try {
     return { success: true as const, data: await measureServerOperation("daily-closing.finalize", () => saveDailyClosing(input, "finalized")) };
   } catch (error) {
+    if (error instanceof Error && error.message === "ATTENDANCE_REQUIRED") {
+      return { success: false as const, error: "attendanceRequired" };
+    }
     if (error instanceof Error && error.message === "CLOSING_FINALIZED") {
       return { success: false as const, error: "This closing has already been finalized." };
     }
