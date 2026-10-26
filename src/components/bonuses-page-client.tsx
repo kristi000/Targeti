@@ -6,7 +6,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { BonusOverviewClient } from "@/components/bonus-overview-client";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useShop } from "@/components/shop-provider";
-import { formatReportingMonth } from "@/lib/reporting-month";
+import { formatReportingMonth, resolveReportingMonth } from "@/lib/reporting-month";
 import type { DashboardPeriod } from "@/app/dashboard-actions";
 
 export function BonusesPageClient({ periods }: { periods: DashboardPeriod[] }) {
@@ -17,7 +17,7 @@ export function BonusesPageClient({ periods }: { periods: DashboardPeriod[] }) {
   const { setSelectedDatasetId } = useShop();
   const months = useMemo(() => periods.map(period => ({ id: period.month, name: formatReportingMonth(period.month, locale) })), [periods, locale]);
   const requestedMonth = searchParams.get("month");
-  const month = months.some(item => item.id === requestedMonth) ? requestedMonth! : months[0]?.id ?? new Date().toISOString().slice(0, 7);
+  const month = resolveReportingMonth(periods, requestedMonth);
 
   useEffect(() => { setSelectedDatasetId(month); }, [month, setSelectedDatasetId]);
 

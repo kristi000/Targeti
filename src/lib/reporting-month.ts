@@ -1,5 +1,16 @@
 const REPORTING_MONTH_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
+export function getCurrentReportingMonth(): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    year: "numeric", month: "2-digit", timeZone: "Europe/Tirane",
+  }).formatToParts(new Date());
+  return `${parts.find(part => part.type === "year")!.value}-${parts.find(part => part.type === "month")!.value}`;
+}
+
+export function resolveReportingMonth(periods: readonly { month: string }[], requestedMonth?: string | null): string {
+  return periods.some(period => period.month === requestedMonth) ? requestedMonth! : getCurrentReportingMonth();
+}
+
 export function formatReportingMonth(month: string, locale: string, monthStyle: "long" | "short" = "long"): string {
   const match = REPORTING_MONTH_PATTERN.exec(month);
   if (!match) return month;

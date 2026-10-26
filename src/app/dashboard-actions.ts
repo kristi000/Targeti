@@ -15,6 +15,7 @@ import { getMonthlyRepresentatives, getOverviewPerformanceData, getPerformanceSh
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 import { measureServerOperation } from "@/lib/server/performance";
+import { getCurrentReportingMonth } from "@/lib/reporting-month";
 
 export type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 export type DashboardPeriod = { month: string; reportDate: string | null };
@@ -517,7 +518,8 @@ async function loadDashboardPeriods(): Promise<DashboardPeriod[]> {
       importedAt: item.createdAt,
     });
   });
-  if (!periods.size) periods.set(new Date().toISOString().slice(0, 7), { reportDate: null, importedAt: null });
+  const currentMonth = getCurrentReportingMonth();
+  if (!periods.has(currentMonth)) periods.set(currentMonth, { reportDate: null, importedAt: null });
   return [...periods].map(([month, { reportDate }]) => ({ month, reportDate }))
     .sort((left, right) => right.month.localeCompare(left.month));
 }

@@ -136,31 +136,20 @@ export function calculateDailyClosing(input: {
 }
 
 const DAILY_SUMMARY_METRIC_LABELS: Partial<Record<PerformanceMetric, string>> = {
-  newSim: "New sim",
-  newLine: "Gpon2play",
+  newSim: "New Prepaid",
+  newLine: "Fiber",
   migrations: "Migrime",
-  fixContractRenewal: "Sim turist",
-  mobileContractRenewal: "Mobile renewal",
-  newTv: "New TV",
-  newPostpaid: "New Postpaid",
+  fixContractRenewal: "New Postpaid",
+  mobileContractRenewal: "Rinovime Mobile",
+  newTv: "Homenet",
+  newPostpaid: "Rinovime Fix",
   device: "Device",
+  custom_mixmax: "MixMax",
 };
 
 function getDailySummaryMetricLabel(metric: PerformanceMetric, metricSettings?: MetricSettings) {
   return DAILY_SUMMARY_METRIC_LABELS[metric]
     || getCustomMetricLabel(metric, metricSettings);
-}
-
-function getDailySummaryMetricKey(label: string) {
-  const normalizedLabel = label
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLocaleLowerCase()
-    .replace(/[^a-z0-9]+/g, " ");
-
-  // These are two names used by existing configurations for the same activity.
-  return normalizedLabel === "sim turist" ? "aktivizime turist" : normalizedLabel;
 }
 
 export function createDailyClosingSummary(input: {
@@ -174,19 +163,8 @@ export function createDailyClosingSummary(input: {
   formatNumber: (value: number) => string;
   formatAmount: (value: number) => string;
 }) {
-  const includedMetrics: PerformanceMetric[] = [];
-  const includedLabels = new Set<string>();
-
-  for (const metric of input.metrics) {
-    if ((input.activities[metric] ?? 0) <= 0) continue;
-
-    const label = getDailySummaryMetricLabel(metric, input.metricSettings);
-    const key = getDailySummaryMetricKey(label);
-    if (includedLabels.has(key)) continue;
-
-    includedLabels.add(key);
-    includedMetrics.push(metric);
-  }
+  const includedMetrics = [...new Set(input.metrics)]
+    .filter(metric => (input.activities[metric] ?? 0) > 0);
 
   const activityLines = includedMetrics.map(metric => (
     `${getDailySummaryMetricLabel(metric, input.metricSettings)}:${input.formatNumber(input.activities[metric] ?? 0)}`

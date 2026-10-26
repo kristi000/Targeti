@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { DashboardRepresentativeRow } from "@/lib/dashboard-types";
 
+const representativePreviewLimit = 10;
+
 export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRepresentativeRow[]; month: string }) {
   const t = useTranslations("Dashboard");
   const locale = useLocale();
@@ -29,7 +31,7 @@ export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRep
       && (!normalizedQuery || `${rep.name} ${rep.shopName}`.toLocaleLowerCase(locale).includes(normalizedQuery))
     );
   }, [rows, query, effectiveShopId, locale]);
-  const visibleRepresentatives = expanded ? filteredRepresentatives : filteredRepresentatives.slice(0, 5);
+  const visibleRepresentatives = expanded ? filteredRepresentatives : filteredRepresentatives.slice(0, representativePreviewLimit);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -51,7 +53,7 @@ export function SalesRepresentativeRanking({ rows, month }: { rows: DashboardRep
         {!visibleRepresentatives.length && <div className="p-8 text-center text-sm text-muted-foreground">No representatives match these filters.</div>}
       </div>
 
-      {filteredRepresentatives.length > 5 && <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-4 py-3"><p className="text-sm text-muted-foreground">Showing {visibleRepresentatives.length} of {filteredRepresentatives.length}</p><Button type="button" variant="outline" size="sm" onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}{expanded ? "Show top 5" : "View all"}</Button></div>}
+      {filteredRepresentatives.length > representativePreviewLimit && <div className="flex items-center justify-between gap-3 border-t bg-muted/40 px-4 py-3"><p className="text-sm text-muted-foreground">{t("showingShops", { shown: visibleRepresentatives.length, total: filteredRepresentatives.length })}</p><Button type="button" variant="outline" size="sm" onClick={() => setExpanded(current => !current)}>{expanded ? <ChevronUp className="mr-2 h-4 w-4" /> : <ChevronDown className="mr-2 h-4 w-4" />}{expanded ? t("showTopShops", { count: representativePreviewLimit }) : t("viewAllShops")}</Button></div>}
     </div>
   );
 }

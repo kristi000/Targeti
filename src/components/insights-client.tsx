@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { dashboardPeriodsQueryOptions } from "@/lib/dashboard-queries";
 import { getInsightsPeriod, parseInsightsView, type InsightsPerformance, type InsightsPerformanceRow, type InsightsView } from "@/lib/insights";
 import { insightsPerformanceQueryKey } from "@/lib/query-keys";
-import { formatReportingMonth } from "@/lib/reporting-month";
+import { formatReportingMonth, resolveReportingMonth } from "@/lib/reporting-month";
 import { cn } from "@/lib/utils";
 
 type Entity = "shops" | "spvs" | "srs";
@@ -39,9 +39,7 @@ export function InsightsClient() {
   const periodsQuery = useQuery(dashboardPeriodsQueryOptions());
   const periods = useMemo(() => periodsQuery.data ?? [], [periodsQuery.data]);
   const requestedMonth = searchParams.get("month");
-  const activeMonth = periods.some(period => period.month === requestedMonth)
-    ? requestedMonth!
-    : periods[0]?.month ?? new Date().toISOString().slice(0, 7);
+  const activeMonth = resolveReportingMonth(periods, requestedMonth);
   const view = parseInsightsView(searchParams.get("view"));
   const period = getInsightsPeriod(activeMonth, view);
   const requestedEntity = searchParams.get("group");

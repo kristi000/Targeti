@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
+import { resolveReportingMonth } from "@/lib/reporting-month";
 import type { DashboardRow, DashboardSupervisorRow } from "@/lib/dashboard-types";
 import { dashboardPageQueryOptions, dashboardPeriodsQueryOptions } from "@/lib/dashboard-queries";
 import { dashboardViewQuery, readDashboardView, type DashboardView } from "@/lib/dashboard-navigation";
@@ -87,12 +87,8 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
 
   const queriesEnabled = canFetch && !bootstrapPending;
   const periodsQuery = useQuery({ ...dashboardPeriodsQueryOptions(), enabled: queriesEnabled });
-  const datasets = useMemo(() => (periodsQuery.data ?? []).map(period => ({
-    id: period.month,
-    name: period.reportDate ? formatReportingDate(period.reportDate, locale) : formatReportingMonth(period.month, locale),
-  })), [periodsQuery.data, locale]);
   const requestedMonth = view.month;
-  const activeDatasetId = datasets.some(dataset => dataset.id === requestedMonth) ? requestedMonth! : datasets[0]?.id ?? new Date().toISOString().slice(0, 7);
+  const activeDatasetId = resolveReportingMonth(periodsQuery.data ?? [], requestedMonth);
 
   const pageQuery = useQuery({
     ...dashboardPageQueryOptions({ ...view, month: activeDatasetId, search: debouncedSearch }),

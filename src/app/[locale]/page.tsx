@@ -1,3 +1,4 @@
+import { resolveReportingMonth } from "@/lib/reporting-month";
 
 import { DashboardClient } from "@/components/dashboard-client";
 import { Suspense } from "react";
@@ -43,9 +44,7 @@ export default async function DashboardPage({ params, searchParams }: { params: 
 async function HydratedDashboard({ parameters }: { parameters: Awaited<DashboardSearchParams> }) {
   const periods = await getDashboardPeriods();
   const view = readDashboardView({ get: name => first(parameters[name]) ?? null });
-  const month = periods.some(period => period.month === view.month)
-    ? view.month!
-    : periods[0]?.month ?? new Date().toISOString().slice(0, 7);
+  const month = resolveReportingMonth(periods, view.month);
   const queryClient = new QueryClient();
   queryClient.setQueryData(dashboardPeriodsQueryKey, periods);
   await queryClient.prefetchQuery(dashboardPageQueryOptions({ ...view, month }));

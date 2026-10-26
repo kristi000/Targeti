@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { useShop } from "@/components/shop-provider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
+import { formatReportingDate, formatReportingMonth, resolveReportingMonth } from "@/lib/reporting-month";
 import { dashboardPeriodsQueryOptions } from "@/lib/dashboard-queries";
 
 export function ReportingDateSelector() {
@@ -31,9 +31,7 @@ export function ReportingDateSelector() {
       : formatReportingMonth(period.month, locale),
   })), [periodsQuery.data, locale]);
   const requestedMonth = searchParams.get("month");
-  const activeMonth = periods.some(period => period.id === requestedMonth)
-    ? requestedMonth!
-    : periods[0]?.id;
+  const activeMonth = resolveReportingMonth(periodsQuery.data ?? [], requestedMonth);
 
   if (!activeMonth) return null;
 
