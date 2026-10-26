@@ -386,12 +386,12 @@ export const bonusSnapshotSchema = z.object({
     shopActuals: z.record(metricKeySchema, finiteNonNegativeNumber),
     representativeActuals: z.record(documentIdSchema, z.record(metricKeySchema, finiteNonNegativeNumber)),
   }).strict(),
-  manager: z.record(z.unknown()),
+  manager: z.record(z.string(), z.unknown()),
   representatives: z.array(z.object({
     id: documentIdSchema,
     name: z.string().trim().min(1).max(120),
     eligible: z.boolean(),
-    result: z.record(z.unknown()),
+    result: z.record(z.string(), z.unknown()),
   }).strict()).max(500),
 }).strict();
 
@@ -450,5 +450,5 @@ export const activityEventSchema = z.object({
   summary: z.string().trim().min(1).max(500),
   shopIds: z.array(documentIdSchema).max(500),
   shopNames: z.array(z.string().trim().min(1).max(120)).max(500),
-  metadata: z.record(z.union([z.string(), z.number().finite(), z.boolean()])).optional(),
+  metadata: z.record(z.string(), z.union([z.string(), z.number().finite(), z.boolean()])).optional(),
 }).strict();

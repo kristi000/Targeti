@@ -36,7 +36,7 @@ const shopSchema = z.object({
 const importedWorkbookSchema = z.object({
   shops: z.array(shopSchema).min(1),
   detectedMetrics: z.array(z.string().min(1)).min(1),
-  detectedMetricLabels: z.record(z.string().min(1)),
+  detectedMetricLabels: z.record(z.string(), z.string().min(1)),
   warnings: z.array(z.string()),
 });
 
