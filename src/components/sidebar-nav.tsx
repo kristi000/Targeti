@@ -1,6 +1,3 @@
-
-"use client";
-
 import {
   LayoutDashboard,
   Banknote,
@@ -9,7 +6,7 @@ import {
   Languages,
   LogOut,
 } from "lucide-react";
-import Link from "next/link";
+import Link from "@/lib/navigation";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import {
@@ -21,15 +18,15 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "./ui/button";
 import { SidebarActions } from "./sidebar-actions";
-import { useTranslations } from "next-intl";
-import { useLocale } from "next-intl";
+import { useTranslations } from "use-intl";
+import { useLocale } from "use-intl";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "@/lib/navigation";
 import { ReportingDateSelector } from "@/components/reporting-date-selector";
 import { ShopPageNav } from "@/components/shop-page-nav";
 import { useShop } from "@/components/shop-provider";

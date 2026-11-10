@@ -1,8 +1,6 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "@/lib/navigation";
+import { usePathname, useRouter, useSearchParams, replaceUrl } from "@/lib/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   type ColumnDef,
@@ -10,7 +8,7 @@ import {
   getCoreRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import {
   ArrowDown,
   ArrowUp,
@@ -103,7 +101,7 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
   const changeView = (updates: Partial<DashboardView>) => {
     const query = dashboardViewQuery({ ...view, month: activeDatasetId, ...updates });
     const href = `${pathname}?${query}`;
-    if (`${window.location.pathname}${window.location.search}` !== href) window.history.replaceState(null, "", href);
+    if (`${window.location.pathname}${window.location.search}` !== href) replaceUrl(href);
     rememberDashboardQuery(query);
   };
 

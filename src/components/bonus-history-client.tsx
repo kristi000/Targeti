@@ -1,14 +1,12 @@
-"use client";
-
 import { useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from "@/lib/navigation";
+import { usePathname } from "@/lib/navigation";
 import { useInfiniteQuery, useQueries, useQuery } from "@tanstack/react-query";
 import { type ColumnDef, flexRender, getCoreRowModel, useReactTable } from "@tanstack/react-table";
 import { ArrowLeft, ArrowUpRight, Download, Loader2, Sparkles } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 
-import { fetchBonusHistoryPage, fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/app/actions/bonus";
+import { fetchBonusHistoryPage, fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/server/actions/bonus";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
 import { AppSelect } from "@/components/ui/app-select";

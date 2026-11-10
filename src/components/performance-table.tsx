@@ -1,4 +1,3 @@
-﻿"use client";
 
 import { useCallback, useMemo, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ArrowDown, ArrowUp, ArrowUpDown, Gauge, Minus, Plus, RotateCcw } from "lucide-react";
@@ -13,7 +12,7 @@ import {
   type Target,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { getCustomMetricLabel } from "@/lib/metric-definitions";
 
 type Column = "metric" | "target" | "actual" | "achievement" | "forecast";

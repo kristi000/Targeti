@@ -1,11 +1,9 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
-import { useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { useSearchParams, replaceUrl } from "@/lib/navigation";
 
 import { BonusDashboardClient } from "@/components/bonus-dashboard-client";
 import { BonusPageLayout } from "@/components/bonus-page-layout";
@@ -63,14 +61,14 @@ export function BonusDashboardRoute({ shopId, requestedMonth, requestedQuarter, 
     url.searchParams.set("month", month);
     url.searchParams.delete("period");
     url.searchParams.delete("kind");
-    window.history.replaceState(null, "", url);
+    replaceUrl(url);
   };
   const selectView = (nextView: string) => {
     const url = new URL(window.location.href);
     if (nextView === "quarterly" || nextView === "history") url.searchParams.set("view", nextView);
     else url.searchParams.delete("view");
     if (nextView !== "history") { url.searchParams.delete("period"); url.searchParams.delete("kind"); }
-    window.history.replaceState(null, "", url);
+    replaceUrl(url);
   };
   const selectQuarter = (value: string) => {
     const url = new URL(window.location.href);
@@ -78,7 +76,7 @@ export function BonusDashboardRoute({ shopId, requestedMonth, requestedQuarter, 
     url.searchParams.set("quarter", value);
     url.searchParams.delete("period");
     url.searchParams.delete("kind");
-    window.history.replaceState(null, "", url);
+    replaceUrl(url);
   };
   const navigation = <TabsList aria-label={t("bonusPage")}>
     <TabsTrigger value="monthly">{t("monthlyBonuses")}</TabsTrigger>

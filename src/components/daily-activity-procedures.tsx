@@ -1,6 +1,4 @@
-"use client";
-
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { calculateDailyActivityImpact, type DailyActivityProcedureMetric } from "@/lib/daily-activity";
 import type { ProcedureSummary } from "@/lib/procedures";
 import type { MetricSettings, Target } from "@/lib/types";

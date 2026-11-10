@@ -1,9 +1,7 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Pencil, Plus, Save, Search, Store, Trash2, UserRoundCog } from "lucide-react";
 
-import { handleAddSupervisor, handleAssignSupervisor, handleDeleteSupervisor, handleUpdateSupervisor } from "@/app/actions/supervisors";
+import { handleAddSupervisor, handleAssignSupervisor, handleDeleteSupervisor, handleUpdateSupervisor } from "@/server/actions/supervisors";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";

@@ -1,12 +1,10 @@
-"use client";
-
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw, Search } from "lucide-react";
 
-import { fetchMonthlyUnsubscribes } from "@/app/actions/daily-closing";
+import { fetchMonthlyUnsubscribes } from "@/server/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { ReportExportButtons } from "@/components/report-export-buttons";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";

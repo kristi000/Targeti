@@ -1,10 +1,9 @@
-"use client";
 import { useEffect, useId, useState } from "react";
-import Link from "next/link";
-import { useLocale, useTranslations } from "next-intl";
+import Link from "@/lib/navigation";
+import { useLocale, useTranslations } from "use-intl";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, LoaderCircle, Plus } from "lucide-react";
-import { handleSaveProcedures } from "@/app/actions/procedures";
+import { handleSaveProcedures } from "@/server/actions/procedures";
 import { PROCEDURE_PRODUCTS, proceduresQueryKey } from "@/lib/procedures";
 import { dailyActivityMonthQueryKey } from "@/lib/daily-activity";
 import { getMonthlyRepresentatives, type SalesRepresentative } from "@/lib/types";

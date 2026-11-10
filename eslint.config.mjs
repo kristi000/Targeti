@@ -1,12 +1,16 @@
-import { FlatCompat } from "@eslint/eslintrc";
+import reactHooks from "eslint-plugin-react-hooks";
+import globals from "globals";
+import tseslint from "typescript-eslint";
 
-const compat = new FlatCompat({ baseDirectory: import.meta.dirname });
-
-const eslintConfig = [
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+export default tseslint.config(
   {
-    ignores: [".next/**", ".next-dev/**", ".codex-work/**", "node_modules/**", "next-env.d.ts"],
+    ignores: ["dist/**", ".codex-work/**", "node_modules/**"],
   },
-];
-
-export default eslintConfig;
+  ...tseslint.configs.recommended,
+  {
+    files: ["**/*.{ts,tsx,js,mjs}"],
+    plugins: { "react-hooks": reactHooks },
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: { ...reactHooks.configs.recommended.rules },
+  },
+);

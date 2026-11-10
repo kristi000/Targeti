@@ -1,6 +1,3 @@
-
-"use client";
-
 import { useState } from "react";
 import {
   Popover,
@@ -20,7 +17,7 @@ import { Check, ChevronsUpDown, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useShop } from "./shop-provider";
 import { type Shop } from "@/lib/types";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "use-intl";
 
 type ShopSwitcherProps = {
   shops: Shop[];

@@ -1,13 +1,10 @@
-
-'use client';
-
 import React, { createContext, useContext, useState, useMemo, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { type Shop, type Supervisor, type Target, type MetricWeightProfile, type ShopData } from '@/lib/types';
-import { handleAddShop, handleDeleteShop, handleUpdateShop } from "@/app/actions/shops";
-import { fetchShop, fetchShopData } from "@/app/actions/shop-data";
+import { handleAddShop, handleDeleteShop, handleUpdateShop } from "@/server/actions/shops";
+import { fetchShop, fetchShopData } from "@/server/actions/shop-data";
 import { useToast } from '@/hooks/use-toast';
-import { useTranslations } from 'next-intl';
+import { useTranslations } from "use-intl";
 import type { AppActor } from '@/lib/auth-types';
 import { dashboardInsightsQueryKey, dashboardPeriodsQueryKey, insightsPerformanceQueryKey, performanceMonthQueryKey, shopPerformanceIndexQueryKey, shopPerformanceMonthQueryKey, shopPerformanceQueryKey } from '@/lib/query-keys';
 

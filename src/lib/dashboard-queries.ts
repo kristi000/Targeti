@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { fetchDashboardPage, fetchDashboardPeriods } from "@/app/dashboard-actions";
+import { fetchDashboardPage, fetchDashboardPeriods } from "@/server/actions/dashboard";
 import { dashboardPageQueryKey, dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import type { DashboardView } from "@/lib/dashboard-navigation";
 

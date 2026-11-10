@@ -1,6 +1,4 @@
-"use client";
-
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { RestrictedAccessPage } from "@/components/restricted-access";
 
 export function BonusAccessGate() {

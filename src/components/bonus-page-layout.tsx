@@ -1,5 +1,3 @@
-"use client";
-
 import type { ReactNode } from "react";
 import { Header } from "@/components/header";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";

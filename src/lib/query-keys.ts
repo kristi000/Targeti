@@ -1,6 +1,7 @@
 import type { DashboardSortKey } from "@/lib/dashboard-types";
 import { getInsightsPeriod, type InsightsView } from "@/lib/insights";
 
+export const bootstrapQueryKey = ["app-bootstrap"] as const;
 export const dashboardPeriodsQueryKey = ["dashboard-periods"] as const;
 
 export function dashboardPageQueryKey(input: {

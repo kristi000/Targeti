@@ -1,7 +1,7 @@
 import "server-only";
 
 import { requireEditorForShops, requireShopAccess } from "@/lib/access";
-import { createActivity, toFirestoreData } from "@/app/actions/shared";
+import { createActivity, toFirestoreData } from "@/server/actions/shared";
 import { aggregateDailyActivity, dailyActivityDaySchema, dailyActivityMonthSchema, dailyActivityRequestSchema, dailyActivitySettingsSchema, saveDailyActivitySettingsSchema, type DailyActivityMonth, type DailyActivitySettings, type SaveDailyActivitySettingsInput } from "@/lib/daily-activity";
 import { adminDb as db, documentId } from "@/lib/firebase-admin";
 import { shopSchema } from "@/lib/persistence-schemas";

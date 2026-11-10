@@ -1,9 +1,8 @@
-"use client";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { LoaderCircle, Undo2 } from "lucide-react";
-import { fetchDeletedProcedures, handleRestoreProcedures } from "@/app/actions/procedures";
+import { fetchDeletedProcedures, handleRestoreProcedures } from "@/server/actions/procedures";
 import { deletedProceduresQueryKey, proceduresQueryKey } from "@/lib/procedures";
 import { dailyActivityMonthQueryKey } from "@/lib/daily-activity";
 import { ProcedureStatus } from "@/components/procedure-status";

@@ -1,11 +1,9 @@
-"use client";
-
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { ArrowUpRight, RefreshCw } from "lucide-react";
 
-import { fetchMonthlyCellSummary } from "@/app/actions/daily-closing";
+import { fetchMonthlyCellSummary } from "@/server/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { ReportExportButtons } from "@/components/report-export-buttons";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";

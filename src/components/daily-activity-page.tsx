@@ -1,11 +1,9 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { useRouter } from "@/lib/navigation";
 import { Calculator, LoaderCircle, Pencil, RefreshCw, Save, X } from "lucide-react";
-import { fetchDailyActivityMonth, saveDailyActivitySettings } from "@/app/actions/daily-activity";
+import { fetchDailyActivityMonth, saveDailyActivitySettings } from "@/server/actions/daily-activity";
 import { Header } from "@/components/header";
 import { DailyActivityProcedures } from "@/components/daily-activity-procedures";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";

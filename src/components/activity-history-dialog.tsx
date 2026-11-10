@@ -1,9 +1,7 @@
-"use client";
-
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { AlertCircle, History, Loader2, MapPin } from "lucide-react";
 
-import { fetchActivityPage } from "@/app/actions/activity";
+import { fetchActivityPage } from "@/server/actions/activity";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 

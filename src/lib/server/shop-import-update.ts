@@ -1,7 +1,7 @@
 import "server-only";
 
 import { deleteField } from "@/lib/firebase-admin";
-import { stableValue, toFirestoreData } from "@/app/actions/shared";
+import { stableValue, toFirestoreData } from "@/server/actions/shared";
 import type { Shop } from "@/lib/types";
 
 const sameValue = (left: unknown, right: unknown) =>

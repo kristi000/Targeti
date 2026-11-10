@@ -1,11 +1,9 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BriefcaseBusiness, CheckCircle2, Loader2, Users } from "lucide-react";
 import { format } from "date-fns";
-import { useLocale, useTranslations } from "next-intl";
-import { fetchBonusSnapshot } from "@/app/actions/bonus";
+import { useLocale, useTranslations } from "use-intl";
+import { fetchBonusSnapshot } from "@/server/actions/bonus";
 import { ManagerBonusCard } from "@/components/manager-bonus-card";
 import { RepresentativeBonusCards } from "@/components/representative-bonus-cards";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

@@ -1,13 +1,11 @@
-"use client";
-
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Loader2, RotateCcw, Upload } from "lucide-react";
 import { format, getDaysInMonth, parseISO } from "date-fns";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useTranslations } from "next-intl";
-import { handleAllocateShopId } from "@/app/actions/shops";
-import { handlePrepareRepresentativeImport } from "@/app/actions/representatives";
-import { handleRegisterImport, handleUndoLatestImport } from "@/app/actions/imports";
+import { useTranslations } from "use-intl";
+import { handleAllocateShopId } from "@/server/actions/shops";
+import { handlePrepareRepresentativeImport } from "@/server/actions/representatives";
+import { handleRegisterImport, handleUndoLatestImport } from "@/server/actions/imports";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";

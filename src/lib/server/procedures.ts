@@ -1,4 +1,5 @@
 import "server-only";
+
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { adminDb as db, documentId } from "@/lib/firebase-admin";
@@ -7,7 +8,7 @@ import { attendanceMonthSchema, procedureFieldsSchema, procedureRecordSchema, pr
 import { adjustProcedureSummary, EMPTY_PROCEDURE_SUMMARY, procedureProductStatus, type ProcedureFilter, type ProcedureRecord, type ProcedureSort, type ProcedureSummary, type ProceduresPage } from "@/lib/procedures";
 import { groupProcedureUserTotals, resolveProcedureUserName } from "@/lib/procedure-users";
 import { getMonthlyRepresentatives, type SalesRepresentative } from "@/lib/types";
-import { createActivity, toFirestoreData } from "@/app/actions/shared";
+import { createActivity, toFirestoreData } from "@/server/actions/shared";
 
 export const procedureCursorSchema = z.string().regex(/^[01]-[a-zA-Z0-9-]{1,120}$/);
 export const saveProceduresSchema = z.object({

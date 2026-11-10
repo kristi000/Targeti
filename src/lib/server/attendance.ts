@@ -1,11 +1,12 @@
 import "server-only";
+
 import { z } from "zod";
 import { adminDb as db } from "@/lib/firebase-admin";
 import { requireEditorForShops, requireShopAccess } from "@/lib/access";
 import { attendanceDateSchema, attendanceEntrySchema, attendanceDaySchema, attendanceMonthConfigSchema, attendanceMonthSchema, attendanceRosterSchema, attendanceStaffSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
 import { getMonthlyRepresentatives, type Shop } from "@/lib/types";
 import { monthDates, type AttendanceConfig, type AttendanceDay, type AttendanceMonth } from "@/lib/attendance";
-import { createActivity, toFirestoreData } from "@/app/actions/shared";
+import { createActivity, toFirestoreData } from "@/server/actions/shared";
 import { attendanceHistorySchema, attendanceHistoryDetailSchema, attendanceHistoryIdSchema } from "@/lib/persistence-schemas";
 import { attendanceDayCorrections, attendanceRosterCorrections } from "@/lib/attendance-history";
 import { documentId } from "@/lib/firebase-admin";

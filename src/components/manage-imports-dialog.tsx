@@ -1,11 +1,9 @@
-"use client";
-
 import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Archive, ChevronLeft, ChevronRight, FileSpreadsheet, Loader2, Trash2, X } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 
-import { fetchImportHistoryPage, handleRemoveImport, handleSupersedeImport } from "@/app/actions/imports";
+import { fetchImportHistoryPage, handleRemoveImport, handleSupersedeImport } from "@/server/actions/imports";
 import type { ImportHistoryItem } from "@/lib/import-history";
 import { dashboardPeriodsQueryKey } from "@/lib/query-keys";
 import { useShop } from "@/components/shop-provider";

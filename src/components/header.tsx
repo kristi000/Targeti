@@ -1,9 +1,6 @@
-
-"use client";
-
 import { LogOut, ShieldCheck, UserRound, Users } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "@/lib/navigation";
 import { useShop } from "@/components/shop-provider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";

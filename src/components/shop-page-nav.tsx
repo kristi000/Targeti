@@ -1,10 +1,8 @@
-"use client";
-
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/lib/navigation";
 import { Activity, ArrowLeft, BarChart3, BadgeDollarSign, CalendarRange, ClipboardCheck, ListChecks, KeyRound, Smartphone, Store, UserMinus, Wallet } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { usePathname, useSearchParams } from "@/lib/navigation";
 import { closingViewHref, getClosingView, type ClosingView } from "@/lib/closing-navigation";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { useRestrictedAccess } from "@/hooks/use-restricted-access";

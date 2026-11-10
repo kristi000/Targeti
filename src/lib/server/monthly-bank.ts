@@ -9,7 +9,7 @@ import {
   shopIdSchema,
 } from "@/lib/persistence-schemas";
 import { emptyMonthlyBankReconciliation, saveMonthlyBankReconciliationSchema, type MonthlyBankReconciliation } from "@/lib/monthly-bank";
-import { createActivity, toFirestoreData } from "@/app/actions/shared";
+import { createActivity, toFirestoreData } from "@/server/actions/shared";
 
 export const saveMonthlyBankSchema = saveMonthlyBankReconciliationSchema;
 

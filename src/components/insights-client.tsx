@@ -1,14 +1,12 @@
-"use client";
-
 import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import Link from "@/lib/navigation";
+import { usePathname, useRouter, useSearchParams, replaceUrl } from "@/lib/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { type Column, type ColumnDef, type SortingState, flexRender, getCoreRowModel, getSortedRowModel, useReactTable } from "@tanstack/react-table";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { ArrowDown, ArrowUp, ArrowUpDown, Building2, CalendarDays, CircleDollarSign, Gauge, Lightbulb, Loader2, RefreshCw, Search, Users, UserRoundCog, type LucideIcon } from "lucide-react";
 
-import { fetchInsightsPerformance } from "@/app/insights-actions";
+import { fetchInsightsPerformance } from "@/server/actions/insights";
 import { AppSelect } from "@/components/ui/app-select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -74,7 +72,7 @@ export function InsightsClient() {
   const changeEntity = (next: string) => {
     const parameters = new URLSearchParams(searchParams.toString());
     parameters.set("group", next);
-    window.history.replaceState(null, "", `${pathname}?${parameters}`);
+    replaceUrl(`${pathname}?${parameters}`);
   };
   const retry = () => { void periodsQuery.refetch(); void insightsQuery.refetch(); };
   const busy = navigating || insightsQuery.isFetching;

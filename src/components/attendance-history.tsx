@@ -1,10 +1,8 @@
-"use client";
-
 import { useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { ChevronDown, ChevronUp, History, LoaderCircle } from "lucide-react";
-import { fetchAttendanceHistory, fetchAttendanceHistoryDetails, fetchAttendanceMonth } from "@/app/actions/attendance";
+import { fetchAttendanceHistory, fetchAttendanceHistoryDetails, fetchAttendanceMonth } from "@/server/actions/attendance";
 import { attendanceQueryKey, attendanceText, type AttendanceHistory } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";

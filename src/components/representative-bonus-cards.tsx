@@ -1,7 +1,5 @@
-"use client";
-
 import { Banknote, TrendingUp, User } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { calculateRepresentativeBonus } from "@/lib/sales-representative-bonus";
 import type { MetricSettings, SalesRepresentative } from "@/lib/types";

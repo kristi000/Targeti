@@ -1,10 +1,8 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Eye, EyeOff, Loader2, RotateCcw, Search, UserRoundCog, Users } from "lucide-react";
 
-import { handleHideRepresentatives, handleUnhideRepresentatives } from "@/app/actions/representatives";
+import { handleHideRepresentatives, handleUnhideRepresentatives } from "@/server/actions/representatives";
 import { useShop } from "@/components/shop-provider";
 import {
   AlertDialog,

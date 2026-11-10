@@ -1,11 +1,10 @@
-"use client";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { useLocale, useTranslations } from "next-intl";
-import { useRouter } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { useRouter } from "@/lib/navigation";
 import { ArrowDown, ArrowUp, ArrowUpDown, FileSpreadsheet, LoaderCircle, RefreshCw, Save, Trash2, Undo2, X } from "lucide-react";
-import { fetchProcedures, handleSaveProcedures, handleDeleteProcedures, handleRestoreProcedures } from "@/app/actions/procedures";
+import { fetchProcedures, handleSaveProcedures, handleDeleteProcedures, handleRestoreProcedures } from "@/server/actions/procedures";
 import { DeletedProceduresDialog } from "@/components/deleted-procedures-dialog";
 import { ProcedureStatus } from "@/components/procedure-status";
 import { ProcedureEntry } from "@/components/procedure-entry";

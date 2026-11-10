@@ -1,10 +1,6 @@
-"use client";
-
 import { useCallback, useEffect, useRef } from "react";
-import { useReportWebVitals } from "next/web-vitals";
+import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from "web-vitals";
 import { getPerformanceRoute, performanceMetricNames, type PerformanceMetricSample } from "@/lib/performance-metrics";
-
-type WebVital = Parameters<Parameters<typeof useReportWebVitals>[0]>[0];
 
 export function PerformanceVitals() {
   // Web Vitals describe the document load, not subsequent client navigations.
@@ -30,7 +26,7 @@ export function PerformanceVitals() {
     }).catch(() => undefined);
   }, []);
 
-  const report = useCallback((metric: WebVital) => {
+  const report = useCallback((metric: Metric) => {
     if (!(performanceMetricNames as readonly string[]).includes(metric.name) || !Number.isFinite(metric.value)) return;
     if (initialRoute.current === null) {
       const navigation = performance.getEntriesByType("navigation")[0];
@@ -46,7 +42,15 @@ export function PerformanceVitals() {
     if (timer.current === null) timer.current = setTimeout(flush, 5000);
   }, [flush]);
 
-  useReportWebVitals(report);
+  useEffect(() => {
+    // web-vitals keeps its observers for the page lifetime; register once.
+    onCLS(report);
+    onFCP(report);
+    onINP(report);
+    onLCP(report);
+    onTTFB(report);
+  }, [report]);
+
   useEffect(() => {
     const onVisibilityChange = () => { if (document.visibilityState === "hidden") flush(); };
     window.addEventListener("pagehide", flush);

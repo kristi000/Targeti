@@ -1,6 +1,5 @@
-"use client";
 import { Check, Clock, X } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "use-intl";
 import { PROCEDURE_STATUSES, type ProcedureFields } from "@/lib/procedures";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
