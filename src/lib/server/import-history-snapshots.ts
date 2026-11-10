@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { toFirestoreData } from "@/app/actions/shared";
+import { toFirestoreData } from "@/server/actions/shared";
 import { bonusSnapshotSchema, monthSchema, quarterlyBonusSnapshotSchema, shopIdSchema, shopSchema } from "@/lib/persistence-schemas";
 import { getQuarterKey, type Shop } from "@/lib/types";
 

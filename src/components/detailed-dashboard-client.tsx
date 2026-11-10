@@ -1,11 +1,9 @@
-"use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import Link from "@/lib/navigation";
 import { ArrowLeft, Banknote, ClipboardCheck, Loader2, MessageSquareText, Pencil, RotateCcw, Save, TrendingUp, Trophy, Users } from "lucide-react";
 import { format, isSameMonth, parseISO } from "date-fns";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { Header } from "@/components/header";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { PerformanceTable } from "@/components/performance-table";
@@ -19,7 +17,7 @@ import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getForecastDate, projectMetrics } from "@/lib/forecast";
 import { getActivePerformanceData, getMonthlyRepresentatives, getPerformanceDatasetId, getPerformanceMonthsByImportRecency, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceIndexEntry, type PerformanceMetric, type RepPerformanceData } from "@/lib/types";
 import { formatReportingDate, formatReportingMonth } from "@/lib/reporting-month";
-import { handleRevertAchievementOverrides, handleSaveAchievementOverrides } from "@/app/actions/achievements";
+import { handleRevertAchievementOverrides, handleSaveAchievementOverrides } from "@/server/actions/achievements";
 import { shopPerformanceIndexQueryOptions, shopPerformanceMonthQueryOptions } from "@/lib/performance-queries";
 import { useToast } from "@/hooks/use-toast";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";

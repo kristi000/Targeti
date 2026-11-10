@@ -1,8 +1,6 @@
-"use client";
-
 import { useMemo, useState } from "react";
-import Link from "next/link";
-import { useLocale, useTranslations } from "next-intl";
+import Link from "@/lib/navigation";
+import { useLocale, useTranslations } from "use-intl";
 import { ChevronDown, ChevronUp, Search } from "lucide-react";
 
 import { Button } from "@/components/ui/button";

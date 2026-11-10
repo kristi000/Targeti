@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cache } from "react";
+import { cache } from "@/server/request-context";
 import { adminDb, collection, getDocs } from "@/lib/firebase-admin";
 import {
   metricWeightProfileSchema,

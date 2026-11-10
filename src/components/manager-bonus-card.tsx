@@ -1,7 +1,5 @@
-"use client";
-
 import { Banknote, BriefcaseBusiness, TrendingUp } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import type { calculateManagerBonus } from "@/lib/manager-bonus";
 import type { MetricSettings } from "@/lib/types";

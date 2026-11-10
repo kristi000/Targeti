@@ -1,8 +1,6 @@
-"use client";
-
 import { useEffect } from "react";
-import Link from "next/link";
-import { useTranslations } from "next-intl";
+import Link from "@/lib/navigation";
+import { useTranslations } from "use-intl";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 import { DetailedDashboardClient } from "@/components/detailed-dashboard-client";

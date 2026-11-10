@@ -1,9 +1,7 @@
-"use client";
-
 import { useMemo } from "react";
 import { CalendarDays } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { usePathname, useRouter, useSearchParams, replaceUrl } from "@/lib/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { useShop } from "@/components/shop-provider";
@@ -45,7 +43,7 @@ export function ReportingDateSelector() {
     parameters.delete("afterName");
     parameters.delete("afterId");
     const href = `${pathname}?${parameters.toString()}`;
-    if (isDashboard) window.history.replaceState(null, "", href);
+    if (isDashboard) replaceUrl(href);
     else router.replace(href, { scroll: false });
     setSelectedDatasetId(month);
   };

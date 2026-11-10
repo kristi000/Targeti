@@ -1,7 +1,6 @@
 import "server-only";
 
-import { cache } from "react";
-import { cookies } from "next/headers";
+import { cache, requestCookie } from "@/server/request-context";
 import { SESSION_COOKIE_NAME } from "@/lib/auth-constants";
 import { getActorForSession } from "@/lib/local-auth";
 import type { AppActor } from "@/lib/auth-types";
@@ -9,7 +8,7 @@ import type { AppActor } from "@/lib/auth-types";
 export type { AppActor, AppRole } from "@/lib/auth-types";
 
 export const getCurrentActor = cache(async (): Promise<AppActor> => {
-  const sessionCookie = (await cookies()).get(SESSION_COOKIE_NAME)?.value;
+  const sessionCookie = requestCookie(SESSION_COOKIE_NAME);
   if (!sessionCookie) throw new Error("UNAUTHENTICATED");
   const actor = await getActorForSession(sessionCookie);
   if (!actor) throw new Error("UNAUTHENTICATED");

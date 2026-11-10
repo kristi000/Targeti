@@ -1,10 +1,8 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import { ArrowDown, ArrowUp, CirclePlus, CopyPlus, Loader2, Save, SlidersHorizontal, Trash2 } from "lucide-react";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "use-intl";
 
-import { handleAssignWeightProfile, handleCreateWeightProfile, handleDeleteWeightProfile, handleUpdateWeightProfile } from "@/app/actions/weight-profiles";
+import { handleAssignWeightProfile, handleCreateWeightProfile, handleDeleteWeightProfile, handleUpdateWeightProfile } from "@/server/actions/weight-profiles";
 import { Button } from "@/components/ui/button";
 import { AppSelect } from "@/components/ui/app-select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";

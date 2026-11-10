@@ -1,8 +1,5 @@
-
-"use client";
-
 import { useState, useMemo } from "react";
-import dynamic from "next/dynamic";
+import dynamic from "@/lib/dynamic";
 import {
   Settings,
   Check,
@@ -48,8 +45,8 @@ import {
 } from "@/lib/types";
 import { METRIC_WEIGHTS } from "@/lib/data";
 import { useShop } from "./shop-provider";
-import { usePathname } from "next/navigation";
-import { useLocale, useTranslations } from "next-intl";
+import { usePathname } from "@/lib/navigation";
+import { useLocale, useTranslations } from "use-intl";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./ui/accordion";
 import { getEqualRepresentativeTargets, roundRepresentativeTargets } from "@/lib/representative-targets";
 import { formatReportingMonth } from "@/lib/reporting-month";

@@ -1,7 +1,7 @@
 import { queryOptions } from "@tanstack/react-query";
 
-import { fetchShopPerformanceForMonth, fetchShopPerformanceIndex } from "@/app/actions/shop-data";
-import { fetchPerformanceDataForMonth } from "@/app/dashboard-actions";
+import { fetchShopPerformanceForMonth, fetchShopPerformanceIndex } from "@/server/actions/shop-data";
+import { fetchPerformanceDataForMonth } from "@/server/actions/dashboard";
 import { performanceMonthQueryKey, shopPerformanceIndexQueryKey, shopPerformanceMonthQueryKey } from "@/lib/query-keys";
 
 export const performanceStaleTime = 60_000;

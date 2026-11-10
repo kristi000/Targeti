@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>D-one</title>
+    <meta name="description" content="Manage shop performance, bonuses, daily closing, and staff shifts." />
+    <meta name="apple-mobile-web-app-title" content="D-one" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <script>
+      // Dark is the default theme; apply the saved choice before first paint.
+      if (!/(?:^|;\s*)d-one-theme=light(?:;|$)/.test(document.cookie)) document.documentElement.classList.add("dark");
+    </script>
+  </head>
+  <body class="font-body antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

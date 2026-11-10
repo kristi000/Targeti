@@ -1,11 +1,9 @@
-"use client";
-
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw, Search, Pencil, CheckCircle2, RotateCcw, Save } from "lucide-react";
-import { fetchMonthlyDebts, handleUpdateDebt } from "@/app/actions/daily-closing";
+import { fetchMonthlyDebts, handleUpdateDebt } from "@/server/actions/daily-closing";
 import { Button } from "@/components/ui/button";
 import { ReportExportButtons } from "@/components/report-export-buttons";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";

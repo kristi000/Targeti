@@ -1,11 +1,9 @@
-"use client";
-
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import dynamic from "next/dynamic";
+import dynamic from "@/lib/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { useLocale, useTranslations } from "next-intl";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { useRouter, useSearchParams } from "@/lib/navigation";
 import {
   CheckCircle2,
   ChevronDown,
@@ -22,15 +20,15 @@ import {
   Trash2,
 } from "lucide-react";
 
-import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/app/actions/daily-closing";
+import { fetchDailyClosing, handleFinalizeDailyClosing, handleReopenDailyClosing, handleSaveDailyClosing } from "@/server/actions/daily-closing";
 import { Header } from "@/components/header";
 import { ShopPageToolbar } from "@/components/shop-page-toolbar";
 import { AttendanceEditor } from "@/components/attendance-editor";
 import { ProcedureEntry } from "@/components/procedure-entry";
 import { attendanceQueryKey, hasCompleteAttendance } from "@/lib/attendance";
-import { fetchAttendanceMonth } from "@/app/actions/attendance";
+import { fetchAttendanceMonth } from "@/server/actions/attendance";
 import { dailyActivityMonthQueryKey, dailyActivitySettingsQueryKey } from "@/lib/daily-activity";
-import { fetchDailyActivitySettings } from "@/app/actions/daily-activity";
+import { fetchDailyActivitySettings } from "@/server/actions/daily-activity";
 import { RestrictedAccessDialog } from "@/components/restricted-access";
 import { closingMonthSchema, monthlyCellQueryKey, monthlyClosingQueryKey, monthlyDebtsQueryKey, monthlyUnsubscribesQueryKey } from "@/lib/monthly-closing";
 import { useShop } from "@/components/shop-provider";

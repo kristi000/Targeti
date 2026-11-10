@@ -1,9 +1,8 @@
-"use client";
 import { memo, useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { ArrowLeft, ArrowRight, BriefcaseBusiness, ChevronDown, LoaderCircle, Plus, RotateCcw, Save, X } from "lucide-react";
-import { fetchAttendanceMonth, handleSaveAttendance } from "@/app/actions/attendance";
+import { fetchAttendanceMonth, handleSaveAttendance } from "@/server/actions/attendance";
 import { ATTENDANCE_CODES, attendanceQueryKey, monthDates, type AttendanceEntry, type AttendanceMonth, type AttendanceStaff } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
 import { AppSelect, type AppSelectOption } from "@/components/ui/app-select";

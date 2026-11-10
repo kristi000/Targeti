@@ -1,12 +1,10 @@
-"use client";
-
 import { useMemo } from "react";
 import { User } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PerformanceTable } from "@/components/performance-table";
 import { calculateTotalAchievement, cn } from "@/lib/utils";
 import { getMetricOrder, type MetricSettings, type PerformanceData, type PerformanceMetric, type SalesRepresentative, type Target } from "@/lib/types";
-import { useTranslations } from "next-intl";
+import { useTranslations } from "use-intl";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
 import { projectMetrics } from "@/lib/forecast";
 

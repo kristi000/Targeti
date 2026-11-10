@@ -1,12 +1,10 @@
-"use client";
-
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/lib/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getCoreRowModel, getPaginationRowModel, getSortedRowModel, useReactTable, flexRender, type ColumnDef, type SortingState } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown, BriefcaseBusiness, ChevronLeft, ChevronRight, FileSpreadsheet, Loader2, Users } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
-import { buildBonusOverviewBatch } from "@/app/actions/bonus-overview";
+import { useLocale, useTranslations } from "use-intl";
+import { buildBonusOverviewBatch } from "@/server/actions/bonus-overview";
 import type { BonusOverviewRow } from "@/lib/bonus-overview-index";
 import type { AllTimeBonusRow, BonusOverviewMonth } from "@/lib/server/bonus-overview-data";
 import { Button } from "@/components/ui/button";

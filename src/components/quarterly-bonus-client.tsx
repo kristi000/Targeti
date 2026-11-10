@@ -1,10 +1,8 @@
-"use client";
-
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Loader2 } from "lucide-react";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { format } from "date-fns";
-import { fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/app/actions/bonus";
+import { fetchBonusSnapshot, fetchQuarterlyBonusSnapshot } from "@/server/actions/bonus";
 import { useShop } from "@/components/shop-provider";
 import { shopPerformanceMonthQueryOptions } from "@/lib/performance-queries";
 import { bonusSnapshotQueryKey, quarterlyBonusSnapshotQueryKey } from "@/lib/query-keys";

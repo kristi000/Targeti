@@ -1,11 +1,9 @@
-"use client";
-
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLocale, useTranslations } from "next-intl";
+import { useLocale, useTranslations } from "use-intl";
 import { LoaderCircle, Plus, Save, Trash2, X } from "lucide-react";
 
-import { fetchMonthlyBankReconciliation, saveMonthlyBankReconciliation } from "@/app/actions/monthly-bank";
+import { fetchMonthlyBankReconciliation, saveMonthlyBankReconciliation } from "@/server/actions/monthly-bank";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SpreadsheetTable } from "@/components/ui/spreadsheet-table";

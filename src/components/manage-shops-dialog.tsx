@@ -1,5 +1,3 @@
-"use client";
-
 import { useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -17,8 +15,8 @@ import {
   Trash2,
   Users,
 } from "lucide-react";
-import { useTranslations } from "next-intl";
-import { handleApplyMetricWeightsToShops, handleRemoveMetricFromShops, handleRestoreMetricToShops } from "@/app/actions/metric-settings";
+import { useTranslations } from "use-intl";
+import { handleApplyMetricWeightsToShops, handleRemoveMetricFromShops, handleRestoreMetricToShops } from "@/server/actions/metric-settings";
 import {
   AlertDialog,
   AlertDialogAction,

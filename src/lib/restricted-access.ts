@@ -1,8 +1,8 @@
 import "server-only";
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
 import { SESSION_COOKIE_NAME } from "@/lib/auth-constants";
+import { requestCookie } from "@/server/request-context";
 
 export const RESTRICTED_ACCESS_COOKIE_NAME = "targeti_restricted_access";
 
@@ -24,9 +24,8 @@ export function isRestrictedAccessTokenValid(sessionToken: string, accessToken: 
 }
 
 export async function hasRestrictedAccess() {
-  const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  const accessToken = cookieStore.get(RESTRICTED_ACCESS_COOKIE_NAME)?.value;
+  const sessionToken = requestCookie(SESSION_COOKIE_NAME);
+  const accessToken = requestCookie(RESTRICTED_ACCESS_COOKIE_NAME);
   return !!sessionToken && !!accessToken && isRestrictedAccessTokenValid(sessionToken, accessToken);
 }
 

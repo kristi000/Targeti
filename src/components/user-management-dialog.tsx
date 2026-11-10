@@ -1,8 +1,6 @@
-"use client";
-
 import { FormEvent, useEffect, useState } from "react";
 import { Loader2, Plus, ShieldCheck, Store, Users } from "lucide-react";
-import { fetchAuthUsers, handleCreateAuthUser, handleSetUserAccess, type AuthUser } from "@/app/auth-actions";
+import { fetchAuthUsers, handleCreateAuthUser, handleSetUserAccess, type AuthUser } from "@/server/actions/auth";
 import { Button } from "@/components/ui/button";
 import { AppSelect } from "@/components/ui/app-select";
 import { Checkbox } from "@/components/ui/checkbox";

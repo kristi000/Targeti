@@ -1,6 +1,4 @@
 node_modules
-.next
-.next-dev
 *.log
 *.tsbuildinfo
 .env
@@ -11,3 +9,5 @@ node_modules
 *.tsbuildinfo
 sa.json
 *.service-account.json
+dist
+.vercel

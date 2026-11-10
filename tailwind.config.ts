@@ -4,15 +4,14 @@ import tailwindAnimate from 'tailwindcss-animate';
 export default {
   darkMode: ['class'],
   content: [
-    './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/components/**/*.{js,ts,jsx,tsx,mdx}',
-    './src/app/**/*.{js,ts,jsx,tsx,mdx}',
+    './index.html',
+    './src/**/*.{ts,tsx}',
   ],
   theme: {
     extend: {
       fontFamily: {
-        body: ['Inter', 'sans-serif'],
-        headline: ['Inter', 'sans-serif'],
+        body: ['"Inter Variable"', 'Inter', 'sans-serif'],
+        headline: ['"Inter Variable"', 'Inter', 'sans-serif'],
         code: ['monospace'],
       },
       colors: {

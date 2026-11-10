@@ -1,13 +1,11 @@
-"use client";
-
 import { useEffect, useMemo } from "react";
-import { useLocale, useTranslations } from "next-intl";
-import { usePathname, useSearchParams } from "next/navigation";
+import { useLocale, useTranslations } from "use-intl";
+import { usePathname, useSearchParams, replaceUrl } from "@/lib/navigation";
 import { BonusOverviewClient } from "@/components/bonus-overview-client";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useShop } from "@/components/shop-provider";
 import { formatReportingMonth, resolveReportingMonth } from "@/lib/reporting-month";
-import type { DashboardPeriod } from "@/app/dashboard-actions";
+import type { DashboardPeriod } from "@/server/actions/dashboard";
 
 export function BonusesPageClient({ periods }: { periods: DashboardPeriod[] }) {
   const pathname = usePathname();
@@ -24,7 +22,7 @@ export function BonusesPageClient({ periods }: { periods: DashboardPeriod[] }) {
   const changeMonth = (nextMonth: string) => {
     const parameters = new URLSearchParams(window.location.search);
     parameters.set("month", nextMonth);
-    window.history.replaceState(null, "", `${pathname}?${parameters.toString()}`);
+    replaceUrl(`${pathname}?${parameters.toString()}`);
     setSelectedDatasetId(nextMonth);
   };
 
