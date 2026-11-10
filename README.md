@@ -14,6 +14,10 @@ npm run dev
 
 `npm run dev` starts the Vite dev server on http://localhost:9002 and the Hono API on port 9003 (Vite proxies `/api` to it). For production, `npm run build` writes the client to `dist/client` and the server to `dist/server/index.mjs`; `npm start` serves both on `PORT` (default 3000).
 
+## Vercel
+
+`vercel.json` makes Vercel run `npm run build:vercel`, which writes `.vercel/output` in Vercel's [Build Output API](https://vercel.com/docs/build-output-api/v3) format (`scripts/build-vercel.mjs`): the client as static files, and the Hono server (`src/server/vercel.ts`) as one Node function that handles `/api/*`, `/`, and signed-out page requests. Every other path falls back to `index.html`. `vercel.json` sets `"framework": null`, so the project's old Next.js preset is not used.
+
 ## Architecture
 
 - `src/main.tsx`, `src/router.tsx`, `src/pages/`: client entry, routes (`/:locale/...`) and page components.

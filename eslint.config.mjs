@@ -4,7 +4,7 @@ import tseslint from "typescript-eslint";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", ".codex-work/**", "node_modules/**"],
+    ignores: ["dist/**", ".vercel/**", ".codex-work/**", "node_modules/**"],
   },
   ...tseslint.configs.recommended,
   {

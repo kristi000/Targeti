@@ -10,3 +10,4 @@ node_modules
 sa.json
 *.service-account.json
 dist
+.vercel
