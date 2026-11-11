@@ -26,8 +26,8 @@ export function BonusesPageClient({ periods }: { periods: DashboardPeriod[] }) {
     setSelectedDatasetId(nextMonth);
   };
 
-  return <div className="flex h-svh min-h-0 flex-col overflow-hidden bg-muted/20">
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b bg-background px-3 md:px-4"><SidebarTrigger className="h-9 w-9" /><h1 className="font-semibold">{t("title")}</h1></header>
+  return <div className="flex h-[calc(100svh-var(--bottom-nav-height))] min-h-0 flex-col overflow-hidden bg-muted/20">
+    <header className="glass mx-2 mt-2 flex h-12 shrink-0 items-center gap-2 rounded-2xl px-3 md:mx-3 md:px-4"><SidebarTrigger className="h-9 w-9" /><h1 className="font-semibold">{t("title")}</h1></header>
     <div className="min-h-0 flex-1 overflow-hidden"><BonusOverviewClient month={month} months={months} onMonthChange={changeMonth} /></div>
   </div>;
 }

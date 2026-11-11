@@ -244,7 +244,7 @@ export function ManageRepresentativesDialog({ open, onOpenChange, month }: Props
             </thead>
             <tbody>{filteredRepresentatives.map(representative => {
               const checked = selectedKeySet.has(representative.key);
-              return <tr key={representative.key} className="bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
+              return <tr key={representative.key} className="even:bg-foreground/[0.04] hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
                 <td className="border-b border-r border-border px-3 py-3 text-center"><Checkbox checked={checked} onCheckedChange={value => setSelectedKeys(current => value ? [...current, representative.key] : current.filter(key => key !== representative.key))} aria-label={`Select ${representative.name}`} /></td>
                 <th scope="row" className="border-b border-r border-border px-3 py-3 text-left font-medium">{representative.name}</th>
                 <td className="border-b border-r border-border px-3 py-3 text-muted-foreground">{representative.shopName}</td>

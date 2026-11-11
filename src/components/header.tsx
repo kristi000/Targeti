@@ -24,7 +24,7 @@ export function Header({ title, actions }: HeaderProps) {
   };
 
   return (
-    <header className="sticky top-0 z-10 flex min-h-12 items-center gap-2 border-b bg-background/80 px-3 py-1.5 backdrop-blur-sm md:px-5">
+    <header className="glass sticky top-2 z-10 mx-2 mt-2 flex min-h-12 items-center gap-2 rounded-2xl px-3 py-1.5 md:mx-3 md:px-4">
       <SidebarTrigger className="h-9 w-9 shrink-0" />
       <h1 className="min-w-0 flex-1 truncate text-lg font-semibold md:text-xl" title={title}>{title}</h1>
       {actions && <div className="ml-2 flex shrink-0 items-center gap-2">{actions}</div>}

@@ -97,7 +97,7 @@ export function InsightsClient() {
         {(!data || navigating) && !insightsQuery.isError && !periodsQuery.isError && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</p>}
 
         {data && <>
-          <section className="overflow-hidden rounded-lg border bg-background shadow-sm" aria-labelledby="kpi-insights-heading">
+          <section className="overflow-hidden glass rounded-[calc(var(--radius)+6px)]" aria-labelledby="kpi-insights-heading">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-4 py-3">
               <div className="flex items-center gap-2"><span className="rounded bg-primary/10 p-1.5 text-primary"><Lightbulb className="h-4 w-4" /></span><h2 id="kpi-insights-heading" className="font-semibold">{t("overview")}</h2></div>
               <span className="text-sm font-medium text-muted-foreground">{periodLabel(activeMonth, view, locale)}</span>
@@ -166,7 +166,7 @@ function PerformanceRanking({ data, month: activeMonth, entity, currency }: { da
   ], [data.period, activeMonth, entity, locale, currency, t]);
   const table = useReactTable({ data: filteredRows, columns, getCoreRowModel: getCoreRowModel(), getSortedRowModel: getSortedRowModel(), autoResetPageIndex: false, state: { sorting }, onSortingChange: setSorting });
 
-  return <section className="min-w-0 overflow-hidden rounded-lg border bg-background shadow-sm" aria-label={t(entity)}>
+  return <section className="min-w-0 overflow-hidden glass rounded-[calc(var(--radius)+6px)]" aria-label={t(entity)}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-muted/40 px-3 py-3">
       <div><h2 className="text-sm font-semibold">{t(entity === "shops" ? "shopRankings" : entity === "spvs" ? "spvRankings" : "srRankings")}</h2><p className="text-xs text-muted-foreground">{t("results", { count: filteredRows.length })}</p></div>
       <div className="relative w-full sm:w-72"><Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input value={search} onChange={event => setSearch(event.target.value)} maxLength={120} aria-label={t("search")} placeholder={t("search")} className="h-9 bg-background pl-9" /></div>

@@ -380,7 +380,7 @@ export function ManageShopsDialog({
                         </thead>
                         <tbody>
                           {filteredShops.map((shop, index) => (
-                            <tr key={shop.id} className="bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
+                            <tr key={shop.id} className="even:bg-foreground/[0.04] hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
                               <td className="border-b border-r border-border bg-muted px-3 py-3 text-center font-mono text-xs text-muted-foreground">{index + 1}</td>
                               <th scope="row" className="border-b border-r border-border px-3 py-3 text-left"><span className="block font-medium text-foreground">{shop.name}</span><span className="mt-0.5 block text-xs font-normal text-muted-foreground">Supervisor: {supervisorsById.get(shop.supervisorId ?? "") ?? "Unassigned"}</span></th>
                               <td className="max-w-sm truncate border-b border-r border-border px-3 py-3 text-muted-foreground">{shop.description || "—"}</td>

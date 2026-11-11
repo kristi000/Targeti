@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { adminDb } from "@/lib/firebase-admin";
 import { getCurrentActor, requireAdmin } from "@/lib/access";
-import { createManagedUser, listManagedUsers, managedRoleSchema, setManagedUserAccess, usernameSchema } from "@/lib/local-auth";
+import { createManagedUser, deleteManagedUser, listManagedUsers, managedRoleSchema, setManagedUserAccess, usernameSchema } from "@/lib/local-auth";
 import { activityEventSchema, shopIdSchema } from "@/lib/persistence-schemas";
 import type { ActivityEvent } from "@/lib/types";
 
@@ -84,6 +84,22 @@ export async function handleCreateAuthUser(input: { username: string; name: stri
     if (error instanceof Error && error.message === "USERNAME_TAKEN") return { success: false as const, error: "That username is already in use." };
     if (error instanceof Error && error.message === "SHOP_NOT_FOUND") return { success: false as const, error: "One or more assigned shops no longer exist." };
     return { success: false as const, error: mutationError("create the user profile", error) };
+  }
+}
+
+export async function handleDeleteAuthUser(userId: string) {
+  try {
+    await requireAdmin();
+    const validUserId = z.string().uuid().parse(userId);
+    const user = await deleteManagedUser(validUserId);
+    const shops = await adminDb.collection("shops").get();
+    const namesById = new Map(shops.docs.map(document => [document.id, String(document.data().name ?? document.id)]));
+    const shopIds = user.shopIds.filter(shopId => namesById.has(shopId));
+    await recordActivity({ action: "user_deleted", summary: `Deleted ${user.role} profile ${user.username}.`, shopIds, shopNames: shopIds.map(shopId => namesById.get(shopId)!), metadata: { userId: validUserId, role: user.role } });
+    return { success: true as const };
+  } catch (error) {
+    if (error instanceof Error && error.message === "USER_NOT_FOUND") return { success: false as const, error: "That user no longer exists." };
+    return { success: false as const, error: mutationError("delete the user profile", error) };
   }
 }
 

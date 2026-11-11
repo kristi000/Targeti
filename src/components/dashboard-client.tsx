@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import Link from "@/lib/navigation";
 import { usePathname, useRouter, useSearchParams, replaceUrl } from "@/lib/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -12,26 +11,34 @@ import { useLocale, useTranslations } from "use-intl";
 import {
   ArrowDown,
   ArrowUp,
-  ArrowUpDown,
   ChevronDown,
   ChevronUp,
+  Download,
   Search,
   Store,
+  Target,
+  TrendingUp,
+  Trophy,
   UserRoundCog,
+  Wallet,
   X,
   Loader2,
+  Medal,
 } from "lucide-react";
 
 import { useShop } from "@/components/shop-provider";
-import { SalesRepresentativeRanking } from "./sales-representative-ranking";
 import { Button } from "@/components/ui/button";
 import { AppSelect } from "@/components/ui/app-select";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
-import { resolveReportingMonth } from "@/lib/reporting-month";
-import type { DashboardRow, DashboardSupervisorRow } from "@/lib/dashboard-types";
+import { formatReportingMonth, resolveReportingMonth } from "@/lib/reporting-month";
+import { KpiTile, ShopName, achievementTone, displayShopName, metricShortLabel } from "@/components/dashboard-ui";
+import { KpiCardList, KpiTable, WEAK_FORECAST_THRESHOLD, collectMetricColumns, compareNullable, isWeakMetric, metricSortValue, type CardView, type KpiCellMode, type KpiSort, type KpiSortKey, type KpiTableRow } from "@/components/dashboard-kpi-table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useToast } from "@/hooks/use-toast";
+import { exportReport } from "@/lib/report-export";
+import type { DashboardMetric, DashboardRow } from "@/lib/dashboard-types";
 import { dashboardPageQueryOptions, dashboardPeriodsQueryOptions } from "@/lib/dashboard-queries";
 import { dashboardViewQuery, readDashboardView, type DashboardView } from "@/lib/dashboard-navigation";
 import { useDashboardNavigation } from "@/components/dashboard-navigation-provider";
@@ -39,7 +46,7 @@ import { useDashboardNavigation } from "@/components/dashboard-navigation-provid
 type ShopPerformanceRow = DashboardRow;
 
 const emptyShopRows: ShopPerformanceRow[] = [];
-const shopPreviewLimit = 10;
+const previewLimit = 10;
 
 const shopColumns: ColumnDef<ShopPerformanceRow>[] = [
   { id: "shop", accessorFn: row => row.shop.name },
@@ -60,10 +67,25 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
   const [shopSearch, setShopSearch] = useState(view.search);
   const search = shopSearch.trim();
   const [debouncedSearch, setDebouncedSearch] = useState(search);
-  const [expandedShopView, setExpandedShopView] = useState<string | null>(null);
   const selectedSupervisorId = view.supervisorId;
   const sorting = useMemo<SortingState>(() => [{ id: view.sortBy, desc: view.sortDescending }], [view.sortBy, view.sortDescending]);
   const [canFetch, setCanFetch] = useState(false);
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<DashboardTab>("shops");
+  const [expandedTabs, setExpandedTabs] = useState<Partial<Record<DashboardTab, string | null>>>({});
+  const [cellMode, setCellMode] = useState<KpiCellMode>("progress");
+  const [metricSort, setMetricSort] = useState<KpiSort | null>(null);
+  const [supervisorSort, setSupervisorSort] = useState<KpiSort>({ key: "total", desc: true });
+  const [representativeSort, setRepresentativeSort] = useState<KpiSort>({ key: "total", desc: true });
+  const [supervisorQuery, setSupervisorQuery] = useState("");
+  const [repQuery, setRepQuery] = useState("");
+  const [repShopId, setRepShopId] = useState("all");
+  const [exporting, setExporting] = useState(false);
+  const [cardView, setCardView] = useState<CardView>(readCardView);
+  const changeCardView = (next: CardView) => {
+    setCardView(next);
+    try { localStorage.setItem(cardViewKey, next); } catch { /* the choice still applies for this visit */ }
+  };
 
   // Existing query entries hydrate after commit. Let that finish before a
   // remount can start a redundant fetch of the stale client cache.
@@ -149,168 +171,284 @@ export function DashboardClient({ bootstrapPending = false }: { bootstrapPending
     return <div role="status" className="flex h-full items-center justify-center gap-2 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" />{t("loading")}</div>;
   }
 
-  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", useGrouping: false, maximumFractionDigits: 0 });
+  const currency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", maximumFractionDigits: 0 });
+  const compactCurrency = new Intl.NumberFormat(locale, { style: "currency", currency: "ALL", notation: "compact", maximumFractionDigits: 1 });
+  const currencies = { compact: compactCurrency, full: currency };
   const shopViewKey = dashboardViewQuery({ ...view, month: activeDatasetId, search });
-  const shopsExpanded = expandedShopView === shopViewKey;
-  const allRows = table.getRowModel().rows;
-  const visibleRows = shopsExpanded ? allRows : allRows.slice(0, shopPreviewLimit);
   const resultCount = pageQuery.data?.total ?? 0;
   const selectedSupervisor = supervisors.find(supervisor => supervisor.id === selectedSupervisorId);
+  const summary = pageQuery.data?.summary;
+  const hasSummaryData = Boolean(summary && (summary.revenue > 0 || summary.average > 0));
+  const formatPercent = (value: number | null | undefined) => value === null || value === undefined ? "—" : `${value.toFixed(1)}%`;
+  const supervisorRows = pageQuery.data?.supervisorRows ?? [];
+  const representativeRows = pageQuery.data?.representativeRows ?? [];
+
+  // Shops: server sort for the fixed columns, client sort when a KPI column is picked.
+  const serverSort = sorting[0] ?? { id: "achievement", desc: true };
+  const shopSort: KpiSort = metricSort ?? { key: shopSortKeys[serverSort.id as DashboardView["sortBy"]] ?? "total", desc: serverSort.desc };
+  const shopRows = table.getRowModel().rows.map(row => row.original);
+  const sortedShopRows = metricSort
+    ? [...shopRows].sort((left, right) => compareNullable(metricSortValue(left.metrics, metricSort.key.slice(7)), metricSortValue(right.metrics, metricSort.key.slice(7)), metricSort.desc))
+    : shopRows;
+  const shopTableRows: KpiTableRow[] = sortedShopRows.map(item => {
+    const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
+    return {
+      key: item.shop.id,
+      name: <ShopName name={item.shop.name} />,
+      plainName: item.shop.name,
+      detail: supervisorName,
+      plainDetail: supervisorName,
+      total: item.hasData ? item.totalAchievement : null,
+      change: item.hasData && typeof item.previousAchievement === "number" ? item.totalAchievement - item.previousAchievement : null,
+      forecast: item.forecastAchievement,
+      isFinal: item.isFinal,
+      revenue: item.revenue,
+      metrics: item.metrics,
+      ariaLabel: `Open ${item.shop.name}`,
+      onOpen: () => router.push(`/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`),
+    };
+  });
+
+  const supervisorQueryText = supervisorQuery.trim().toLocaleLowerCase(locale);
+  const supervisorTableRows: KpiTableRow[] = sortPeople(
+    supervisorRows.filter(row => !supervisorQueryText || row.name.toLocaleLowerCase(locale).includes(supervisorQueryText)),
+    supervisorSort,
+    row => ({ name: row.name, total: row.activeShops ? row.averageAchievement : null, forecast: row.forecastAchievement, revenue: row.revenue, metrics: row.metrics }),
+  ).map(row => {
+    const detail = `${row.shopCount} shop${row.shopCount === 1 ? "" : "s"} · ${row.shopsAtTarget} at target`;
+    return {
+      key: row.id,
+      name: <span className="font-medium text-foreground">{row.name}</span>,
+      plainName: row.name,
+      detail,
+      plainDetail: detail,
+      total: row.activeShops ? row.averageAchievement : null,
+      forecast: row.forecastAchievement,
+      revenue: row.revenue,
+      metrics: row.metrics,
+      selected: selectedSupervisorId === row.id,
+      ariaLabel: `Show ${row.name}'s shops`,
+      onOpen: () => { if (selectedSupervisorId !== row.id) selectSupervisor(row.id); setActiveTab("shops"); },
+    };
+  });
+
+  const representativeShops = Array.from(new Map(representativeRows.map(row => [row.shopId, { id: row.shopId, name: row.shopName }])).values())
+    .sort((left, right) => left.name.localeCompare(right.name, locale));
+  const effectiveRepShopId = representativeShops.some(shop => shop.id === repShopId) ? repShopId : "all";
+  const repQueryText = repQuery.trim().toLocaleLowerCase(locale);
+  const representativeTableRows: KpiTableRow[] = sortPeople(
+    representativeRows.filter(rep => (effectiveRepShopId === "all" || rep.shopId === effectiveRepShopId)
+      && (!repQueryText || `${rep.name} ${rep.shopName}`.toLocaleLowerCase(locale).includes(repQueryText))),
+    representativeSort,
+    rep => ({ name: rep.name, total: rep.achievement, forecast: rep.forecastAchievement, revenue: null, metrics: rep.metrics }),
+  ).map(rep => ({
+    key: `${rep.shopId}-${rep.id}`,
+    name: <span className="font-medium text-foreground">{rep.name}</span>,
+    plainName: rep.name,
+    detail: <ShopName name={rep.shopName} className="font-normal text-muted-foreground" />,
+    plainDetail: rep.shopName,
+    total: rep.achievement,
+    forecast: rep.forecastAchievement,
+    isFinal: rep.forecastAchievement === null,
+    metrics: rep.metrics,
+    ariaLabel: `Open ${rep.name} in ${rep.shopName}`,
+    onOpen: () => router.push(`/${locale}/shop/${rep.shopId}?month=${activeDatasetId}#representative-bonuses`),
+  }));
+
+  const tabRows = activeTab === "shops" ? shopTableRows : activeTab === "supervisors" ? supervisorTableRows : representativeTableRows;
+  const expandedKey = activeTab === "shops" ? shopViewKey : activeTab;
+  const tabExpanded = expandedTabs[activeTab] === expandedKey;
+  const visibleTabRows = tabExpanded ? tabRows : tabRows.slice(0, previewLimit);
+  const tabSort = activeTab === "shops" ? shopSort : activeTab === "supervisors" ? supervisorSort : representativeSort;
+  const nameLabel = activeTab === "shops" ? "Shop" : activeTab === "supervisors" ? "Supervisor" : "Representative";
+  const weakCount = tabRows.reduce((count, row) => count + (row.metrics?.filter(isWeakMetric).length ?? 0), 0);
+
+  const applySort = (next: KpiSort) => {
+    if (activeTab === "supervisors") { setSupervisorSort(next); return; }
+    if (activeTab === "representatives") { setRepresentativeSort(next); return; }
+    if (next.key.startsWith("metric:")) { setMetricSort(next); return; }
+    setMetricSort(null);
+    table.setSorting([{ id: Object.entries(shopSortKeys).find(([, value]) => value === next.key)?.[0] ?? "achievement", desc: next.desc }]);
+  };
+  // Name sorts A–Z first; KPIs lowest first, to find problems; totals highest first.
+  const defaultDirection = (key: KpiSortKey) => key === "name" ? false : !key.startsWith("metric:");
+  const onSort = (key: KpiSortKey) => applySort(tabSort.key === key ? { key, desc: !tabSort.desc } : { key, desc: defaultDirection(key) });
+  const sortOptions = [
+    { value: "total", label: "Total" },
+    { value: "forecast", label: "EOM forecast" },
+    ...(activeTab !== "representatives" ? [{ value: "revenue", label: "Revenue" }] : []),
+    { value: "name", label: "Name" },
+    ...collectMetricColumns(tabRows).map(metric => ({ value: `metric:${metric.id}`, label: metricShortLabel(metric) })),
+  ];
+
+  const exportTab = async () => {
+    setExporting(true);
+    try {
+      const columns = collectMetricColumns(tabRows);
+      const percent = "0.0";
+      await exportReport<KpiTableRow>({
+        rows: tabRows,
+        fileName: `dashboard-${activeTab}-${activeDatasetId}`,
+        sheetName: nameLabel,
+        format: "xlsx",
+        columns: [
+          { header: "#", value: row => tabRows.indexOf(row) + 1, numberFormat: "0", width: 6 },
+          { header: nameLabel, value: row => row.plainName, width: 28 },
+          { header: activeTab === "representatives" ? "Shop" : activeTab === "shops" ? "Supervisor" : "Shops", value: row => row.plainDetail, width: 24 },
+          { header: "Total %", value: row => row.total ?? "", numberFormat: percent },
+          ...(activeTab === "shops" ? [{ header: "Change since last import", value: (row: KpiTableRow) => row.change ?? "", numberFormat: "+0.0;-0.0;0.0" }] : []),
+          { header: "EOM forecast %", value: row => row.isFinal ? "Final" : row.forecast ?? "", numberFormat: percent },
+          ...(activeTab !== "representatives" ? [{ header: "Revenue (ALL)", value: (row: KpiTableRow) => row.revenue ?? "", numberFormat: "#,##0", width: 14 }] : []),
+          ...columns.flatMap(column => {
+            const find = (row: KpiTableRow) => row.metrics?.find(metric => metric.id === column.id);
+            const label = metricShortLabel(column);
+            return [
+              { header: `${label} %`, value: (row: KpiTableRow) => find(row)?.achievement ?? "", numberFormat: percent, width: 11 },
+              { header: `${label} actual`, value: (row: KpiTableRow) => find(row)?.actual ?? "", numberFormat: "#,##0.##", width: 11 },
+              { header: `${label} target`, value: (row: KpiTableRow) => find(row)?.target ?? "", numberFormat: "#,##0.##", width: 11 },
+              { header: `${label} forecast %`, value: (row: KpiTableRow) => find(row)?.forecast ?? "", numberFormat: percent, width: 12 },
+              { header: `${label} needed/day`, value: (row: KpiTableRow) => find(row)?.neededPerDay ?? "", numberFormat: "#,##0.0", width: 12 },
+            ];
+          }),
+        ],
+      });
+    } catch (error) {
+      console.error(error);
+      toast({ variant: "destructive", title: "Export failed", description: "The table could not be exported. Try again." });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
-    <div className="flex h-svh flex-col bg-muted/20">
-      {bootstrapPending && <p role="status" className="flex items-center gap-2 px-4 pt-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />{t("refreshing")}</p>}
-      <main ref={element => { if (element) element.inert = bootstrapPending; }} aria-busy={bootstrapPending || pageQuery.isFetching} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-4 xl:overflow-hidden">
+    <div className="flex h-[calc(100svh-var(--bottom-nav-height))] flex-col">
+      <main ref={element => { if (element) element.inert = bootstrapPending; }} aria-busy={bootstrapPending || pageQuery.isFetching} className="min-h-0 flex-1 overflow-y-auto p-3 md:p-5 xl:overflow-hidden">
         <div className="mx-auto flex min-h-full max-w-[1920px] flex-col gap-4 xl:h-full">
-          <SidebarTrigger className="h-9 w-9 shrink-0" />
+          <header className="flex shrink-0 items-center gap-3">
+            <SidebarTrigger className="h-9 w-9 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-lg font-semibold tracking-tight text-foreground md:text-xl">{t("overviewTitle")}</h1>
+              <p className="truncate text-xs text-muted-foreground md:text-sm">
+                {formatReportingMonth(activeDatasetId, locale)}
+                {selectedSupervisor && <> · {selectedSupervisor.name}</>}
+              </p>
+            </div>
+            {(bootstrapPending || pageQuery.isFetching) && <p role="status" className="glass-pill flex shrink-0 items-center gap-2 px-3 py-1.5 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /><span className="hidden sm:inline">{t("refreshing")}</span></p>}
+          </header>
 
-          <div className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_minmax(0,1fr)]">
-          <section aria-busy={search !== debouncedSearch || pageQuery.isFetching} className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0">
-            <div className="flex flex-col gap-3 border-b border-border bg-muted/40 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-2">
-                <span className="rounded bg-emerald-700 p-1.5 text-white"><Store className="h-4 w-4" /></span>
-                <div><h3 className="font-semibold text-foreground">{selectedSupervisor ? `${selectedSupervisor.name}'s shops` : "All shops"}</h3><p className="text-xs text-muted-foreground">{resultCount} matching locations</p></div>
-                {selectedSupervisor && <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={() => selectSupervisor(selectedSupervisor.id)} aria-label={`Show all shops instead of ${selectedSupervisor.name}'s shops`}><X className="h-4 w-4" /></Button>}
-              </div>
-              <div className="flex w-full gap-2 sm:max-w-md">
-                <div className="relative min-w-0 flex-1">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                  <Input value={shopSearch} maxLength={120} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-9 bg-background pl-9" />
+          <section aria-label={t("overviewTitle")} className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
+            <KpiTile
+              icon={Target}
+              label={t("averagePerformanceLabel")}
+              value={hasSummaryData ? formatPercent(summary?.average) : "—"}
+              tone={hasSummaryData ? achievementTone(summary?.average) : "muted"}
+              hint={summary?.allFinal ? t("finalResults") : t("monthToDate")}
+            />
+            <KpiTile
+              icon={TrendingUp}
+              label={t("eomForecast")}
+              value={!hasSummaryData ? "—" : summary?.allFinal ? t("final") : formatPercent(summary?.forecast)}
+              tone={hasSummaryData && !summary?.allFinal ? achievementTone(summary?.forecast) : "muted"}
+              hint={summary?.allFinal ? t("monthClosed") : t("currentPace")}
+            />
+            <KpiTile
+              icon={Wallet}
+              label={t("totalRevenue")}
+              value={hasSummaryData ? compactCurrency.format(summary?.revenue ?? 0) : "—"}
+              hint={hasSummaryData ? currency.format(summary?.revenue ?? 0) : t("noDataYet")}
+            />
+            <KpiTile
+              icon={Trophy}
+              label={t("shopsAtTarget")}
+              value={hasSummaryData ? `${summary?.shopsAtTarget ?? 0} / ${summary?.activeShops ?? 0}` : "—"}
+              hint={t("shopsAtTargetHint")}
+            />
+          </section>
+
+          <Tabs value={activeTab} onValueChange={value => setActiveTab(value as DashboardTab)} aria-busy={search !== debouncedSearch || pageQuery.isFetching} className="glass flex min-h-[32rem] min-w-0 flex-1 flex-col overflow-hidden rounded-[calc(var(--radius)+6px)] xl:min-h-0">
+            <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-2">
+              <TabsList className="h-9 w-full md:w-auto">
+                <TabsTrigger value="shops" className="flex-1 gap-1.5 px-2 text-xs md:flex-none md:px-3"><Store aria-hidden="true" className="hidden h-3.5 w-3.5 sm:block" />Shops<span className="tabular-nums text-muted-foreground">{resultCount}</span></TabsTrigger>
+                <TabsTrigger value="supervisors" className="flex-1 gap-1.5 px-2 text-xs md:flex-none md:px-3"><UserRoundCog aria-hidden="true" className="hidden h-3.5 w-3.5 sm:block" />Supervisors<span className="tabular-nums text-muted-foreground">{supervisorRows.length}</span></TabsTrigger>
+                <TabsTrigger value="representatives" className="flex-1 gap-1.5 px-2 text-xs md:flex-none md:px-3"><Medal aria-hidden="true" className="hidden h-3.5 w-3.5 sm:block" />{t("salesRepsTab")}<span className="tabular-nums text-muted-foreground">{representativeRows.length}</span></TabsTrigger>
+              </TabsList>
+              {selectedSupervisor && <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 rounded-full bg-indigo-500/10 px-2.5 text-xs text-indigo-700 hover:bg-indigo-500/15 dark:text-indigo-300" onClick={() => selectSupervisor(selectedSupervisor.id)} aria-label={`Show all shops instead of ${selectedSupervisor.name}'s shops`}>{selectedSupervisor.name}<X className="h-3.5 w-3.5" /></Button>}
+
+              <div className="ml-auto flex w-full flex-wrap items-center gap-2 md:w-auto md:flex-nowrap">
+                <div className="relative min-w-0 basis-full md:w-56 md:flex-none md:basis-auto">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  {activeTab === "shops" && <Input value={shopSearch} maxLength={120} onChange={event => updateSearch(event.target.value)} placeholder="Search shops or supervisors…" aria-label="Search shops or supervisors" className="h-8 pl-8 text-sm" />}
+                  {activeTab === "supervisors" && <Input value={supervisorQuery} maxLength={120} onChange={event => setSupervisorQuery(event.target.value)} placeholder="Search supervisors…" aria-label="Search supervisors" className="h-8 pl-8 text-sm" />}
+                  {activeTab === "representatives" && <Input value={repQuery} maxLength={120} onChange={event => setRepQuery(event.target.value)} placeholder="Search representatives…" aria-label="Search representatives" className="h-8 pl-8 text-sm" />}
                 </div>
-                <AppSelect
-                  aria-label="Sort shops by"
-                  className="w-32 shrink-0 md:hidden"
-                  value={sorting[0]?.id ?? "shop"}
-                  onValueChange={value => table.setSorting([{ id: value, desc: sorting[0]?.desc ?? false }])}
-                  options={[
-                    { value: "shop", label: "Shop" },
-                    { value: "achievement", label: "Performance" },
-                    { value: "forecast", label: "Forecast" },
-                    { value: "revenue", label: "Revenue" },
-                  ]}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 bg-background md:hidden"
-                  onClick={() => table.setSorting([{ id: sorting[0]?.id ?? "shop", desc: !sorting[0]?.desc }])}
-                  aria-label={sorting[0]?.desc ? "Sort ascending" : "Sort descending"}
-                >
-                  {sorting[0]?.desc ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+                {activeTab === "representatives" && <AppSelect value={effectiveRepShopId} onValueChange={setRepShopId} aria-label="Filter representatives by shop" className="h-8 shrink-0 max-md:basis-full md:w-36" options={[{ value: "all", label: "All shops" }, ...representativeShops.map(shop => ({ value: shop.id, label: displayShopName(shop.name) }))]} />}
+                <div role="group" aria-label="Card view" className="flex h-8 shrink-0 items-center rounded-full bg-foreground/[0.06] p-0.5 text-xs md:hidden">
+                  {([["simple", "Simple"], ["detailed", "Detailed"]] as const).map(([mode, label]) => <button key={mode} type="button" aria-pressed={cardView === mode} onClick={() => changeCardView(mode)} className={cn("h-7 rounded-full px-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground", cardView === mode && "bg-background text-foreground shadow-sm")}>{label}</button>)}
+                </div>
+                <AppSelect value={tabSort.key} onValueChange={value => applySort({ key: value as KpiSortKey, desc: defaultDirection(value as KpiSortKey) })} aria-label="Sort by" className="h-8 min-w-[6rem] flex-1 md:hidden" options={sortOptions} />
+                <Button type="button" variant="outline" size="icon" className="h-8 w-8 shrink-0 md:hidden" onClick={() => applySort({ key: tabSort.key, desc: !tabSort.desc })} aria-label={tabSort.desc ? "Sort ascending" : "Sort descending"}>
+                  {tabSort.desc ? <ArrowDown className="h-4 w-4" /> : <ArrowUp className="h-4 w-4" />}
+                </Button>
+                <div role="group" aria-label="KPI detail" className={cn("h-8 shrink-0 items-center rounded-full bg-foreground/[0.06] p-0.5 text-xs md:flex", cardView === "detailed" ? "flex" : "hidden")}>
+                  {([["progress", "Actual/target", "Actual/target"], ["perDay", "Needed per day", "Per day"]] as const).map(([mode, label, shortLabel]) => <button key={mode} type="button" aria-pressed={cellMode === mode} onClick={() => setCellMode(mode)} className={cn("h-7 rounded-full px-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground", cellMode === mode && "bg-background text-foreground shadow-sm")}><span className="hidden sm:inline">{label}</span><span className="sm:hidden">{shortLabel}</span></button>)}
+                </div>
+                <Button type="button" variant="outline" size="sm" aria-label="Export to Excel" className="h-8 shrink-0 gap-1.5 max-md:w-8 max-md:px-0" disabled={exporting || tabRows.length === 0} onClick={() => void exportTab()}>
+                  {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}<span className="max-md:sr-only">Export</span>
                 </Button>
               </div>
             </div>
 
-            <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-              <table className="w-full min-w-[780px] table-fixed border-collapse text-sm xl:min-w-[440px]">
-                <thead><tr className="sticky top-0 z-[1] bg-muted text-xs font-semibold uppercase tracking-wide text-foreground">
-                  <th className="w-12 border-b border-r border-border px-2 py-2 text-center">#</th>
-                  <SortableHeader table={table} columnId="shop" label="Shop" align="left" className="w-[38%]" />
-                  <SortableHeader table={table} columnId="achievement" label="Performance" className="w-20 px-1" />
-                  <SortableHeader table={table} columnId="forecast" label="Forecast" className="w-[4.5rem] px-1" />
-                  <SortableHeader table={table} columnId="revenue" label="Revenue" className="w-24 px-1" />
-                  <th className="w-64 border-b border-r border-border px-3 py-2 text-left xl:hidden">Target progress</th>
-                </tr></thead>
-                <tbody>
-                  {visibleRows.map((row, rowIndex) => {
-                    const item = row.original;
-                    const destination = `/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`;
-                    const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
-                    return <tr key={item.shop.id} tabIndex={0} aria-label={`Open ${item.shop.name}`} className="cursor-pointer bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary" onClick={() => router.push(destination)} onKeyDown={event => { if (event.key === "Enter") router.push(destination); }}>
-                      <td className="border-b border-r border-border px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", rowIndex < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{rowIndex + 1}</span></td>
-                      <th scope="row" className="border-b border-r border-border px-2 py-0.5 text-left leading-tight"><span className="block whitespace-nowrap text-[13px] font-medium text-foreground">{item.shop.name}</span><span className="block whitespace-nowrap text-[11px] font-normal text-muted-foreground">Supervisor: {supervisorName}</span></th>
-                      <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-foreground">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</td>
-                      <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-foreground">{item.isFinal ? <span className="font-medium text-foreground">Final</span> : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</td>
-                      <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-foreground">{item.hasData ? currency.format(item.revenue) : "—"}</td>
-                      <td className="border-b border-r border-border px-3 py-1 text-center xl:hidden">{item.hasData ? <div className="flex items-center justify-center gap-3"><Progress value={item.totalAchievement} max={120} markerValue={100} className="h-2 flex-1 rounded-sm bg-muted" /><span className="w-12 text-center font-mono text-xs font-medium text-muted-foreground">{item.totalAchievement.toFixed(0)}%</span></div> : <span className="text-xs text-muted-foreground">Not imported</span>}</td>
-                    </tr>;
-                  })}
-                </tbody>
-              </table>
+            <p className={cn("flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 border-b border-border/60 px-3 py-1.5 text-[11px] text-muted-foreground", cardView === "simple" && "max-md:hidden")}>
+              <span className="inline-flex items-center gap-1.5"><span aria-hidden="true" className="h-2 w-2 rounded-full bg-rose-500" />Forecast under {WEAK_FORECAST_THRESHOLD}%{weakCount > 0 && <span className="font-medium text-rose-700 dark:text-rose-400">· {weakCount} KPI{weakCount === 1 ? "" : "s"}</span>}</span>
+              {activeTab === "shops" && <span>▲▼ change since the previous import</span>}
+              {cellMode === "perDay" && <span>Sales per remaining day to reach 100%</span>}
+              {activeTab === "supervisors" && <span>KPIs averaged across each supervisor&apos;s shops · select a row to filter shops</span>}
+            </p>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              {visibleTabRows.length > 0 && <div className="hidden md:block"><KpiTable rows={visibleTabRows} nameLabel={nameLabel} sort={tabSort} onSort={onSort} cellMode={cellMode} currency={currencies} showRevenue={activeTab !== "representatives"} /></div>}
+              {visibleTabRows.length > 0 && <div className="md:hidden"><KpiCardList rows={visibleTabRows} view={cardView} cellMode={cellMode} /></div>}
+              {visibleTabRows.length === 0 && <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+                {activeTab === "shops" ? "No shops match your search." : activeTab === "supervisors" ? "No supervisors match." : "No representatives match these filters."}
+              </div>}
             </div>
 
-            <div className="divide-y md:hidden">
-              {visibleRows.map((row, rowIndex) => {
-                const item = row.original;
-                const supervisorName = supervisorsById.get(supervisorIdsByShop.get(item.shop.id) ?? "") ?? "Unassigned";
-                const rowNumber = rowIndex + 1;
-                return <Link key={item.shop.id} href={`/${locale}/shop/${item.shop.id}?month=${activeDatasetId}`} className="flex items-center justify-between gap-3 p-2 transition-colors hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">{rowNumber}</span>
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-foreground">{item.shop.name}</p>
-                      <p className="truncate text-xs text-muted-foreground">{supervisorName}</p>
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 text-right">
-                    <div>
-                      <p className="font-semibold tabular-nums text-foreground">{item.hasData ? `${item.totalAchievement.toFixed(1)}%` : "—"}</p>
-                      <p className="text-xs tabular-nums text-muted-foreground">EOM: {item.isFinal ? "Final" : item.forecastAchievement === null ? "—" : `${item.forecastAchievement.toFixed(1)}%`}</p>
-                    </div>
-                  </div>
-                </Link>;
-              })}
-            </div>
-
-            {visibleRows.length === 0 && <div className="px-4 py-12 text-center text-sm text-muted-foreground">No shops match your search.</div>}
-            {allRows.length > shopPreviewLimit && <div className="flex shrink-0 items-center justify-between gap-3 border-t bg-muted/40 px-4 py-3">
-              <p className="text-sm text-muted-foreground">{t("showingShops", { shown: visibleRows.length, total: allRows.length })}</p>
-              <Button type="button" variant="outline" size="sm" aria-expanded={shopsExpanded} onClick={() => setExpandedShopView(shopsExpanded ? null : shopViewKey)}>
-                {shopsExpanded ? <ChevronUp aria-hidden="true" className="mr-2 h-4 w-4" /> : <ChevronDown aria-hidden="true" className="mr-2 h-4 w-4" />}
-                {shopsExpanded ? t("showTopShops", { count: shopPreviewLimit }) : t("viewAllShops")}
+            {tabRows.length > previewLimit && <div className="flex shrink-0 items-center justify-between gap-3 border-t border-border/60 px-3 py-2">
+              <p className="text-xs text-muted-foreground">{t("showingShops", { shown: visibleTabRows.length, total: tabRows.length })}</p>
+              <Button type="button" variant="ghost" size="sm" className="h-8" aria-expanded={tabExpanded} onClick={() => setExpandedTabs(current => ({ ...current, [activeTab]: tabExpanded ? null : expandedKey }))}>
+                {tabExpanded ? <ChevronUp aria-hidden="true" className="mr-1.5 h-4 w-4" /> : <ChevronDown aria-hidden="true" className="mr-1.5 h-4 w-4" />}
+                {tabExpanded ? t("showTopShops", { count: previewLimit }) : t("viewAllShops")}
               </Button>
             </div>}
-          </section>
-
-          <SupervisorPerformanceTable rows={pageQuery.data?.supervisorRows ?? []} currency={currency} selectedSupervisorId={selectedSupervisorId} onSelectSupervisor={selectSupervisor} />
-
-          <section className="min-h-[32rem] min-w-0 overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0"><SalesRepresentativeRanking rows={pageQuery.data?.representativeRows ?? []} month={activeDatasetId} /></section>
-          </div>
+          </Tabs>
         </div>
       </main>
     </div>
   );
 }
 
-function SupervisorPerformanceTable({ rows, currency, selectedSupervisorId, onSelectSupervisor }: { rows: DashboardSupervisorRow[]; currency: Intl.NumberFormat; selectedSupervisorId: string | null; onSelectSupervisor: (supervisorId: string) => void }) {
-  return <section className="flex min-h-[32rem] min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-background shadow-sm xl:min-h-0" aria-labelledby="supervisor-performance-heading">
-    <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-4 py-3">
-      <span className="rounded bg-indigo-700 p-1.5 text-white"><UserRoundCog className="h-4 w-4" /></span>
-      <div><h3 id="supervisor-performance-heading" className="font-semibold text-foreground">Supervisor performance</h3><p className="text-xs text-muted-foreground">All assigned shops in the selected reporting period</p></div>
-    </div>
-    <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-      <table className="w-full min-w-[760px] table-fixed border-collapse text-sm xl:min-w-[360px]">
-        <thead><tr className="sticky top-0 z-[1] bg-muted text-xs font-semibold uppercase tracking-wide text-foreground">
-          <th className="w-12 border-b border-r border-border px-2 py-2 text-center">#</th>
-          <th className="w-[45%] border-b border-r border-border px-2 py-2 text-left">Supervisor</th>
-          <th className="w-20 border-b border-r border-border px-1 py-2 text-center">Performance</th>
-          <th className="w-20 border-b border-r border-border px-1 py-2 text-center">Forecast</th>
-          <th className="border-b border-r border-border px-3 py-2 text-center xl:hidden">Revenue</th>
-        </tr></thead>
-        <tbody>{rows.map((row, index) => <tr key={row.id} className={cn("bg-background even:bg-muted/40", selectedSupervisorId === row.id && "bg-indigo-50 dark:bg-indigo-950/40 even:bg-indigo-50 dark:even:bg-indigo-950/40")}>
-          <td className="border-b border-r border-border px-1 py-0.5 text-center"><span className={cn("mx-auto flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold leading-none", index < 3 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>{index + 1}</span></td>
-          <th scope="row" className="border-b border-r border-border px-2 py-0.5 text-left leading-tight"><button type="button" aria-pressed={selectedSupervisorId === row.id} className="text-left hover:text-indigo-700 dark:text-indigo-300 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600" onClick={() => onSelectSupervisor(row.id)}><span className="block whitespace-nowrap text-[13px] font-medium underline-offset-2 hover:underline">{row.name}</span><span className="block text-[11px] font-normal text-muted-foreground">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</span></button></th>
-          <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs font-semibold leading-tight tabular-nums text-foreground">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</td>
-          <td className="border-b border-r border-border px-1 py-0.5 text-center text-xs leading-tight tabular-nums text-foreground">{row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</td>
-          <td className="border-b border-r border-border px-3 py-0.5 text-center leading-tight tabular-nums text-foreground xl:hidden">{currency.format(row.revenue)}</td>
-        </tr>)}</tbody>
-      </table>
-    </div>
-    <div className="divide-y md:hidden">{rows.map((row, index) => <button type="button" key={row.id} aria-pressed={selectedSupervisorId === row.id} onClick={() => onSelectSupervisor(row.id)} className={cn("flex w-full items-center gap-3 p-2 text-left transition-colors hover:bg-indigo-50 dark:hover:bg-indigo-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600", selectedSupervisorId === row.id && "bg-indigo-50 dark:bg-indigo-950/40")}>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-xs font-semibold text-indigo-700 dark:text-indigo-300">{index + 1}</span>
-      <div className="min-w-0 flex-1"><p className="truncate font-medium text-foreground">{row.name}</p><p className="text-xs text-muted-foreground">{row.shopCount} shop{row.shopCount === 1 ? "" : "s"}</p></div>
-      <div className="shrink-0 text-right"><p className="font-semibold tabular-nums text-foreground">{row.activeShops ? `${row.averageAchievement.toFixed(1)}%` : "—"}</p><p className="text-xs tabular-nums text-muted-foreground">EOM {row.forecastAchievement === null ? "—" : `${row.forecastAchievement.toFixed(1)}%`}</p></div>
-    </button>)}</div>
-    {!rows.length && <div className="px-4 py-10 text-center text-sm text-muted-foreground">No supervisors have assigned shops.</div>}
-  </section>;
+type DashboardTab = "shops" | "supervisors" | "representatives";
+
+const cardViewKey = "d-one-dashboard-card-view";
+
+function readCardView(): CardView {
+  try { return localStorage.getItem(cardViewKey) === "detailed" ? "detailed" : "simple"; } catch { return "simple"; }
 }
 
-type DashboardTable = ReturnType<typeof useReactTable<ShopPerformanceRow>>;
+const shopSortKeys: Record<DashboardView["sortBy"], KpiSortKey> = { shop: "name", achievement: "total", forecast: "forecast", revenue: "revenue" };
 
-function SortableHeader({ table, columnId, label, align = "center", className }: { table: DashboardTable; columnId: string; label: string; align?: "left" | "center"; className?: string }) {
-  const column = table.getColumn(columnId);
-  const direction = column?.getIsSorted();
-  const Icon = direction === "asc" ? ArrowUp : direction === "desc" ? ArrowDown : ArrowUpDown;
-  return <th aria-sort={direction === "asc" ? "ascending" : direction === "desc" ? "descending" : "none"} className={cn("border-b border-r border-border px-3 py-2", align === "left" ? "text-left" : "text-center", className)}><button type="button" className={cn("inline-flex w-full items-center gap-1", align === "left" ? "justify-start" : "justify-center")} onClick={column?.getToggleSortingHandler()}>{label}<Icon className="h-3.5 w-3.5" /></button></th>;
+type PeopleSortValues = { name: string; total: number | null; forecast: number | null; revenue: number | null; metrics?: DashboardMetric[] };
+
+function sortPeople<Row>(rows: Row[], sort: KpiSort, values: (row: Row) => PeopleSortValues): Row[] {
+  return [...rows].sort((leftRow, rightRow) => {
+    const left = values(leftRow);
+    const right = values(rightRow);
+    if (sort.key === "name") return sort.desc ? right.name.localeCompare(left.name) : left.name.localeCompare(right.name);
+    if (sort.key.startsWith("metric:")) {
+      const id = sort.key.slice(7);
+      return compareNullable(metricSortValue(left.metrics, id), metricSortValue(right.metrics, id), sort.desc);
+    }
+    const field = sort.key as "total" | "forecast" | "revenue";
+    return compareNullable(left[field], right[field], sort.desc) || left.name.localeCompare(right.name);
+  });
 }

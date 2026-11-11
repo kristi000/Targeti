@@ -95,6 +95,7 @@
     "copySuffix": "kopje"
   },
   "Sidebar": {
+    "menu": "Menu",
     "navigationTitle": "Navigimi kryesor",
     "navigationDescription": "Kaloni mes faqeve dhe hapni veprimet e dyqanit dhe cilësimet.",
     "shopActions": "Veprimet e dyqanit",
@@ -127,7 +128,20 @@
     "showingShops": "Duke shfaqur {shown} nga {total}",
     "viewAllShops": "Shiko të gjitha",
     "showTopShops": "Shfaq {count} të parat",
-    "retry": "Provo përsëri"
+    "retry": "Provo përsëri",
+    "salesRepsTab": "Përfaqësuesit",
+    "overviewTitle": "Pasqyra e rrjetit",
+    "averagePerformanceLabel": "Performanca mesatare",
+    "eomForecast": "Parashikimi në fund të muajit",
+    "totalRevenue": "Të ardhurat totale",
+    "shopsAtTarget": "Dyqane në objektiv",
+    "shopsAtTargetHint": "Dyqane në ose mbi 100%",
+    "finalResults": "Rezultate përfundimtare",
+    "monthToDate": "Nga fillimi i muajit",
+    "final": "Përfundimtar",
+    "monthClosed": "Muaji i mbyllur",
+    "currentPace": "Sipas ritmit aktual",
+    "noDataYet": "Ende pa të dhëna të importuara"
   },
   "Insights": {
     "title": "Analiza",

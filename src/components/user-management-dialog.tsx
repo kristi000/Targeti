@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
-import { Loader2, Plus, ShieldCheck, Store, Users } from "lucide-react";
-import { fetchAuthUsers, handleCreateAuthUser, handleSetUserAccess, type AuthUser } from "@/server/actions/auth";
+import { Loader2, Plus, ShieldCheck, Store, Trash2, Users } from "lucide-react";
+import { fetchAuthUsers, handleCreateAuthUser, handleDeleteAuthUser, handleSetUserAccess, type AuthUser } from "@/server/actions/auth";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { AppSelect } from "@/components/ui/app-select";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -32,6 +33,8 @@ export function UserManagementDialog({ open, onOpenChange, showTrigger = true }:
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<ManagedRole>("viewer");
   const [shopIds, setShopIds] = useState<string[]>([]);
+  const [pendingDelete, setPendingDelete] = useState<AuthUser | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -70,6 +73,19 @@ export function UserManagementDialog({ open, onOpenChange, showTrigger = true }:
       toast({ title: "Access updated", description: `${user.username} must sign in again to use the new access.` });
     } else toast({ variant: "destructive", title: "Could not update access", description: result.error });
     setSavingId("");
+  };
+
+  const deleteUser = async () => {
+    if (!pendingDelete) return;
+    const user = pendingDelete;
+    setDeleting(true);
+    const result = await handleDeleteAuthUser(user.id);
+    if (result.success) {
+      setUsers(current => current.filter(item => item.id !== user.id));
+      toast({ title: "Profile deleted", description: `${user.username} can no longer sign in.` });
+      setPendingDelete(null);
+    } else toast({ variant: "destructive", title: "Could not delete profile", description: result.error });
+    setDeleting(false);
   };
 
   const shopPicker = (selectedIds: string[], onChange: (ids: string[]) => void, disabled = false) => (
@@ -111,7 +127,13 @@ export function UserManagementDialog({ open, onOpenChange, showTrigger = true }:
         <div className="space-y-2 sm:col-span-2"><Label>Assigned shops</Label>{shopPicker(shopIds, setShopIds)}</div>
         <Button type="submit" className="sm:col-span-2" disabled={creating}>{creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}Create profile</Button>
       </form>
-      {loading ? <div className="flex justify-center p-8"><Loader2 className="h-5 w-5 animate-spin" /></div> : <div className="overflow-hidden rounded-md border"><table className="w-full text-sm"><thead className="bg-muted/60"><tr><th className="px-3 py-2 text-left">User</th><th className="hidden px-3 py-2 text-left md:table-cell">Last sign-in</th><th className="px-3 py-2 text-left">Role</th><th className="px-3 py-2 text-left">Shops</th></tr></thead><tbody className="divide-y">{users.map(user => <tr key={user.id}><td className="px-3 py-3"><p className="font-medium">{user.name}</p><p className="text-xs text-muted-foreground">@{user.username}</p></td><td className="hidden px-3 py-3 text-muted-foreground md:table-cell">{user.lastSignInAt ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(user.lastSignInAt)) : "—"}</td><td className="px-3 py-3">{user.role === "admin" ? <span className="inline-flex items-center gap-2 capitalize"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{user.role}</span> : <AppSelect aria-label={`Role for ${user.username}`} value={user.role} disabled={savingId === user.id} onValueChange={value => void changeAccess(user, value as ManagedRole, user.shopIds)} className="w-28" options={[{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }]} />}</td><td className="min-w-40 px-3 py-3">{user.role === "admin" ? <span className="text-muted-foreground">All shops</span> : <div className="flex items-center gap-2">{shopPicker(user.shopIds, ids => void changeAccess(user, user.role as ManagedRole, ids), savingId === user.id)}{savingId === user.id && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}</div>}</td></tr>)}</tbody></table>{!users.length && <p className="p-6 text-center text-sm text-muted-foreground">No users found.</p>}</div>}
+      {loading ? <div className="flex justify-center p-8"><Loader2 className="h-5 w-5 animate-spin" /></div> : <div className="overflow-hidden rounded-md border"><table className="w-full text-sm"><thead className="bg-muted/60"><tr><th className="px-3 py-2 text-left">User</th><th className="hidden px-3 py-2 text-left md:table-cell">Last sign-in</th><th className="px-3 py-2 text-left">Role</th><th className="px-3 py-2 text-left">Shops</th><th className="w-12 px-3 py-2"><span className="sr-only">Actions</span></th></tr></thead><tbody className="divide-y">{users.map(user => <tr key={user.id}><td className="px-3 py-3"><p className="font-medium">{user.name}</p><p className="text-xs text-muted-foreground">@{user.username}</p></td><td className="hidden px-3 py-3 text-muted-foreground md:table-cell">{user.lastSignInAt ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(new Date(user.lastSignInAt)) : "—"}</td><td className="px-3 py-3">{user.role === "admin" ? <span className="inline-flex items-center gap-2 capitalize"><ShieldCheck className="h-4 w-4 text-muted-foreground" />{user.role}</span> : <AppSelect aria-label={`Role for ${user.username}`} value={user.role} disabled={savingId === user.id} onValueChange={value => void changeAccess(user, value as ManagedRole, user.shopIds)} className="w-28" options={[{ value: "viewer", label: "Viewer" }, { value: "editor", label: "Editor" }]} />}</td><td className="min-w-40 px-3 py-3">{user.role === "admin" ? <span className="text-muted-foreground">All shops</span> : <div className="flex items-center gap-2">{shopPicker(user.shopIds, ids => void changeAccess(user, user.role as ManagedRole, ids), savingId === user.id)}{savingId === user.id && <Loader2 className="h-4 w-4 shrink-0 animate-spin" />}</div>}</td><td className="px-3 py-3 text-right">{user.role !== "admin" && <Button type="button" variant="ghost" size="icon" aria-label={`Delete ${user.username}`} disabled={savingId === user.id} onClick={() => setPendingDelete(user)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4" /></Button>}</td></tr>)}</tbody></table>{!users.length && <p className="p-6 text-center text-sm text-muted-foreground">No users found.</p>}</div>}
     </DialogContent>
+    <AlertDialog open={pendingDelete !== null} onOpenChange={next => { if (!next && !deleting) setPendingDelete(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle><AlertDialogDescription>The profile @{pendingDelete?.username} will be permanently removed and signed out. This cannot be undone, but you can create a new profile with the same username later.</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={deleting} onClick={event => { event.preventDefault(); void deleteUser(); }}>{deleting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Trash2 className="mr-2 h-4 w-4" />}Delete profile</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </Dialog>;
 }

@@ -11,6 +11,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 import { Toaster } from "@/components/ui/toaster";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 
 function RouteSkeleton() {
   return (
@@ -56,9 +57,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         <SidebarNav />
         <SidebarRail />
       </Sidebar>
-      <SidebarInset className="min-w-0 overflow-hidden">
+      <SidebarInset data-page-enter className="min-w-0 overflow-hidden pb-[var(--bottom-nav-height)]">
         {children}
       </SidebarInset>
+      <MobileBottomNav />
       <Toaster />
     </SidebarProvider>
   );

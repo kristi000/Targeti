@@ -170,7 +170,7 @@ export function ManageImportsDialog({ open, onOpenChange }: { open: boolean; onO
                 <th className="w-36 border-b border-r border-border px-3 py-2 text-center">{t("columns.status")}</th>
                 <th className="w-28 border-b border-border px-3 py-2 text-right">{t("columns.actions")}</th>
               </tr></thead>
-              <tbody>{imports.map(item => <tr key={item.id} className="bg-background even:bg-muted/40 hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
+              <tbody>{imports.map(item => <tr key={item.id} className="even:bg-foreground/[0.04] hover:bg-emerald-50/70 dark:hover:bg-emerald-950/40">
                 <th scope="row" className="max-w-xs truncate border-b border-r border-border px-3 py-3 text-left font-medium" title={item.fileName}>{item.fileName}</th>
                 <td className="border-b border-r border-border px-3 py-3 tabular-nums">{item.month}</td>
                 <td className="border-b border-r border-border px-3 py-3 text-muted-foreground">{formatDate(item.createdAt, locale)}</td>
