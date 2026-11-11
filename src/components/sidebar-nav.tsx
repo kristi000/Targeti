@@ -39,6 +39,23 @@ import { canNavigate } from "@/lib/navigation-guard";
 const sidebarSectionsKey = "d-one-sidebar-sections";
 const sidebarSectionsSchema = z.array(z.enum(["actions", "settings"])).max(2);
 
+/** Main pages, shared by the sidebar and the phone bottom bar. */
+export function useMainNavItems() {
+  const t = useTranslations("Sidebar");
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const locale = useLocale();
+  const { dashboardHref } = useDashboardNavigation();
+  const month = searchParams.get("month");
+  const bonusMonthQuery = month && /^\d{4}-\d{2}$/.test(month) ? `?month=${month}` : "";
+  const currentPath = pathname.replace(/\/$/, "");
+  return [
+    { href: dashboardHref, icon: LayoutDashboard, label: t("dashboard") },
+    { href: `/${locale}/insights`, icon: Lightbulb, label: t("insights") },
+    { href: `/${locale}/bonuses${bonusMonthQuery}`, icon: Banknote, label: t("bonuses") },
+  ].map(item => ({ ...item, isActive: currentPath === item.href.split("?")[0].replace(/\/$/, "") }));
+}
+
 export function SidebarNav() {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
@@ -47,6 +64,7 @@ export function SidebarNav() {
   const router = useRouter();
   const { selectedShop } = useShop();
   const { dashboardHref } = useDashboardNavigation();
+  const menuItems = useMainNavItems();
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
   useEffect(() => {
@@ -71,26 +89,6 @@ export function SidebarNav() {
 
   const isDetailedDashboard = pathname.includes('/shop/');
   const shopId = pathname.match(/\/shop\/([^/]+)/)?.[1];
-  const month = searchParams.get("month");
-  const bonusMonthQuery = month && /^\d{4}-\d{2}$/.test(month) ? `?month=${month}` : "";
-
-  const menuItems = [
-    {
-      href: dashboardHref,
-      icon: LayoutDashboard,
-      label: t('dashboard'),
-    },
-    {
-      href: `/${locale}/insights`,
-      icon: Lightbulb,
-      label: t('insights'),
-    },
-    {
-      href: `/${locale}/bonuses${bonusMonthQuery}`,
-      icon: Banknote,
-      label: t('bonuses'),
-    },
-  ];
 
   const handleLocaleChange = (newLocale: string) => {
     if (newLocale === locale || !canNavigate()) return;
@@ -127,7 +125,7 @@ export function SidebarNav() {
             <SidebarMenuItem key={item.href}>
               <SidebarMenuButton
                 asChild
-                isActive={pathname.replace(/\/$/, "") === item.href.split("?")[0].replace(/\/$/, "")}
+                isActive={item.isActive}
                 tooltip={item.label}
               >
                 <Link href={item.href}>

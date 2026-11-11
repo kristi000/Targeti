@@ -39,6 +39,20 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 275 53% 37%;
+
+    /* Liquid glass */
+    --radius: 0.875rem;
+    --glass-tint: 0 0% 100%;
+    --glass-alpha: 0.8;
+    --glass-alpha-strong: 0.74;
+    --glass-edge: 0 0% 100%;
+    --glass-edge-alpha: 0.7;
+    --glass-shine: 0.9;
+    --glass-shadow: 222 40% 20%;
+    --glass-shadow-alpha: 0.12;
+    --glass-blur: 22px;
+    /* Plain page background behind the cards. */
+    --ambient-base: 220 14% 96%;
   }
 
   .dark {
@@ -76,6 +90,16 @@
     --sidebar-accent-foreground: 210 40% 98%;
     --sidebar-border: 217 33% 27%;
     --sidebar-ring: 275 53% 37%;
+
+    --glass-tint: 222 40% 16%;
+    --glass-alpha: 0.7;
+    --glass-alpha-strong: 0.68;
+    --glass-edge: 0 0% 100%;
+    --glass-edge-alpha: 0.12;
+    --glass-shine: 0.2;
+    --glass-shadow: 230 60% 2%;
+    --glass-shadow-alpha: 0.45;
+    --ambient-base: 222 22% 8%;
   }
 }
 
@@ -87,7 +111,83 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background-color: hsl(var(--ambient-base));
+  }
+}
+
+/*
+ * Apple-style "liquid glass" surfaces: a translucent tint, a strong backdrop
+ * blur with boosted saturation, a bright rim on the top edge and a soft drop
+ * shadow for depth.
+ */
+@layer components {
+  .glass,
+  .glass-strong,
+  .glass-pill {
+    background-color: hsl(var(--glass-tint) / var(--glass-alpha));
+    background-image: linear-gradient(
+      160deg,
+      hsl(var(--glass-edge) / calc(var(--glass-shine) * 0.35)) 0%,
+      hsl(var(--glass-edge) / 0) 45%
+    );
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+    border: 1px solid hsl(var(--glass-edge) / var(--glass-edge-alpha));
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--glass-edge) / var(--glass-shine)),
+      inset 0 -1px 0 0 hsl(var(--glass-edge) / calc(var(--glass-shine) * 0.25)),
+      0 1px 2px hsl(var(--glass-shadow) / calc(var(--glass-shadow-alpha) * 0.6)),
+      0 10px 30px -8px hsl(var(--glass-shadow) / var(--glass-shadow-alpha));
+  }
+
+  /* Floating layers (dialogs, menus): more opaque so text stays readable. */
+  .glass-strong {
+    --glass-blur: 32px;
+    background-color: hsl(var(--glass-tint) / var(--glass-alpha-strong));
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--glass-edge) / var(--glass-shine)),
+      inset 0 -1px 0 0 hsl(var(--glass-edge) / calc(var(--glass-shine) * 0.25)),
+      0 2px 6px hsl(var(--glass-shadow) / calc(var(--glass-shadow-alpha) * 0.6)),
+      0 24px 60px -12px hsl(var(--glass-shadow) / calc(var(--glass-shadow-alpha) * 1.6));
+  }
+
+  .glass-pill {
+    --glass-blur: 16px;
+    border-radius: 9999px;
+  }
+
+  /* Tinted glass for primary actions: the brand color shows through. */
+  .glass-tinted {
+    background-color: hsl(var(--primary) / 0.88);
+    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.28), hsl(0 0% 100% / 0) 55%);
+    border: 1px solid hsl(0 0% 100% / 0.22);
+    box-shadow:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.45),
+      0 1px 2px hsl(var(--primary) / 0.3),
+      0 8px 20px -6px hsl(var(--primary) / 0.55);
+  }
+
+  /* Soft press feedback, like the glass "squish" on iOS. */
+  .glass-press {
+    transition:
+      transform 160ms var(--ease-out),
+      background-color 160ms var(--ease-out),
+      box-shadow 160ms var(--ease-out),
+      color 160ms var(--ease-out);
+  }
+  .glass-press:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .glass,
+    .glass-strong,
+    .glass-pill {
+      background-color: hsl(var(--card));
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
   }
 }
 
@@ -102,5 +202,91 @@
 
   .shop-page-toolbar [role="tablist"] {
     @apply h-11;
+  }
+}
+
+/*
+ * Motion, in the spirit of Emil Kowalski's animation guidelines:
+ * - strong custom ease-out curves instead of the browser defaults,
+ * - short durations (exits faster than entrances),
+ * - popups grow out of their trigger, dialogs scale from 96%, never from 0,
+ * - reduced motion keeps the fades but drops movement.
+ * This block is deliberately outside @layer so it lands after Tailwind's utilities.
+ */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  /* Height of the phone bottom bar; 0 where the sidebar is used instead. */
+  --bottom-nav-height: 0px;
+}
+
+@media (max-width: 767px) {
+  :root {
+    --bottom-nav-height: calc(4rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Matched by class text because the classes are usually state-prefixed (data-[state=open]:animate-in). */
+[class*="animate-in"],
+[class*="animate-out"] {
+  animation-timing-function: var(--ease-out);
+}
+[class*="animate-in"]:not([data-state="closed"]):not([class*="duration-"]) {
+  animation-duration: 200ms;
+}
+[class*="animate-out"][data-state="closed"]:not([class*="duration-"]) {
+  animation-duration: 140ms;
+}
+
+/* Menus, selects, popovers and tooltips scale from the edge nearest their trigger. */
+[data-radix-popper-content-wrapper] > * {
+  transform-origin: var(--radix-popper-transform-origin);
+}
+
+/* Drawers (mobile sidebar, sheets) use an iOS-like curve. */
+.motion-drawer[class*="animate-in"],
+.motion-drawer[class*="animate-out"] {
+  animation-timing-function: var(--ease-drawer);
+}
+
+/* Each page fades and lifts in slightly when the route changes. */
+[data-page-enter] > * {
+  animation: page-enter 320ms var(--ease-out) backwards;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [class*="animate-in"],
+  [class*="animate-out"] {
+    --tw-enter-scale: 1 !important;
+    --tw-exit-scale: 1 !important;
+  }
+  /* Dialogs use the translate values to stay centred, so only reset popups and drawers. */
+  [data-radix-popper-content-wrapper] > *,
+  .motion-drawer {
+    --tw-enter-translate-x: 0 !important;
+    --tw-enter-translate-y: 0 !important;
+    --tw-exit-translate-x: 0 !important;
+    --tw-exit-translate-y: 0 !important;
+  }
+  [data-page-enter] > * {
+    animation-name: page-fade;
+  }
+  .glass-press:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+@keyframes page-fade {
+  from {
+    opacity: 0;
   }
 }

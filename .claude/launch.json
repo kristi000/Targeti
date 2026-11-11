@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "targeti",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["concurrently", "-k", "-n", "api,web", "set PORT=9003&& npm run dev:api", "npm run dev:web"],
+      "port": 9002
+    }
+  ]
+}

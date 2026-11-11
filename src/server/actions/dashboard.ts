@@ -11,9 +11,11 @@ import { adminDb } from "@/lib/firebase-admin";
 import { calculateForecastAchievement, getForecastDate } from "@/lib/forecast";
 import { monthSchema, performanceDataSchema, shopIdSchema, shopSchema, supervisorIdSchema, supervisorSchema } from "@/lib/persistence-schemas";
 import { calculateTotalAchievement } from "@/lib/utils";
+import { getMetricWeight } from "@/lib/data";
+import { getCustomMetricLabel } from "@/lib/metric-definitions";
 import { getMonthlyRepresentatives, getOverviewPerformanceData, getPerformanceShopActuals, getShopMetrics, type PerformanceData, type PerformanceMetric, type Shop, type Supervisor } from "@/lib/types";
 import { getEqualRepresentativeTargets } from "@/lib/representative-targets";
-import type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
+import type { DashboardMetric, DashboardRepresentativeRow, DashboardRow, DashboardSortKey, DashboardSummary, DashboardSupervisorRow } from "@/lib/dashboard-types";
 import { measureServerOperation } from "@/lib/server/performance";
 import { getCurrentReportingMonth } from "@/lib/reporting-month";
 
@@ -21,7 +23,7 @@ export type { DashboardRepresentativeRow, DashboardRow, DashboardSortKey, Dashbo
 export type DashboardPeriod = { month: string; reportDate: string | null };
 
 type ShopSummary = {
-  schemaVersion: 4;
+  schemaVersion: SummaryVersion;
   shopId: string;
   shopName: string;
   normalizedShopName: string;
@@ -39,6 +41,9 @@ type ShopSummary = {
   revenueDesc: number;
   isFinal: boolean;
   hasData: boolean;
+  metrics?: DashboardMetric[];
+  previousAchievement?: number | null;
+  daysRemaining?: number | null;
   representativeRows: Array<Omit<DashboardRepresentativeRow, "rank">>;
   updatedAt: string;
 };
@@ -46,8 +51,24 @@ type ShopSummary = {
 type SearchEntry = Pick<ShopSummary,
   "shopId" | "shopName" | "normalizedShopName" | "supervisorId" | "supervisorName"
   | "achievement" | "achievementAsc" | "achievementDesc" | "forecast" | "forecastAsc"
-  | "forecastDesc" | "revenue" | "revenueAsc" | "revenueDesc" | "isFinal" | "hasData"
+  | "forecastDesc" | "revenue" | "revenueAsc" | "revenueDesc" | "isFinal" | "hasData" | "metrics"
+  | "previousAchievement" | "daysRemaining"
 >;
+
+// Version 5 added per-KPI results; version 6 adds KPI forecasts, needed-per-day and the previous import's total.
+// Older records are still read until their month rebuilds.
+const SUMMARY_VERSION = 6;
+type SummaryVersion = 4 | 5 | 6;
+const summaryVersionSchema = z.union([z.literal(4), z.literal(5), z.literal(6)]);
+const metricValueSchema = z.object({
+  id: z.string().min(1).max(120),
+  label: z.string().max(200).nullable(),
+  actual: z.number().finite(),
+  target: z.number().finite(),
+  achievement: z.number().finite(),
+  forecast: z.number().finite().nullable().optional(),
+  neededPerDay: z.number().finite().nullable().optional(),
+});
 
 const searchEntrySchema = z.object({
   shopId: shopIdSchema,
@@ -66,6 +87,9 @@ const searchEntrySchema = z.object({
   revenueDesc: z.number().finite(),
   isFinal: z.boolean(),
   hasData: z.boolean(),
+  metrics: z.array(metricValueSchema).max(50).optional(),
+  previousAchievement: z.number().finite().nullable().optional(),
+  daysRemaining: z.number().int().nonnegative().nullable().optional(),
 });
 const searchIndexSchema = z.object({
   schemaVersion: z.literal(1),
@@ -80,15 +104,16 @@ const representativeRowSchema = z.object({
   shopName: z.string().min(1).max(120),
   achievement: z.number().finite(),
   forecastAchievement: z.number().finite().nullable(),
+  metrics: z.array(metricValueSchema).max(50).optional(),
 });
 const shopSummarySchema = searchEntrySchema.extend({
-  schemaVersion: z.literal(4),
+  schemaVersion: summaryVersionSchema,
   searchPrefixes: z.array(z.string()),
   representativeRows: z.array(representativeRowSchema).max(500),
   updatedAt: z.string().datetime({ offset: true }),
 });
 const incrementalMonthSchema = z.object({
-  schemaVersion: z.literal(4),
+  schemaVersion: summaryVersionSchema,
   searchIndexAvailable: z.literal(true),
   summary: z.object({ activeShops: z.number().int().nonnegative() }),
   representativeRows: z.array(representativeRowSchema.extend({
@@ -99,7 +124,7 @@ const incrementalMonthSchema = z.object({
 });
 
 type MonthMeta = {
-  schemaVersion: 4;
+  schemaVersion: SummaryVersion;
   summary: DashboardSummary;
   searchIndexAvailable?: boolean;
   supervisorSummaries?: Record<string, DashboardSummary>;
@@ -163,17 +188,41 @@ function performanceSummary(shop: Shop, entries: PerformanceData[]) {
   const active = getOverviewPerformanceData(entries);
   const report = active.at(-1);
   const targets = report?.targets ?? shop.monthlyData?.[report?.date.slice(0, 7) ?? ""]?.targets ?? shop.monthlyTargets;
-  if (!report || !targets) return { achievement: 0, revenue: 0, forecast: 0, isFinal: false, hasData: false };
+  if (!report || !targets) return { achievement: 0, revenue: 0, forecast: 0, isFinal: false, hasData: false, metrics: [] as DashboardMetric[], daysRemaining: null };
   const monthData = shop.monthlyData?.[report.date.slice(0, 7)];
   const settings = report.metricSettings ?? monthData?.metricSettings ?? shop.metricSettings;
   const metrics = getShopMetrics({ ...shop, metricSettings: settings, metricOrder: report.metricOrder ?? monthData?.metricOrder ?? shop.metricOrder }, targets);
   const actuals = getPerformanceShopActuals(active, metrics);
   const achievement = calculateTotalAchievement(actuals, targets, settings);
   const isFinal = report.reportType === "completedMonth";
+  const pace = isFinal ? null : monthPace(getForecastDate(report));
+  const metricResults = metricBreakdown(actuals, targets, metrics, settings, pace);
   const forecast = isFinal
     ? achievement
     : calculateForecastAchievement(actuals, targets, metrics, getForecastDate(report), settings);
-  return { achievement, revenue: report.revenue ?? monthData?.collection ?? 0, forecast, isFinal, hasData: true };
+  return { achievement, revenue: report.revenue ?? monthData?.collection ?? 0, forecast, isFinal, hasData: true, metrics: metricResults, daysRemaining: pace?.remaining ?? null };
+}
+
+/** Per-KPI results, using the same KPIs that count toward the total (target set, weight above zero). */
+type MonthPace = { elapsed: number; daysInMonth: number; remaining: number };
+
+function monthPace(asOfDate: Date): MonthPace {
+  const elapsed = Math.max(asOfDate.getDate(), 1);
+  const daysInMonth = new Date(asOfDate.getFullYear(), asOfDate.getMonth() + 1, 0).getDate();
+  return { elapsed, daysInMonth, remaining: Math.max(daysInMonth - elapsed, 0) };
+}
+
+function metricBreakdown(totals: Partial<Record<PerformanceMetric, number>>, targets: Partial<Record<PerformanceMetric, number>>, metrics: readonly PerformanceMetric[], settings: Shop["metricSettings"] | undefined, pace: MonthPace | null): DashboardMetric[] {
+  return metrics.flatMap(metric => {
+    const target = targets[metric] ?? 0;
+    if (!(target > 0) || getMetricWeight(metric, settings) <= 0) return [];
+    const actual = totals[metric] ?? 0;
+    const customLabel = settings?.[metric]?.label?.trim();
+    const label = customLabel || (metric.startsWith("custom_") ? getCustomMetricLabel(metric, settings) : null);
+    const forecast = pace ? (actual / pace.elapsed) * pace.daysInMonth / target * 100 : null;
+    const neededPerDay = pace && pace.remaining > 0 ? Math.max(target - actual, 0) / pace.remaining : null;
+    return [{ id: metric, label, actual, target, achievement: (actual / target) * 100, forecast, neededPerDay }];
+  });
 }
 
 function representativeRows(shop: Shop, entries: PerformanceData[]): Array<Omit<DashboardRepresentativeRow, "rank">> {
@@ -190,6 +239,7 @@ function representativeRows(shop: Shop, entries: PerformanceData[]): Array<Omit<
   const metricSettings = monthData?.metricSettings ?? shop.metricSettings;
   const metrics = getShopMetrics({ ...shop, metricSettings, metricOrder: monthData?.metricOrder ?? shop.metricOrder }, targets);
   const equalTargets = getEqualRepresentativeTargets(targets, metrics, representatives.length);
+  const pace = report.reportType === "completedMonth" ? null : monthPace(getForecastDate(report));
   const totalsByRepresentative = new Map<string, Record<PerformanceMetric, number>>();
 
   active.forEach(entry => entry.reps.forEach(representative => {
@@ -209,6 +259,7 @@ function representativeRows(shop: Shop, entries: PerformanceData[]): Array<Omit<
       shopId: shop.id,
       shopName: shop.name,
       achievement: calculateTotalAchievement(totals, representativeTargets, metricSettings),
+      metrics: metricBreakdown(totals, representativeTargets, metrics, metricSettings, pace),
       forecastAchievement: report.reportType === "completedMonth"
         ? null
         : calculateForecastAchievement(totals, representativeTargets, metrics, getForecastDate(report), metricSettings),
@@ -234,11 +285,22 @@ async function loadSupervisors() {
   });
 }
 
+/** Total % as it stood at the previous Excel import this month, or null when there is only one import. */
+function previousImportAchievement(shop: Shop, entries: PerformanceData[]) {
+  const latestImport = getOverviewPerformanceData(entries).find(entry => entry.importId);
+  if (!latestImport) return null;
+  const earlier = entries.filter(entry => entry !== latestImport);
+  if (!earlier.some(entry => entry.importId)) return null;
+  const previous = performanceSummary(shop, earlier);
+  return previous.hasData ? previous.achievement : null;
+}
+
 function createShopSummary(shop: Shop, entries: PerformanceData[], supervisors: Map<string, Supervisor>): ShopSummary {
   const result = performanceSummary(shop, entries);
+  const previousAchievement = result.hasData ? previousImportAchievement(shop, entries) : null;
   const supervisor = shop.supervisorId ? supervisors.get(shop.supervisorId) : undefined;
   return {
-    schemaVersion: 4,
+    schemaVersion: SUMMARY_VERSION,
     shopId: shop.id,
     shopName: shop.name,
     normalizedShopName: normalizeText(shop.name),
@@ -256,12 +318,34 @@ function createShopSummary(shop: Shop, entries: PerformanceData[], supervisors: 
     revenueDesc: result.hasData ? result.revenue : -1,
     isFinal: result.isFinal,
     hasData: result.hasData,
+    metrics: result.metrics,
+    previousAchievement,
+    daysRemaining: result.daysRemaining,
     representativeRows: representativeRows(shop, entries),
     updatedAt: new Date().toISOString(),
   };
 }
 
-type SummaryValue = Pick<ShopSummary, "supervisorId" | "supervisorName" | "achievement" | "forecast" | "revenue" | "isFinal" | "hasData">;
+type SummaryValue = Pick<ShopSummary, "supervisorId" | "supervisorName" | "achievement" | "forecast" | "revenue" | "isFinal" | "hasData" | "metrics">;
+
+/** KPI results across several shops: % and forecast averaged per shop; actual, target and needed-per-day summed. */
+function averageMetrics(values: SummaryValue[]): DashboardMetric[] {
+  const groups = new Map<string, DashboardMetric[]>();
+  values.forEach(value => value.metrics?.forEach(metric => groups.set(metric.id, [...(groups.get(metric.id) ?? []), metric])));
+  return [...groups.values()].map(group => {
+    const forecasts = group.flatMap(metric => typeof metric.forecast === "number" ? [metric.forecast] : []);
+    const needed = group.flatMap(metric => typeof metric.neededPerDay === "number" ? [metric.neededPerDay] : []);
+    return {
+      id: group[0].id,
+      label: group[0].label,
+      actual: group.reduce((sum, metric) => sum + metric.actual, 0),
+      target: group.reduce((sum, metric) => sum + metric.target, 0),
+      achievement: group.reduce((sum, metric) => sum + metric.achievement, 0) / group.length,
+      forecast: forecasts.length ? forecasts.reduce((sum, value) => sum + value, 0) / forecasts.length : null,
+      neededPerDay: needed.length ? needed.reduce((sum, value) => sum + value, 0) : null,
+    };
+  });
+}
 
 function summarizeValues(values: SummaryValue[]): DashboardSummary {
   const reporting = values.filter(value => value.hasData);
@@ -294,6 +378,7 @@ function summarizeSupervisorRows(values: SummaryValue[]): DashboardSupervisorRow
       averageAchievement: active.length ? active.reduce((sum, value) => sum + value.achievement, 0) / active.length : 0,
       forecastAchievement: active.length ? active.reduce((sum, value) => sum + value.forecast, 0) / active.length : null,
       revenue: active.reduce((sum, value) => sum + value.revenue, 0),
+      metrics: averageMetrics(active),
     } satisfies DashboardSupervisorRow;
   }).sort((left, right) => right.averageAchievement - left.averageAchievement || left.name.localeCompare(right.name));
 }
@@ -312,7 +397,8 @@ function summarizeShops(values: ShopSummary[]): MonthMeta {
     .sort((left, right) => right.achievement - left.achievement)
     .map((representative, index) => ({ ...representative, rank: index + 1 }));
   return {
-    schemaVersion: 4,
+    // A month only counts as current once every shop record has the new fields.
+    schemaVersion: values.every(value => value.schemaVersion === SUMMARY_VERSION) ? SUMMARY_VERSION : 4,
     summary: summarizeValues(values),
     supervisorSummaries: Object.fromEntries([...supervisors].map(([id, group]) => [id, summarizeValues(group)])),
     supervisorRows,
@@ -366,7 +452,7 @@ function mergeMonthSummaries(
   }
   const summaries = new Map<string, ShopSummary>([...entries].map(([shopId, entry]) => [shopId, {
     ...entry,
-    schemaVersion: 4,
+    schemaVersion: meta.data.schemaVersion,
     searchPrefixes: [],
     representativeRows: representatives.get(shopId) ?? [],
     updatedAt: meta.data.updatedAt,
@@ -465,7 +551,7 @@ async function rebuildMonth(month: string) {
 async function ensureMonth(month: string) {
   const reference = adminDb.collection("dashboardSummaries").doc(month);
   const snapshot = await reference.get();
-  if (!snapshot.exists || snapshot.data()?.schemaVersion !== 4) return rebuildMonth(month);
+  if (!snapshot.exists || snapshot.data()?.schemaVersion !== SUMMARY_VERSION) return rebuildMonth(month);
   return snapshot.data() as MonthMeta;
 }
 
@@ -820,6 +906,9 @@ async function loadDashboardPage(input: { month: string; search?: string; superv
       forecastAchievement: summary.hasData && !summary.isFinal ? summary.forecast : null,
       isFinal: summary.isFinal,
       hasData: summary.hasData,
+      ...(summary.metrics ? { metrics: summary.metrics } : {}),
+      previousAchievement: summary.previousAchievement ?? null,
+      daysRemaining: summary.daysRemaining ?? null,
     } satisfies DashboardRow;
   });
 

@@ -95,6 +95,7 @@
     "copySuffix": "copy"
   },
   "Sidebar": {
+    "menu": "Menu",
     "navigationTitle": "Main navigation",
     "navigationDescription": "Navigate between pages and access shop actions and settings.",
     "shopActions": "Shop actions",
@@ -127,7 +128,20 @@
     "showingShops": "Showing {shown} of {total}",
     "viewAllShops": "View all",
     "showTopShops": "Show top {count}",
-    "retry": "Retry"
+    "retry": "Retry",
+    "salesRepsTab": "Sales reps",
+    "overviewTitle": "Network overview",
+    "averagePerformanceLabel": "Average performance",
+    "eomForecast": "EOM forecast",
+    "totalRevenue": "Total revenue",
+    "shopsAtTarget": "Shops at target",
+    "shopsAtTargetHint": "Shops at or above 100%",
+    "finalResults": "Final results",
+    "monthToDate": "Month to date",
+    "final": "Final",
+    "monthClosed": "Month closed",
+    "currentPace": "Based on current pace",
+    "noDataYet": "No data imported yet"
   },
   "Insights": {
     "title": "Insights",
