@@ -179,6 +179,22 @@ export async function listManagedUsers(): Promise<StoredUser[]> {
   });
 }
 
+export async function deleteManagedUser(userId: string) {
+  const reference = adminDb.collection("authUsers").doc(userId);
+  const accessReference = adminDb.collection("accessProfiles").doc(userId);
+  return adminDb.runTransaction(async transaction => {
+    const document = await transaction.get(reference);
+    if (!document.exists) throw new Error("USER_NOT_FOUND");
+    const user = storedUserSchema.parse(document.data());
+    const mappingReference = adminDb.collection("authUsernames").doc(usernameKey(user.normalizedUsername));
+    const mapping = await transaction.get(mappingReference);
+    transaction.delete(reference);
+    transaction.delete(accessReference);
+    if (mapping.data()?.userId === userId) transaction.delete(mappingReference);
+    return { id: userId, ...user };
+  });
+}
+
 export async function setManagedUserAccess(userId: string, role: z.infer<typeof managedRoleSchema>, shopIds: string[]) {
   const reference = adminDb.collection("authUsers").doc(userId);
   const accessReference = adminDb.collection("accessProfiles").doc(userId);

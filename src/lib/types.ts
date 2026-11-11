@@ -319,7 +319,8 @@ export type ActivityAction =
   | "all_data_deleted"
   | "user_created"
   | "user_role_changed"
-  | "user_access_changed";
+  | "user_access_changed"
+  | "user_deleted";
 
 export type ActivityEvent = {
   id: string;
