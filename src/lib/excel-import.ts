@@ -192,7 +192,6 @@ function dynamicMetricColumns(headers: string[], displayHeaders: string[], custo
 }
 
 function findTables(workbook: Sheet[], role: "shop" | "representative", customMetricLabels: Partial<Record<PerformanceMetric, string>>) {
-  const aliases = role === "shop" ? shopAliases : userAliases;
   const tables: Table[] = [];
 
   for (const sheet of workbook) {
@@ -203,13 +202,16 @@ function findTables(workbook: Sheet[], role: "shop" | "representative", customMe
       for (let depth = 1; depth <= 3 && start + depth <= rows.length; depth += 1) {
         const headerEnd = start + depth - 1;
         const headers = columnHeaders(rows, start, headerEnd);
-        const displayHeaders = displayColumnHeaders(rows, start, headerEnd);
-        const identityColumn = aliasColumn(headers, aliases);
+        const shopColumn = aliasColumn(headers, shopAliases);
+        const representativeColumn = aliasColumn(headers, userAliases);
+        // Representative tables repeat the shop name for each user.
+        if (role === "shop" && representativeColumn >= 0) continue;
+        const identityColumn = role === "shop" ? shopColumn : representativeColumn;
         if (identityColumn < 0) continue;
+        const displayHeaders = displayColumnHeaders(rows, start, headerEnd);
         const { targetColumns, achievementColumns, metricLabels } = dynamicMetricColumns(headers, displayHeaders, customMetricLabels);
         const metricCount = Object.keys(targetColumns).length + Object.keys(achievementColumns).length;
         if (!metricCount) continue;
-        const shopColumn = aliasColumn(headers, shopAliases);
         const score = metricCount * 10 + (shopColumn >= 0 ? 2 : 0) - depth;
         if (!best || score > best.score) {
           best = { rows, headerStart: start, headerEnd, headers, displayHeaders, identityColumn, shopColumn, targetColumns, achievementColumns, metricLabels, score };
