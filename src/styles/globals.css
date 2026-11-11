@@ -5,24 +5,24 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 220 14% 95%;
+    --foreground: 224 28% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 224 28% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 224 28% 9%;
     --primary: 275 53% 37%;
     --primary-foreground: 210 40% 98%;
     --secondary: 45 100% 52%;
     --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 220 14% 95%;
+    --muted-foreground: 220 9% 46%;
     --accent: 33 100% 65%;
     --accent-foreground: 24 9.8% 10%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 207 50% 80%;
-    --input: 207 50% 85%;
+    --border: 220 13% 90%;
+    --input: 220 13% 88%;
     --ring: 275 53% 37%;
     --radius: 0.5rem;
     --chart-1: 275 53% 37%;
@@ -32,12 +32,12 @@
     --chart-5: 27 87% 67%;
 
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-foreground: 224 20% 20%;
     --sidebar-primary: 275 53% 37%;
     --sidebar-primary-foreground: 210 40% 98%;
-    --sidebar-accent: 275 90% 94%;
-    --sidebar-accent-foreground: 240 5.9% 10%;
-    --sidebar-border: 220 13% 91%;
+    --sidebar-accent: 220 14% 95%;
+    --sidebar-accent-foreground: 224 28% 9%;
+    --sidebar-border: 220 13% 90%;
     --sidebar-ring: 275 53% 37%;
 
     /* Liquid glass */
@@ -48,33 +48,35 @@
     --glass-edge: 0 0% 100%;
     --glass-edge-alpha: 0.7;
     --glass-shine: 0.9;
-    --glass-shadow: 222 40% 20%;
-    --glass-shadow-alpha: 0.12;
+    --glass-shadow: 224 30% 10%;
+    --glass-shadow-alpha: 0.1;
     --glass-blur: 22px;
     /* Plain page background behind the cards. */
-    --ambient-base: 220 14% 96%;
+    --ambient-base: 220 14% 95%;
+    /* Soft card shadow shared by every card, menu and dialog. */
+    --card-shadow: 0 1px 2px hsl(224 30% 10% / 0.04), 0 10px 28px -14px hsl(224 30% 10% / 0.16);
   }
 
   .dark {
     color-scheme: dark;
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
-    --card: 222 47% 11%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
+    --background: 228 14% 6%;
+    --foreground: 220 20% 96%;
+    --card: 228 12% 10%;
+    --card-foreground: 220 20% 96%;
+    --popover: 228 12% 10%;
+    --popover-foreground: 220 20% 96%;
     --primary: 275 65% 65%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 45 100% 52%;
     --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 228 10% 14%;
+    --muted-foreground: 220 9% 62%;
     --accent: 33 100% 65%;
     --accent-foreground: 24 9.8% 10%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 210 40% 98%;
-    --border: 217 33% 27%;
-    --input: 217 33% 27%;
+    --border: 228 10% 17%;
+    --input: 228 10% 20%;
     --ring: 275 53% 37%;
     --chart-1: 275 53% 37%;
     --chart-2: 33 100% 65%;
@@ -82,24 +84,25 @@
     --chart-4: 43 74% 66%;
     --chart-5: 27 87% 67%;
     
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 210 40% 98%;
+    --sidebar-background: 228 12% 10%;
+    --sidebar-foreground: 220 20% 96%;
     --sidebar-primary: 275 53% 37%;
     --sidebar-primary-foreground: 210 40% 98%;
-    --sidebar-accent: 217 33% 17%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217 33% 27%;
+    --sidebar-accent: 228 10% 14%;
+    --sidebar-accent-foreground: 220 20% 96%;
+    --sidebar-border: 228 10% 17%;
     --sidebar-ring: 275 53% 37%;
 
-    --glass-tint: 222 40% 16%;
+    --glass-tint: 228 12% 10%;
     --glass-alpha: 0.7;
     --glass-alpha-strong: 0.68;
     --glass-edge: 0 0% 100%;
     --glass-edge-alpha: 0.12;
     --glass-shine: 0.2;
-    --glass-shadow: 230 60% 2%;
-    --glass-shadow-alpha: 0.45;
-    --ambient-base: 222 22% 8%;
+    --glass-shadow: 0 0% 0%;
+    --glass-shadow-alpha: 0.5;
+    --ambient-base: 228 14% 6%;
+    --card-shadow: 0 1px 2px hsl(0 0% 0% / 0.3), 0 10px 28px -14px hsl(0 0% 0% / 0.6);
   }
 }
 
@@ -117,55 +120,20 @@
 }
 
 /*
- * Apple-style "liquid glass" surfaces: a translucent tint, a strong backdrop
- * blur with boosted saturation, a bright rim on the top edge and a soft drop
- * shadow for depth.
+ * Card surfaces: flat white (near-black in dark mode) with a hairline border and a soft shadow.
+ * The class names are kept from the earlier glass look so every component picks this up.
  */
 @layer components {
   .glass,
   .glass-strong,
   .glass-pill {
-    background-color: hsl(var(--glass-tint) / var(--glass-alpha));
-    background-image: linear-gradient(
-      160deg,
-      hsl(var(--glass-edge) / calc(var(--glass-shine) * 0.35)) 0%,
-      hsl(var(--glass-edge) / 0) 45%
-    );
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-    backdrop-filter: blur(var(--glass-blur)) saturate(180%);
-    border: 1px solid hsl(var(--glass-edge) / var(--glass-edge-alpha));
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--glass-edge) / var(--glass-shine)),
-      inset 0 -1px 0 0 hsl(var(--glass-edge) / calc(var(--glass-shine) * 0.25)),
-      0 1px 2px hsl(var(--glass-shadow) / calc(var(--glass-shadow-alpha) * 0.6)),
-      0 10px 30px -8px hsl(var(--glass-shadow) / var(--glass-shadow-alpha));
-  }
-
-  /* Floating layers (dialogs, menus): more opaque so text stays readable. */
-  .glass-strong {
-    --glass-blur: 32px;
-    background-color: hsl(var(--glass-tint) / var(--glass-alpha-strong));
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--glass-edge) / var(--glass-shine)),
-      inset 0 -1px 0 0 hsl(var(--glass-edge) / calc(var(--glass-shine) * 0.25)),
-      0 2px 6px hsl(var(--glass-shadow) / calc(var(--glass-shadow-alpha) * 0.6)),
-      0 24px 60px -12px hsl(var(--glass-shadow) / calc(var(--glass-shadow-alpha) * 1.6));
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.8);
+    box-shadow: var(--card-shadow);
   }
 
   .glass-pill {
-    --glass-blur: 16px;
     border-radius: 9999px;
-  }
-
-  /* Tinted glass for primary actions: the brand color shows through. */
-  .glass-tinted {
-    background-color: hsl(var(--primary) / 0.88);
-    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.28), hsl(0 0% 100% / 0) 55%);
-    border: 1px solid hsl(0 0% 100% / 0.22);
-    box-shadow:
-      inset 0 1px 0 0 hsl(0 0% 100% / 0.45),
-      0 1px 2px hsl(var(--primary) / 0.3),
-      0 8px 20px -6px hsl(var(--primary) / 0.55);
   }
 
   /* Soft press feedback, like the glass "squish" on iOS. */
@@ -180,15 +148,6 @@
     transform: scale(0.97);
   }
 
-  @media (prefers-reduced-transparency: reduce) {
-    .glass,
-    .glass-strong,
-    .glass-pill {
-      background-color: hsl(var(--card));
-      -webkit-backdrop-filter: none;
-      backdrop-filter: none;
-    }
-  }
 }
 
 @layer components {
@@ -288,5 +247,24 @@
 @keyframes page-fade {
   from {
     opacity: 0;
+  }
+}
+
+/* Helpers shared by the phone manager mode and the rest of the app. */
+@layer components {
+  .manager-ui {
+    color: hsl(var(--foreground));
+  }
+
+  .manager-card {
+    background-color: hsl(var(--card));
+    border: 1px solid hsl(var(--border) / 0.8);
+    box-shadow: var(--card-shadow);
+  }
+
+  /* Remaining part of a bar: light diagonal stripes, as in a budget meter. */
+  .manager-stripes {
+    background-color: hsl(var(--muted));
+    background-image: repeating-linear-gradient(-45deg, hsl(var(--foreground) / 0.07) 0 2px, transparent 2px 6px);
   }
 }

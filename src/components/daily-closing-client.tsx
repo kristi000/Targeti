@@ -106,7 +106,11 @@ export function DailyClosingClient() {
   const metricTranslations = useTranslations("Metrics");
   const { toast } = useToast();
   const { selectedShop, actor, setSelectedDatasetId, setSelectedPerformanceId } = useShop();
-  const [date, setDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  // `?date=yyyy-mm-dd` opens a specific day, for links from the monthly reports.
+  const [date, setDate] = useState(() => {
+    const requested = searchParams.get("date");
+    return requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && !Number.isNaN(Date.parse(requested)) ? requested : format(new Date(), "yyyy-MM-dd");
+  });
   const [debtRevision, setDebtRevision] = useState(0);
   const [closing, setClosing] = useState<DailyClosing | null>(null);
   const [cashCounts, setCashCounts] = useState<Record<string, number>>(() => createEmptyCashCounts());
@@ -501,7 +505,7 @@ export function DailyClosingClient() {
 
 
 
-          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-background/95 p-2 shadow-lg backdrop-blur"><Button size="sm" variant="outline" disabled={submitting !== null || activitySettingsUnavailable} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || activitySettingsUnavailable || attendanceDirty || !attendanceComplete || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
+          {actor.role !== "viewer" && !isFinalized && <div className="sticky bottom-2 flex justify-end gap-2 rounded-lg border bg-card p-2 shadow-lg"><Button size="sm" variant="outline" disabled={submitting !== null || activitySettingsUnavailable} onClick={() => void save()}><Save className="mr-1.5 h-4 w-4" />{submitting === "save" ? t("saving") : t("saveDraft")}</Button><AlertDialog><AlertDialogTrigger asChild><Button size="sm" disabled={submitting !== null || activitySettingsUnavailable || attendanceDirty || !attendanceComplete || procedureDirty}><CheckCircle2 className="mr-1.5 h-4 w-4" />{t("finalize")}</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{t("finalizeTitle")}</AlertDialogTitle><AlertDialogDescription>{t("finalizeDescription")}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>{t("cancel")}</AlertDialogCancel><AlertDialogAction onClick={() => void finalize()}>{submitting === "finalize" ? t("finalizing") : t("confirmFinalize")}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></div>}
         </>}
         </div>
         <Dialog open={isSummaryOpen} onOpenChange={setIsSummaryOpen}>

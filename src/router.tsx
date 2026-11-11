@@ -22,6 +22,7 @@ function RootRedirect() {
 // Each page loads its code on first visit, like Next.js route splitting.
 const pages = () => import("@/pages/dashboard");
 const shopPages = () => import("@/pages/shop");
+const managerPages = () => import("@/pages/manager");
 
 export const router = createBrowserRouter([
   {
@@ -45,6 +46,17 @@ export const router = createBrowserRouter([
           { path: "shop/:shopId/attendance", lazy: () => shopPages().then(module => ({ Component: module.ShopAttendancePage })) },
           { path: "shop/:shopId/daily-activity", lazy: () => shopPages().then(module => ({ Component: module.ShopDailyActivityPage })) },
           { path: "shop/:shopId/procedures", lazy: () => shopPages().then(module => ({ Component: module.ShopProceduresPage })) },
+          {
+            path: "m",
+            lazy: () => managerPages().then(module => ({ Component: module.ManagerLayout })),
+            children: [
+              { index: true, lazy: () => managerPages().then(module => ({ Component: module.ManagerDashboardPage })) },
+              { path: "rankings", lazy: () => managerPages().then(module => ({ Component: module.ManagerRankingsPage })) },
+              { path: "bonuses", lazy: () => managerPages().then(module => ({ Component: module.ManagerBonusesPage })) },
+              { path: "reports", lazy: () => managerPages().then(module => ({ Component: module.ManagerReportsPage })) },
+              { path: "reports/:report", lazy: () => managerPages().then(module => ({ Component: module.ManagerReportDetailPage })) },
+            ],
+          },
           { path: "*", Component: NotFoundPage },
         ],
       },

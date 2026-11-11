@@ -54,8 +54,8 @@ export function compareNullable(left: number | null, right: number | null, desc:
   return desc ? right - left : left - right;
 }
 
-const headerCellClass = "sticky top-0 z-[2] border-b border-border/60 bg-[hsl(var(--glass-tint)/0.92)] py-1.5 backdrop-blur";
-const stickyCellClass = "sticky left-0 z-[1] bg-[hsl(var(--glass-tint)/0.92)] backdrop-blur";
+const headerCellClass = "sticky top-0 z-[2] border-b border-border/60 bg-card py-1.5";
+const stickyCellClass = "sticky left-0 z-[1] bg-card";
 
 export function KpiTable({ rows, nameLabel, sort, onSort, cellMode, currency, showRevenue }: {
   rows: KpiTableRow[];

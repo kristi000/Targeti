@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { Navigate, Outlet, useLocation, useParams } from "react-router";
+import { Navigate, Outlet, useLocation, useMatch, useParams } from "react-router";
 import { IntlProvider, type AbstractIntlMessages } from "use-intl";
 
 import { AppLayout, AppShellFallback } from "@/components/app-layout";
@@ -9,7 +9,9 @@ import { DashboardNavigationProvider } from "@/components/dashboard-navigation-p
 import { NotFoundPage, PageError } from "@/components/page-status";
 import { PerformanceVitals } from "@/components/performance-vitals";
 import { QueryProvider } from "@/components/query-provider";
-import { ShopProvider } from "@/components/shop-provider";
+import { ShopProvider, useShop } from "@/components/shop-provider";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { managerBasePath, useManagerModeEnabled } from "@/lib/manager-mode";
 import type { AppBootstrap } from "@/lib/app-bootstrap";
 import { bootstrapQueryKey } from "@/lib/query-keys";
 
@@ -98,9 +100,28 @@ function AuthenticatedApplication({ bootstrap, locale }: { bootstrap: AppBootstr
       {bootstrap.performanceMetricsEnabled && <PerformanceVitals />}
       <ShopProvider initialData={directory} actor={actor}>
         <DashboardNavigationProvider locale={locale}>
-          <AppLayout><Outlet /></AppLayout>
+          <ApplicationShell locale={locale} />
         </DashboardNavigationProvider>
       </ShopProvider>
     </QueryProvider>
   );
+}
+
+/**
+ * The manager mobile app (/:locale/m) has its own shell. On a phone, the administrator opening the
+ * main dashboard is taken to it unless they chose the classic view.
+ */
+function ApplicationShell({ locale }: { locale: Locale }) {
+  const { isAdmin } = useShop();
+  const isMobile = useIsMobile();
+  const managerMode = useManagerModeEnabled(isAdmin);
+  const { pathname } = useLocation();
+  const inManagerApp = useMatch("/:locale/m/*") !== null;
+  const onMainDashboard = pathname.replace(/\/$/, "") === `/${locale}`;
+
+  if (inManagerApp) return <Outlet />;
+  if (managerMode && isMobile && onMainDashboard) {
+    return <Navigate replace to={managerBasePath(locale)} />;
+  }
+  return <AppLayout><Outlet /></AppLayout>;
 }

@@ -95,7 +95,17 @@ const WeightProfileManagerDialog = dynamic(() =>
     { loading: SidebarDialogLoading }
 );
 
-export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMonth?: string } = {}) {
+type SidebarActionsProps = {
+    activeMonth?: string;
+    /** Which set of actions to show. Defaults to the dashboard set on overview pages and the shop set on shop pages. */
+    scope?: "dashboard" | "shop";
+    /** "menu" renders full-width rows for the manager app's Menu sheet. */
+    layout?: "sidebar" | "menu";
+    /** Used in the menu layout, where achievement editing happens on the shop page. */
+    onNavigate?: (href: string) => void;
+};
+
+export function SidebarActions({ activeMonth: activeMonthOverride, scope, layout = "sidebar", onNavigate }: SidebarActionsProps = {}) {
     const { selectedShop, allMonthlyTargets, updateShop, deleteShop, refreshDataForShop, selectedDatasetId, selectedPerformanceId, requestAchievementEdit, isAdmin, actor } = useShop();
     const pathname = usePathname();
     const locale = useLocale();
@@ -103,7 +113,16 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
     const tDialog = useTranslations("Dialogs");
     const tMetric = useTranslations("Metrics");
 
-    const isDashboard = !pathname.includes('/shop/');
+    const isDashboard = scope ? scope === "dashboard" : !pathname.includes('/shop/');
+    const menu = layout === "menu";
+    const actionClass = menu
+        ? "h-11 min-w-0 w-full justify-start gap-3 overflow-hidden rounded-none px-4 text-sm font-normal [&>svg]:h-[18px] [&>svg]:w-[18px] [&>svg]:shrink-0"
+        : "min-w-0 justify-start overflow-hidden [&>svg]:shrink-0";
+    const editAchievements = () => {
+        if (!selectedShop) return;
+        requestAchievementEdit(selectedShop.id, activeMonth);
+        if (menu) onNavigate?.(`/${locale}/shop/${selectedShop.id}?month=${activeMonth}`);
+    };
     const canEdit = actor.role !== "viewer";
     const latestDataMonth = Object.keys(selectedShop?.monthlyData ?? {}).sort().at(-1) ?? new Date().toISOString().slice(0, 7);
     const activeMonth = activeMonthOverride ?? (selectedDatasetId || latestDataMonth);
@@ -298,22 +317,22 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
 
     return (
         <>
-            <div className="flex flex-col gap-1">
+            <div className={menu ? "flex flex-col divide-y divide-border/60" : "flex flex-col gap-1"}>
                 {isDashboard && (
                     <>
-                    <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Dashboard actions</p>
+                    {!menu && <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Dashboard actions</p>}
                     {canEdit && <>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet /><span className="truncate" title="Import Excel">Import Excel</span></Button>
-                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsImportManagementDialogOpen(true)}><FileClock /><span className="truncate" title="Manage imports">Manage imports</span></Button>}
-                        {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={handleOpenManageShops}><Store /><span className="truncate" title={t('manageShops')}>{t('manageShops')}</span></Button>}
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsRepresentativeDialogOpen(true)}><UsersRound /><span className="truncate" title="Manage representatives">Manage representatives</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet /><span className="truncate" title="Import Excel">Import Excel</span></Button>
+                        {isAdmin && <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsImportManagementDialogOpen(true)}><FileClock /><span className="truncate" title="Manage imports">Manage imports</span></Button>}
+                        {isAdmin && <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={handleOpenManageShops}><Store /><span className="truncate" title={t('manageShops')}>{t('manageShops')}</span></Button>}
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsRepresentativeDialogOpen(true)}><UsersRound /><span className="truncate" title="Manage representatives">Manage representatives</span></Button>
                     </>}
-                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsSupervisorDialogOpen(true)}><UserRoundCog /><span className="truncate" title="Manage supervisors">Manage supervisors</span></Button>}
-                    {isAdmin && <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsActivityHistoryDialogOpen(true)}><History /><span className="truncate" title="Activity history">Activity history</span></Button>}
+                    {isAdmin && <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsSupervisorDialogOpen(true)}><UserRoundCog /><span className="truncate" title="Manage supervisors">Manage supervisors</span></Button>}
+                    {isAdmin && <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsActivityHistoryDialogOpen(true)}><History /><span className="truncate" title="Activity history">Activity history</span></Button>}
                     {isAdmin && <>
-                        <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Administration</p>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsUserManagementOpen(true)}><UserRoundCog /><span className="truncate" title="Manage users">Manage users</span></Button>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsWeightProfileManagerOpen(true)}><SlidersHorizontal /><span className="truncate" title="Manage weight profiles">Manage weight profiles</span></Button>
+                        {!menu && <p className="px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">Administration</p>}
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsUserManagementOpen(true)}><UserRoundCog /><span className="truncate" title="Manage users">Manage users</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsWeightProfileManagerOpen(true)}><SlidersHorizontal /><span className="truncate" title="Manage weight profiles">Manage weight profiles</span></Button>
                     </>}
                     {isExcelImportDialogOpen && <ExcelImportDialog open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                     {isActivityHistoryDialogOpen && <ActivityHistoryDialog open onOpenChange={setIsActivityHistoryDialogOpen} showTrigger={false} />}
@@ -323,10 +342,10 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                 )}
                 {selectedShop && !isDashboard && canEdit && (
                     <>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet /><span className="truncate" title="Import Excel">Import Excel</span></Button>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings /><span className="truncate" title={t('setMonthlyTargets')}>{t('setMonthlyTargets')}</span></Button>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={() => requestAchievementEdit(selectedShop.id, activeMonth)} disabled={isHistoricalReport || monthlyRepresentatives.length === 0} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil /><span className="truncate" title={t('editAchievements')}>{t('editAchievements')}</span></Button>
-                        <Button type="button" variant="ghost" size="sm" className="min-w-0 justify-start overflow-hidden [&>svg]:shrink-0" onClick={handleOpenEditShop}><Edit /><span className="truncate" title={t('editShop')}>{t('editShop')}</span></Button>
+                        {!menu && <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={() => setIsExcelImportDialogOpen(true)}><FileSpreadsheet /><span className="truncate" title="Import Excel">Import Excel</span></Button>}
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={onOpenTargetDialog} disabled={isHistoricalReport} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Settings /><span className="truncate" title={t('setMonthlyTargets')}>{t('setMonthlyTargets')}</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={editAchievements} disabled={isHistoricalReport || monthlyRepresentatives.length === 0} title={isHistoricalReport ? "Historical imports are read-only" : undefined}><Pencil /><span className="truncate" title={t('editAchievements')}>{t('editAchievements')}</span></Button>
+                        <Button type="button" variant="ghost" size="sm" className={actionClass} onClick={handleOpenEditShop}><Edit /><span className="truncate" title={t('editShop')}>{t('editShop')}</span></Button>
                         {isExcelImportDialogOpen && <ExcelImportDialog restrictToSelectedShop open onOpenChange={setIsExcelImportDialogOpen} showTrigger={false} />}
                         <Dialog open={isTargetDialogOpen} onOpenChange={setIsTargetDialogOpen}>
                             <DialogContent className="sm:max-w-2xl">
@@ -344,11 +363,78 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                     placeholder="New metric name"
                                     aria-label="New metric name"
                                 />
-                                <Button type="button" variant="outline" onClick={addCustomMetric} disabled={!newMetricName.trim()}>
-                                    <CirclePlus className="mr-2 h-4 w-4" />Add metric
+                                <Button type="button" variant="outline" className="shrink-0" onClick={addCustomMetric} disabled={!newMetricName.trim()} aria-label="Add metric">
+                                    <CirclePlus className="h-4 w-4 sm:mr-2" /><span className="hidden sm:inline">Add metric</span>
                                 </Button>
                             </div>
-                            <div className="overflow-x-auto rounded-md border">
+                            {/* Phones: one card per KPI instead of the wide table. */}
+                            <div className="space-y-2 sm:hidden">
+                                <div className="flex items-center justify-between gap-2">
+                                    <p className="text-xs font-medium text-muted-foreground">{tDialog('metric')}</p>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-8 gap-1.5 px-2 text-xs"
+                                        onClick={sortMetricsByWeight}
+                                        aria-label={weightSortDirection === "descending" ? tDialog('sortWeightAscending') : tDialog('sortWeightDescending')}
+                                    >
+                                        {tDialog('weight')}
+                                        <ArrowUpDown className="h-3.5 w-3.5" />
+                                    </Button>
+                                </div>
+                                {editingMetricOrder.map((metric, index) => (
+                                    <div key={metric} className="space-y-2 rounded-xl border p-3">
+                                        <div className="flex items-center gap-1">
+                                            <Input
+                                                aria-label={`${tDialog('metric')} ${getMetricLabel(metric)}`}
+                                                className="h-9 min-w-0 flex-1 font-medium"
+                                                value={getMetricLabel(metric)}
+                                                onChange={(e) => handleMetricSettingChange(metric, "label", e.target.value)}
+                                            />
+                                            <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0" disabled={index === 0} aria-label={tDialog('moveMetricUp', { metric: getMetricLabel(metric) })} onClick={() => moveMetric(metric, -1)}>
+                                                <ArrowUp className="h-4 w-4" />
+                                            </Button>
+                                            <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0" disabled={index === editingMetricOrder.length - 1} aria-label={tDialog('moveMetricDown', { metric: getMetricLabel(metric) })} onClick={() => moveMetric(metric, 1)}>
+                                                <ArrowDown className="h-4 w-4" />
+                                            </Button>
+                                            {metric.startsWith("custom_") && (
+                                                <Button type="button" variant="ghost" size="icon" className="h-9 w-9 shrink-0 text-destructive hover:text-destructive" onClick={() => removeCustomMetric(metric)} aria-label={`Remove ${getMetricLabel(metric)}`}>
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <label className="space-y-1 text-xs text-muted-foreground">
+                                                <span>{tDialog('monthlyTarget')}</span>
+                                                <Input
+                                                    aria-label={`${tDialog('monthlyTarget')} ${getMetricLabel(metric)}`}
+                                                    className="h-10 text-right text-base tabular-nums text-foreground"
+                                                    type="number"
+                                                    inputMode="decimal"
+                                                    value={editingTargets[metric] || ''}
+                                                    onChange={(e) => handleTargetChange(metric, e.target.value)}
+                                                />
+                                            </label>
+                                            <label className="space-y-1 text-xs text-muted-foreground">
+                                                <span>{tDialog('weight')} (%)</span>
+                                                <Input
+                                                    aria-label={`${tDialog('weight')} ${getMetricLabel(metric)}`}
+                                                    className="h-10 text-right text-base tabular-nums text-foreground"
+                                                    type="number"
+                                                    inputMode="decimal"
+                                                    min="0"
+                                                    step="0.01"
+                                                    max="100"
+                                                    value={Number(((editingMetricSettings[metric]?.weight ?? METRIC_WEIGHTS[metric]) * 100).toFixed(2))}
+                                                    onChange={(e) => handleMetricSettingChange(metric, "weight", String(Number(e.target.value) / 100))}
+                                                />
+                                            </label>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="hidden overflow-x-auto rounded-md border sm:block">
                                 <table className="w-full min-w-[700px] text-sm">
                                     <thead className="bg-muted/60 text-xs uppercase tracking-wide text-muted-foreground">
                                         <tr className="border-b">
@@ -445,7 +531,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                     </tbody>
                                 </table>
                             </div>
-                            <div className={`flex items-center gap-2 rounded-md border p-3 text-sm ${weightsValid ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300" : "border-destructive/40 bg-destructive/5 text-destructive"}`}>
+                            <div className={`sticky bottom-0 z-10 flex items-center gap-2 rounded-md border bg-background/95 p-3 text-sm backdrop-blur sm:static sm:bg-transparent ${weightsValid ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300" : "border-destructive/40 bg-destructive/5 text-destructive"}`}>
                                 {!weightsValid && <AlertTriangle className="h-4 w-4 shrink-0" />}
                                 KPI weights total {(weightTotal * 100).toFixed(1)}%. They must total exactly 100% before saving.
                             </div>
@@ -456,7 +542,7 @@ export function SidebarActions({ activeMonth: activeMonthOverride }: { activeMon
                                 </AccordionItem>
                             </Accordion>
                             <DialogFooter>
-                                <Button onClick={onSaveTargets} disabled={isSaving || !weightsValid}>
+                                <Button className="w-full sm:w-auto" onClick={onSaveTargets} disabled={isSaving || !weightsValid}>
                                 {isSaving ? (
                                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                                 ) : (

@@ -5,6 +5,7 @@ import {
   Github,
   Languages,
   LogOut,
+  Smartphone,
 } from "lucide-react";
 import Link from "@/lib/navigation";
 import { useEffect, useState } from "react";
@@ -35,6 +36,7 @@ import { BrandLogo } from "@/components/brand-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { canNavigate } from "@/lib/navigation-guard";
+import { managerBasePath, useClassicViewPreference } from "@/lib/manager-mode";
 
 const sidebarSectionsKey = "d-one-sidebar-sections";
 const sidebarSectionsSchema = z.array(z.enum(["actions", "settings"])).max(2);
@@ -62,9 +64,14 @@ export function SidebarNav() {
   const searchParams = useSearchParams();
   const locale = useLocale();
   const router = useRouter();
-  const { selectedShop } = useShop();
+  const { selectedShop, isAdmin } = useShop();
   const { dashboardHref } = useDashboardNavigation();
   const menuItems = useMainNavItems();
+  const [, setClassicView] = useClassicViewPreference();
+  const openManagerApp = () => {
+    setClassicView(false);
+    router.push(managerBasePath(locale));
+  };
   const [expandedSections, setExpandedSections] = useState<string[]>([]);
 
   useEffect(() => {
@@ -135,6 +142,14 @@ export function SidebarNav() {
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}
+          {isAdmin && (
+            <SidebarMenuItem className="md:hidden">
+              <SidebarMenuButton onClick={openManagerApp} tooltip={t("managerApp")}>
+                <Smartphone />
+                <span>{t("managerApp")}</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           </SidebarMenu>
           </>
         )}
